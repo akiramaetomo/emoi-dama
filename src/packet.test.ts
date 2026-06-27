@@ -1,0 +1,95 @@
+import type { HappyBall } from "./models";
+import {
+  createBallPacket,
+  createLinePacketImportUrl,
+  createPacketImportUrl,
+  parsePacketHash,
+  parsePacketLocation,
+  parsePacketQuery,
+  reviewPacketImport,
+} from "./packet.js";
+
+const sampleBall: HappyBall = {
+  id: "ball_20260626_self_ab12",
+  date: "2026-06-26",
+  subject: "自分",
+  issuerType: "self",
+  issuedBy: "自分",
+  enteredBy: "自分",
+  approvedBy: null,
+  keepers: ["自分"],
+  viewers: [],
+  count: 1,
+  title: "夕方の空がよかった",
+  category: "日常",
+  note: "少し涼しかった",
+  visibility: "category",
+  visual: {
+    hue: 214,
+    saturation: 42,
+    lightness: 54,
+    label: "夕方の空",
+  },
+  lifecycleStatus: "active",
+  createdAt: "2026-06-26T10:00:00.000Z",
+  updatedAt: "2026-06-26T10:00:00.000Z",
+};
+
+const importUrl = createPacketImportUrl(sampleBall, "https://example.test/happy-ball/?openExternalBrowser=1");
+const parsed = parsePacketHash(new URL(importUrl).hash);
+assertOk(parsed, "generated import URL should parse");
+assertEqual(parsed.packet.items[0].title, sampleBall.title, "packet should preserve Japanese title text");
+assertEqual(parsed.packet.items[0].visual.label, "夕方の空", "packet should preserve Japanese visual label text");
+assert(new URL(importUrl).hash.startsWith("#import="), "standard import URL should use a fragment payload");
+assert(!new URL(importUrl).searchParams.has("openExternalBrowser"), "standard import URL should not keep LINE query parameters");
+
+const lineImportUrl = createLinePacketImportUrl(sampleBall, "https://example.test/happy-ball/?view=toy#import=old");
+const lineUrl = new URL(lineImportUrl);
+assertEqual(lineUrl.searchParams.get("openExternalBrowser"), "1", "LINE import URL should include external browser hint");
+assert(lineUrl.searchParams.has("import"), "LINE import URL should include query import payload");
+assertEqual(lineUrl.hash, "", "LINE import URL should avoid fragment payload");
+
+const parsedLineQuery = parsePacketQuery(lineUrl.search);
+assertOk(parsedLineQuery, "LINE query import URL should parse");
+assertEqual(parsedLineQuery.packet.items[0].title, sampleBall.title, "query import should preserve Japanese title text");
+
+const parsedLocation = parsePacketLocation(lineUrl.search, "");
+assertOk(parsedLocation, "location parser should accept query import URL");
+
+const reviewWithNoExisting = reviewPacketImport(createBallPacket(sampleBall), []);
+assertEqual(reviewWithNoExisting.newItems.length, 1, "new packet item should be importable");
+assertEqual(reviewWithNoExisting.duplicates.length, 0, "new packet item should not be duplicate");
+
+const reviewWithSameExisting = reviewPacketImport(createBallPacket(sampleBall), [sampleBall]);
+assertEqual(reviewWithSameExisting.newItems.length, 0, "existing packet item should not be importable");
+assertEqual(reviewWithSameExisting.duplicates.length, 1, "same ID and content should be duplicate");
+
+const receiptMarkedBall = { ...sampleBall, receiptCreatedAt: "2026-06-26T11:00:00.000Z" };
+const reviewWithReceiptOnlyDifference = reviewPacketImport(createBallPacket(sampleBall), [receiptMarkedBall]);
+assertEqual(reviewWithReceiptOnlyDifference.conflicts.length, 0, "receipt creation trace alone should not create an import conflict");
+assertEqual(reviewWithReceiptOnlyDifference.duplicates.length, 1, "receipt creation trace alone should still be treated as duplicate");
+
+const changedBall = { ...sampleBall, title: "内容が違う同じID" };
+const reviewWithConflict = reviewPacketImport(createBallPacket(changedBall), [sampleBall]);
+assertEqual(reviewWithConflict.conflicts.length, 1, "same ID with different content should be conflict");
+
+const parsedBad = parsePacketHash("#import=not_base64url");
+assert(parsedBad?.ok === false, "invalid payload should return a parse error");
+
+function assert(condition: boolean, message: string): void {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
+
+function assertOk<T extends { ok: boolean }>(value: T | null, message: string): asserts value is T & { ok: true } {
+  if (!value || !value.ok) {
+    throw new Error(message);
+  }
+}
+
+function assertEqual<T>(actual: T, expected: T, message: string): void {
+  if (actual !== expected) {
+    throw new Error(`${message}: expected ${String(expected)}, got ${String(actual)}`);
+  }
+}
