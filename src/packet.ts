@@ -1,3 +1,4 @@
+import { isKnownVisibility, normalizeVisibilityValue } from "./models.js";
 import type { HappyBall } from "./models";
 
 export const PACKET_TYPE = "happy-ball-packet";
@@ -184,7 +185,7 @@ export function normalizePacketBall(value: unknown): HappyBall | null {
   }
 
   const issuerType = readUnion(value.issuerType, ["self", "assisted", "proxy"]);
-  const visibility = readUnion(value.visibility, ["hidden", "category", "open"]);
+  const visibility = isKnownVisibility(value.visibility) ? normalizeVisibilityValue(value.visibility) : null;
   const lifecycleStatus = readUnion(value.lifecycleStatus, ["active", "archived", "memorial", "offered"]);
   const visual = value.visual;
   const hue = readFiniteNumber(visual.hue);
@@ -207,7 +208,7 @@ export function normalizePacketBall(value: unknown): HappyBall | null {
     return null;
   }
 
-  return {
+  const normalizedBall: HappyBall = {
     id,
     date,
     subject,
@@ -228,12 +229,22 @@ export function normalizePacketBall(value: unknown): HappyBall | null {
       lightness: clampPercent(lightness, 26, 72),
       label: Array.from(label).slice(0, 4).join(""),
     },
-    emotionEcho: normalizePacketEmotionEcho(value.emotionEcho),
-    receiptCreatedAt: readOptionalString(value.receiptCreatedAt),
     lifecycleStatus,
     createdAt,
     updatedAt,
   };
+
+  const emotionEcho = normalizePacketEmotionEcho(value.emotionEcho);
+  if (emotionEcho) {
+    normalizedBall.emotionEcho = emotionEcho;
+  }
+
+  const receiptCreatedAt = readOptionalString(value.receiptCreatedAt);
+  if (receiptCreatedAt) {
+    normalizedBall.receiptCreatedAt = receiptCreatedAt;
+  }
+
+  return normalizedBall;
 }
 
 function toComparableBall(ball: HappyBall): Omit<HappyBall, "receiptCreatedAt"> {
@@ -267,7 +278,7 @@ function normalizePacketEmotionEcho(value: unknown): HappyBall["emotionEcho"] | 
     title,
     category,
     note: readString(value.note),
-    visibility: readUnion(value.visibility, ["hidden", "category", "open"]) ?? "category",
+    visibility: isKnownVisibility(value.visibility) ? normalizeVisibilityValue(value.visibility) : "category",
     visual: {
       hue: clampHue(hue),
       saturation: clampPercent(saturation, 8, 76),

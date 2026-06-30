@@ -1,7 +1,6 @@
-import RAPIER, { type RigidBody, type World } from "@dimforge/rapier2d-compat";
+import RAPIER from "@dimforge/rapier2d-compat";
 import {
   loadCategoryColorPresets,
-  normalizeCategoryColorPresets,
   resetCategoryColorPresets,
   saveCategoryColorPresets,
   toneLabels,
@@ -9,16 +8,35 @@ import {
   type CategoryTone,
 } from "./categories";
 import "./style.css";
-import { issuerLabels, visibilityLabels, type BallDraft, type HappyBall, type NameBookEntry, type NameRole } from "./models";
 import {
-  PACKET_TYPE,
+  createExportFileName,
+  createExportPayload,
+  isExportSection,
+  reviewJsonImport,
+  type JsonImportReview,
+} from "./json-transfer";
+import { DeviceGravityController, requestDeviceGravityPermission } from "./device-gravity";
+import { TinyImpactAudio } from "./impact-audio";
+import { issuerLabels, visibilityLabels, visibilityValues, type BallDraft, type HappyBall, type NameBookEntry, type NameRole } from "./models";
+import {
   createLinePacketImportUrl,
   createPacketImportUrl,
-  normalizePacketBall,
   parsePacketLocation,
   reviewPacketImport,
   type UrlPacketParseResult,
 } from "./packet";
+import { createQrCode, createQrSvg, type QrCodeMatrix } from "./qr-code";
+import { RapierStage, type PhysicsBallSnapshot, type VisualBallSource } from "./rapier-stage";
+import {
+  loadAppSettings,
+  normalizeAppSettings,
+  readEchoStrength,
+  saveAppSettings,
+  type AppSettings,
+  type BallLabelMode,
+  type EmotionEchoStrength,
+} from "./settings";
+import { canShowMemoText, getMemoSurfaceMode, type MemoSurfaceMode } from "./visibility";
 import {
   addBall,
   applyCategoryRenames,
@@ -36,9 +54,11 @@ import {
   todayIsoDate,
   updateBall,
   updateNameBook,
+  type BallSaveMode,
 } from "./storage";
 
 const appRoot = getAppRoot();
+const MIN_APP_VIEWPORT_HEIGHT = 320;
 
 let ledger = loadLedger();
 let draft = createDefaultDraft(getPrimarySelfName(ledger));
@@ -46,7 +66,8 @@ let appSettings: AppSettings;
 let editableCategories: CategoryColorPreset[] = loadCategoryColorPresets();
 let selectedBallId: string | null = ledger.balls[0]?.id ?? null;
 let activeOverlay: ActiveOverlay = "none";
-let selectedDateFilter: string | null = null;
+let displayMode: DisplayMode = "day";
+let displayAnchorDate = ledger.balls[0]?.date ?? todayIsoDate();
 let calendarMonth = createDefaultDraft().date.slice(0, 7);
 let pendingUrlPacket: UrlPacketParseResult | null = parsePacketLocation(window.location.search, window.location.hash);
 let snoozedUrlPacket: UrlPacketParseResult | null = null;
@@ -56,29 +77,13 @@ const physicsSnapshots = new Map<string, PhysicsBallSnapshot>();
 let rapierReady = false;
 let audioEngine: TinyImpactAudio;
 let deviceGravity: DeviceGravityController;
+let appViewportHeightFrame = 0;
+let stageSwipeStart: { x: number; y: number; pointerId: number } | null = null;
+let activeBallDialogEscapeHandler: (() => void) | null = null;
 
 const BALL_DIALOG_ROOT_ID = "ball-dialog-root";
-const BALL_TAP_MAX_MS = 520;
-const BALL_TAP_MOVE_PX = 10;
 type ActiveOverlay = "none" | "create" | "list" | "settings" | "calendar";
-type ExportSection = "ledger" | "appSettings" | "categories";
-type EmotionEchoStrength = "off" | "weak" | "medium" | "strong";
-type JsonImportSection = ExportSection;
-
-interface JsonImportReview {
-  fileName: string;
-  sections: JsonImportSection[];
-  ledger?: {
-    newItems: HappyBall[];
-    duplicates: HappyBall[];
-    conflicts: HappyBall[];
-    rejectedItemCount: number;
-    nameBookToAdd: NameBookEntry[];
-  };
-  appSettings?: AppSettings;
-  categories?: CategoryColorPreset[];
-  error?: string;
-}
+type DisplayMode = "day" | "week" | "month";
 
 const receiptTitleLabels = {
   self: "お預け状",
@@ -99,7 +104,47 @@ window.addEventListener("unhandledrejection", (event) => {
   showFatalError(event.reason);
 });
 
+window.addEventListener("keydown", handleDisplayNavigationKey);
+installAppViewportHeightSync();
 void boot();
+
+function installAppViewportHeightSync(): void {
+  syncAppViewportHeight();
+
+  const queueSettlingSync = () => {
+    queueAppViewportHeightSync();
+    window.setTimeout(queueAppViewportHeightSync, 80);
+    window.setTimeout(queueAppViewportHeightSync, 240);
+  };
+
+  window.visualViewport?.addEventListener("resize", queueSettlingSync, { passive: true });
+  window.visualViewport?.addEventListener("scroll", queueAppViewportHeightSync, { passive: true });
+  window.addEventListener("resize", queueSettlingSync, { passive: true });
+  window.addEventListener("orientationchange", queueSettlingSync, { passive: true });
+}
+
+function queueAppViewportHeightSync(): void {
+  if (appViewportHeightFrame !== 0) {
+    return;
+  }
+
+  appViewportHeightFrame = window.requestAnimationFrame(() => {
+    appViewportHeightFrame = 0;
+    syncAppViewportHeight();
+  });
+}
+
+function syncAppViewportHeight(): void {
+  const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+  if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) {
+    return;
+  }
+
+  document.documentElement.style.setProperty(
+    "--app-viewport-height",
+    `${Math.max(MIN_APP_VIEWPORT_HEIGHT, Math.round(viewportHeight))}px`,
+  );
+}
 
 async function boot(): Promise<void> {
   try {
@@ -107,6 +152,7 @@ async function boot(): Promise<void> {
     await RAPIER.init();
     appSettings = loadAppSettings();
     audioEngine = new TinyImpactAudio();
+    installAudioLifecycleHandlers();
     deviceGravity = new DeviceGravityController((gravity) => {
       physicsStage?.setGravityVector(gravity);
     });
@@ -116,6 +162,18 @@ async function boot(): Promise<void> {
   } catch (error) {
     showFatalError(error);
   }
+}
+
+function installAudioLifecycleHandlers(): void {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      audioEngine.suspend();
+    }
+  });
+
+  window.addEventListener("pagehide", () => {
+    audioEngine.close();
+  });
 }
 
 function render(): void {
@@ -134,19 +192,23 @@ function render(): void {
 
   appRoot.innerHTML = `
     <main class="app-shell ball-world-shell">
-      <section class="stage ${appSettings.showBallLabels ? "show-ball-labels" : ""}" aria-label="えもい玉">
+      <section class="stage ${appSettings.ballLabelMode !== "none" ? "show-ball-labels" : ""} label-mode-${appSettings.ballLabelMode}" aria-label="えもい玉">
         <div class="stage-topline">
           <div>
-            <h1 id="stage-title">${escapeHtml(selectedBall?.title || "最初の玉を置く")}</h1>
-            <p class="stage-filter">${selectedDateFilter ? `${escapeHtml(selectedDateFilter)} の玉` : "全ての玉"}</p>
+            <h1 id="stage-title">${escapeHtml(selectedBall ? createVisibilitySafeSummaryLabel(selectedBall) : "最初の玉を置く")}</h1>
+            <p class="stage-filter">${escapeHtml(renderDisplayRangeLabel())}</p>
           </div>
         </div>
         <div id="ball-field" class="ball-field" aria-label="触って転がせるえもい玉"></div>
         <div class="world-actions" aria-label="操作">
           <button type="button" data-open-panel="create" aria-label="玉を作る">＋</button>
           <button type="button" data-open-panel="calendar" aria-label="カレンダー">Cal</button>
-          <button type="button" data-open-panel="list" aria-label="保存された玉">玉</button>
-          <button type="button" id="label-toggle" class="${appSettings.showBallLabels ? "is-on" : ""}" aria-label="玉の文字表示">字</button>
+          <div class="display-mode-control" role="group" aria-label="表示期間">
+            ${renderDisplayModeButton("day", "日")}
+            ${renderDisplayModeButton("week", "週")}
+            ${renderDisplayModeButton("month", "月")}
+          </div>
+          <button type="button" id="label-toggle" class="${appSettings.ballLabelMode !== "none" ? "is-on" : ""}" aria-label="${renderBallLabelModeAriaLabel()}">${renderBallLabelModeButtonText()}</button>
           <button type="button" data-open-panel="settings" aria-label="設定">⚙</button>
         </div>
       </section>
@@ -162,7 +224,61 @@ function render(): void {
 }
 
 function getVisibleBalls(): HappyBall[] {
-  return selectedDateFilter ? ledger.balls.filter((ball) => ball.date === selectedDateFilter) : ledger.balls;
+  const range = getDisplayDateRange(displayMode, displayAnchorDate);
+  return ledger.balls.filter((ball) => ball.date >= range.start && ball.date <= range.end);
+}
+
+function renderDisplayModeButton(mode: DisplayMode, label: string): string {
+  return `
+    <button
+      class="${displayMode === mode ? "is-on" : ""}"
+      type="button"
+      data-display-mode="${mode}"
+      aria-label="${renderDisplayModeAriaLabel(mode)}"
+      aria-pressed="${displayMode === mode ? "true" : "false"}"
+    >${label}</button>
+  `;
+}
+
+function renderDisplayModeAriaLabel(mode: DisplayMode): string {
+  if (mode === "day") {
+    return "選択した日の玉";
+  }
+  if (mode === "week") {
+    return "選択した日を含む週の玉";
+  }
+  return "選択した日を含む月の玉";
+}
+
+function renderDisplayRangeLabel(): string {
+  const range = getDisplayDateRange(displayMode, displayAnchorDate);
+  if (displayMode === "day") {
+    return `${displayAnchorDate} の玉`;
+  }
+  if (displayMode === "week") {
+    return `${range.start} - ${range.end} の週`;
+  }
+  return `${displayAnchorDate.slice(0, 7)} の月`;
+}
+
+function renderBallLabelModeButtonText(): string {
+  if (appSettings.ballLabelMode === "date") {
+    return "日";
+  }
+  if (appSettings.ballLabelMode === "title") {
+    return "題";
+  }
+  return "無";
+}
+
+function renderBallLabelModeAriaLabel(): string {
+  if (appSettings.ballLabelMode === "date") {
+    return "玉の文字表示: 日付";
+  }
+  if (appSettings.ballLabelMode === "title") {
+    return "玉の文字表示: タイトル";
+  }
+  return "玉の文字表示: なし";
 }
 
 function renderActiveOverlay(): string {
@@ -175,9 +291,7 @@ function renderActiveOverlay(): string {
   }
 
   if (activeOverlay === "create") {
-    if (selectedDateFilter) {
-      draft = { ...draft, date: selectedDateFilter };
-    }
+    draft = { ...draft, date: displayAnchorDate };
     return renderPanelOverlay("玉を置く", renderCreateForm(), "create");
   }
 
@@ -410,7 +524,7 @@ function renderCreateForm(): string {
       </label>
 
       <label>
-        <span>できかた</span>
+        <span>作り方</span>
         <select name="issuerType">
           ${renderOptions(issuerLabels, draft.issuerType)}
         </select>
@@ -423,7 +537,7 @@ function renderCreateForm(): string {
 
       <div class="form-row two">
         <label>
-          <span>見せかた</span>
+          <span>見せる範囲</span>
           <select name="visibility">
             ${renderOptions(visibilityLabels, draft.visibility)}
           </select>
@@ -459,7 +573,7 @@ function renderCalendarOverlay(): string {
     const date = `${calendarMonth}-${String(day).padStart(2, "0")}`;
     const balls = ledger.balls.filter((ball) => ball.date === date);
     const total = countVisualBalls(balls);
-    const selectedClass = selectedDateFilter === date ? " is-selected" : "";
+    const selectedClass = displayAnchorDate === date ? " is-selected" : "";
     cells.push(`
       <button class="calendar-cell${selectedClass}" type="button" data-filter-date="${date}" aria-label="${date} ${total}玉">
         <span class="calendar-day">${day}</span>
@@ -481,9 +595,6 @@ function renderCalendarOverlay(): string {
       </div>
       <div class="calendar-grid">
         ${cells.join("")}
-      </div>
-      <div class="calendar-actions">
-        <button class="ghost-action" type="button" id="clear-date-filter">全ての玉</button>
       </div>
     </section>
   `;
@@ -515,12 +626,64 @@ function shiftCalendarMonth(delta: number): string {
   return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function getDisplayDateRange(mode: DisplayMode, anchorDate: string): { start: string; end: string } {
+  const date = parseIsoLocalDate(anchorDate);
+  if (mode === "day") {
+    return { start: anchorDate, end: anchorDate };
+  }
+
+  if (mode === "week") {
+    const start = new Date(date);
+    start.setDate(date.getDate() - date.getDay());
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    return { start: formatIsoLocalDate(start), end: formatIsoLocalDate(end) };
+  }
+
+  const start = new Date(date.getFullYear(), date.getMonth(), 1);
+  const end = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+  return { start: formatIsoLocalDate(start), end: formatIsoLocalDate(end) };
+}
+
+function shiftDisplayAnchor(delta: -1 | 1): void {
+  const current = parseIsoLocalDate(displayAnchorDate);
+  if (displayMode === "day") {
+    current.setDate(current.getDate() + delta);
+  } else if (displayMode === "week") {
+    current.setDate(current.getDate() + delta * 7);
+  } else {
+    const next = addMonthsClamped(current, delta);
+    current.setFullYear(next.getFullYear(), next.getMonth(), next.getDate());
+  }
+  displayAnchorDate = formatIsoLocalDate(current);
+  calendarMonth = displayAnchorDate.slice(0, 7);
+  draft = { ...draft, date: displayAnchorDate };
+}
+
+function parseIsoLocalDate(value: string): Date {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function formatIsoLocalDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function addMonthsClamped(date: Date, delta: -1 | 1): Date {
+  const targetYear = date.getFullYear();
+  const targetMonth = date.getMonth() + delta;
+  const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+  return new Date(targetYear, targetMonth, Math.min(date.getDate(), lastDay));
+}
+
 function renderBallDialog(ball: HappyBall): string {
   const keepers = ball.keepers.length > 0 ? ball.keepers.join(", ") : "未設定";
   const approvedBy = ball.approvedBy || "なし";
   const receiptTitle = receiptTitleLabels[ball.issuerType];
   const issueLabel = formatIssueLabel(ball);
+  const issuerCardHelper = formatIssuerCardHelper(ball);
   const receiptCreated = Boolean(ball.receiptCreatedAt);
+  const showIssuer = canShowIssuer(ball);
 
   return `
     <div class="ball-dialog-backdrop ball-detail-backdrop" data-dialog-backdrop>
@@ -535,20 +698,20 @@ function renderBallDialog(ball: HappyBall): string {
               <span class="ball-shade"></span>
               <span class="ball-highlight"></span>
             </span>
-            <span class="ball-label">${escapeHtml(ball.visual.label)}</span>
+            <span class="ball-label">${escapeHtml(createVisibilitySafeTitleLabel(ball))}</span>
           </div>
           <div class="dialog-title-block">
             <span>${escapeHtml(ball.date)}</span>
-            <h2 id="ball-dialog-title">${escapeHtml(ball.title)}</h2>
+            <h2 id="ball-dialog-title">${escapeHtml(createVisibilitySafeSummaryLabel(ball))}</h2>
           </div>
         </div>
         ${renderDialogDetail(ball)}
         <div class="detail-card-grid">
-          <article class="detail-info-card">
+          ${showIssuer ? `<article class="detail-info-card">
             <span>発行者</span>
             <strong>${escapeHtml(ball.issuedBy)}</strong>
-            <small>${escapeHtml(issueLabel)}</small>
-          </article>
+            ${issuerCardHelper ? `<small>${escapeHtml(issuerCardHelper)}</small>` : ""}
+          </article>` : ""}
           <article class="detail-info-card detail-feeling-card">
             <div>
               <span>カテゴリ</span>
@@ -574,9 +737,9 @@ function renderBallDialog(ball: HappyBall): string {
         </div>
         <div class="detail-folds">
           <details class="detail-fold">
-            <summary>見せ方・ID</summary>
+            <summary>見せる範囲・ID</summary>
             <dl class="dialog-meta compact">
-              ${renderDialogMetaRow("見せ方", visibilityLabels[ball.visibility])}
+              ${renderDialogMetaRow("見せる範囲", visibilityLabels[ball.visibility])}
               ${renderDialogMetaRow("玉ID", renderExpandableBallId(ball.id), "html")}
             </dl>
           </details>
@@ -586,7 +749,7 @@ function renderBallDialog(ball: HappyBall): string {
             <dl class="dialog-meta compact">
               ${renderDialogMetaRow("対象", ball.subject)}
               ${renderDialogMetaRow("日付", ball.date)}
-              ${renderDialogMetaRow("できかた", issueLabel)}
+              ${renderDialogMetaRow("作り方", issueLabel)}
               ${renderDialogMetaRow("玉数", `${ball.count}玉`)}
               ${renderDialogMetaRow("預かり", keepers)}
               ${renderDialogMetaRow("入力者", ball.enteredBy)}
@@ -638,6 +801,9 @@ function renderReceiptDialog(ball: HappyBall): string {
         <button class="dialog-close" type="button" data-dialog-close aria-label="閉じる">&times;</button>
         <div class="dialog-actions receipt-dialog-actions">
           <button class="ghost-action" type="button" data-dialog-back-to-ball-id="${escapeAttribute(ball.id)}">詳細へ戻る</button>
+          <button class="ghost-action" type="button" data-show-ball-qr-id="${escapeAttribute(ball.id)}">QR表示</button>
+          <button class="ghost-action" type="button" data-share-receipt-image-id="${escapeAttribute(ball.id)}">画像で送る</button>
+          <button class="ghost-action" type="button" data-download-receipt-image-id="${escapeAttribute(ball.id)}">画像保存</button>
           <button class="ghost-action" type="button" data-copy-ball-url-id="${escapeAttribute(ball.id)}">URLコピー</button>
           <button class="ghost-action" type="button" data-copy-ball-line-url-id="${escapeAttribute(ball.id)}">LINE用URL</button>
         </div>
@@ -645,6 +811,58 @@ function renderReceiptDialog(ball: HappyBall): string {
       </section>
     </div>
   `;
+}
+
+function renderReceiptQrDialog(ball: HappyBall): string {
+  const receiptTitle = receiptTitleLabels[ball.issuerType];
+  const packetUrl = createPacketImportUrl(ball, window.location.href);
+  let qrSvg: string;
+  try {
+    qrSvg = createQrSvg(packetUrl);
+  } catch {
+    qrSvg = `
+      <div class="receipt-qr-error">
+        <strong>QRを作れませんでした</strong>
+        <span>玉URLが長すぎます。URLコピーまたはLINE用URLを使ってください。</span>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="ball-dialog-backdrop" data-dialog-backdrop>
+      <section class="ball-dialog receipt-qr-dialog" role="dialog" aria-modal="true" aria-labelledby="receipt-qr-dialog-title">
+        <button class="dialog-close" type="button" data-dialog-close aria-label="閉じる">&times;</button>
+        <div class="dialog-actions receipt-dialog-actions">
+          <button class="ghost-action" type="button" data-dialog-receipt-ball-id="${escapeAttribute(ball.id)}">${escapeHtml(receiptTitle)}へ戻る</button>
+          <button class="ghost-action" type="button" data-copy-ball-url-id="${escapeAttribute(ball.id)}">URLコピー</button>
+        </div>
+        <div class="receipt-qr-panel">
+          <div class="receipt-qr-heading">
+            <span>えもい玉 ${escapeHtml(receiptTitle)}</span>
+            <h2 id="receipt-qr-dialog-title">QRで預ける</h2>
+          </div>
+          <div class="receipt-qr-frame">${qrSvg}</div>
+          <p class="receipt-qr-note">相手のスマホで読み取ると、届いた${escapeHtml(receiptTitle)}が開きます。</p>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderReceiptQrBlock(packetUrl: string, receiptTitle: string): string {
+  try {
+    return `
+      <div class="receipt-qr-frame">${createQrSvg(packetUrl)}</div>
+      <p class="receipt-qr-note">相手のスマホで読み取ると、届いた${escapeHtml(receiptTitle)}が開きます。</p>
+    `;
+  } catch {
+    return `
+      <div class="receipt-qr-error">
+        <strong>QRを作れませんでした</strong>
+        <span>玉URLが長すぎます。URLコピーまたはLINE用URLを使ってください。</span>
+      </div>
+    `;
+  }
 }
 
 function renderReceiptPaper(
@@ -656,6 +874,8 @@ function renderReceiptPaper(
   const receiptTitle = receiptTitleLabels[ball.issuerType];
   const receiptStamp = ball.issuerType === "proxy" ? "預" : "託";
   const keeperLabel = ball.issuerType === "proxy" ? "預かり者" : "預け先";
+  const showIssuer = canShowIssuer(ball);
+  const showTitle = canShowTitle(ball);
 
   return `
     <article class="receipt-paper" aria-label="えもい玉 ${escapeAttribute(receiptTitle)}">
@@ -674,23 +894,24 @@ function renderReceiptPaper(
             <span class="ball-shade"></span>
             <span class="ball-highlight"></span>
           </span>
-          <span class="ball-label">${escapeHtml(ball.visual.label)}</span>
+          <span class="ball-label">${escapeHtml(createVisibilitySafeTitleLabel(ball))}</span>
         </div>
         <div>
           <span>${escapeHtml(ball.date)}</span>
-          <strong>${escapeHtml(ball.title)}</strong>
+          <strong>${escapeHtml(createVisibilitySafeSummaryLabel(ball))}</strong>
         </div>
       </div>
       <dl class="receipt-info">
-        ${renderReceiptRow("発行者", ball.issuedBy)}
-        ${renderReceiptRow(keeperLabel, keepers)}
+        ${showIssuer ? renderReceiptRow("発行者", ball.issuedBy) : ""}
+        ${showIssuer ? renderReceiptRow(keeperLabel, keepers) : ""}
+        ${showTitle ? renderReceiptRow("タイトル", ball.title, "wide") : ""}
         ${renderReceiptFeelingRow(ball)}
         ${renderReceiptMemoRow(ball)}
       </dl>
       ${options.showUrl ? `
         <div class="receipt-url">
-          <span>URL packet</span>
-          <code>${escapeHtml(packetUrl)}</code>
+          <span>QRで開く</span>
+          ${renderReceiptQrBlock(packetUrl, receiptTitle)}
         </div>
       ` : ""}
     </article>
@@ -716,30 +937,10 @@ function renderReceiptFeelingRow(ball: HappyBall): string {
 
 function renderReceiptMemoRow(ball: HappyBall): string {
   const memo = ball.note.trim();
-  if (ball.visibility === "open") {
-    if (!memo && !appSettings.showMemoField) {
-      return "";
-    }
-
-    return renderReceiptRow("メモ", memo, "wide");
-  }
-
-  if (!appSettings.showMemoField) {
+  if (!canShowMemo(ball) || (!memo && !appSettings.showMemoField)) {
     return "";
   }
-
-  return `
-    <div class="receipt-info-wide ${memo ? "receipt-private-memo" : "receipt-empty-memo"}">
-      <dt>メモ</dt>
-      <dd aria-label="${memo ? "非公開メモがあります" : "空のメモ欄"}">
-        ${memo ? `
-          <span style="--memo-line: 68%"></span>
-          <span style="--memo-line: 42%"></span>
-          <span style="--memo-line: 56%"></span>
-        ` : ""}
-      </dd>
-    </div>
-  `;
+  return renderReceiptRow("メモ", memo, "wide");
 }
 
 function formatIssueLabel(ball: HappyBall): string {
@@ -752,6 +953,24 @@ function formatIssueLabel(ball: HappyBall): string {
     return `${issuer}さん発行（いっしょに）`;
   }
   return `${issuer}さん発行`;
+}
+
+function formatIssuerCardHelper(ball: HappyBall): string {
+  if (ball.issuerType === "proxy") {
+    return `${formatSentencePersonName(ball.enteredBy)}さんが代理作成`;
+  }
+  if (ball.issuerType === "assisted") {
+    return "いっしょに作成";
+  }
+  return "";
+}
+
+function formatSentencePersonName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return "代理者";
+  }
+  return trimmed.endsWith("さん") ? trimmed.slice(0, -2) : trimmed;
 }
 
 function formatExternalPersonName(name: string): string {
@@ -777,10 +996,8 @@ function renderBallEditDialog(ball: HappyBall): string {
       <section class="ball-dialog" role="dialog" aria-modal="true" aria-labelledby="ball-edit-title">
         <button class="dialog-close" type="button" data-dialog-close aria-label="閉じる">&times;</button>
         <div class="dialog-title-block">
-          <span>${escapeHtml(ball.date)}</span>
           <div class="edit-dialog-title-row">
             <h2 id="ball-edit-title">玉を編集</h2>
-            <button class="primary-action edit-save-top" form="ball-edit-form" type="submit">保存</button>
           </div>
         </div>
         <form id="ball-edit-form" class="edit-form" data-editing-ball-id="${escapeAttribute(ball.id)}">
@@ -799,13 +1016,12 @@ function renderBallEditDialog(ball: HappyBall): string {
             <span>だれの玉？</span>
             <div class="inline-field-stack">
               ${renderNamePresetSelect(ball.subject)}
-              <input name="subject" type="text" value="${escapeAttribute(ball.subject)}" />
-              <small class="form-hint">登録名選択または自由に入力</small>
+              <input name="subject" type="text" value="${escapeAttribute(ball.subject)}" placeholder="自由に入力" />
             </div>
           </label>
 
           <label class="inline-field">
-            <span>できかた</span>
+            <span>作り方</span>
             <select name="issuerType">
               ${renderOptions(issuerLabels, ball.issuerType)}
             </select>
@@ -817,14 +1033,17 @@ function renderBallEditDialog(ball: HappyBall): string {
           </label>
 
           <label class="inline-field">
-            <span>見せかた</span>
+            <span>見せる範囲</span>
             <select name="visibility">
               ${renderOptions(visibilityLabels, ball.visibility)}
             </select>
           </label>
 
           <details class="edit-category-fold">
-            <summary>カテゴリ</summary>
+            <summary>
+              <span>カテゴリ</span>
+              ${renderCurrentCategoryBadge(ball.category)}
+            </summary>
             ${renderCategoryPalette(ball.category)}
           </details>
 
@@ -878,7 +1097,7 @@ function showBallDialog(ballId: string): void {
       button.textContent = expanded ? "省略" : "全表示";
     });
   });
-  document.addEventListener("keydown", closeBallDialogOnEscape);
+  installBallDialogEscapeHandler(closeBallDialog);
   closeButton?.focus({ preventScroll: true });
 }
 
@@ -905,13 +1124,54 @@ function showReceiptDialog(ballId: string): void {
   root.querySelector<HTMLButtonElement>("[data-dialog-back-to-ball-id]")?.addEventListener("click", () => {
     showBallDialog(ballId);
   });
+  root.querySelector<HTMLButtonElement>("[data-show-ball-qr-id]")?.addEventListener("click", () => {
+    showReceiptQrDialog(ballId);
+  });
+  root.querySelector<HTMLButtonElement>("[data-share-receipt-image-id]")?.addEventListener("click", () => {
+    void shareReceiptImage(ballId);
+  });
+  root.querySelector<HTMLButtonElement>("[data-download-receipt-image-id]")?.addEventListener("click", () => {
+    void downloadReceiptImage(ballId);
+  });
   root.querySelector<HTMLButtonElement>("[data-copy-ball-url-id]")?.addEventListener("click", () => {
     void copyBallUrl(ballId);
   });
   root.querySelector<HTMLButtonElement>("[data-copy-ball-line-url-id]")?.addEventListener("click", () => {
     void copyBallLineUrl(ballId);
   });
-  document.addEventListener("keydown", closeBallDialogOnEscape);
+  installBallDialogEscapeHandler(closeBallDialog);
+  closeButton?.focus({ preventScroll: true });
+}
+
+function showReceiptQrDialog(ballId: string): void {
+  ledger = markReceiptCreated(ledger, ballId);
+  const ball = ledger.balls.find((item) => item.id === ballId);
+  if (!ball) {
+    return;
+  }
+  updateReceiptCreatedIndicators(ball);
+
+  closeBallDialog();
+  const root = document.createElement("div");
+  root.id = BALL_DIALOG_ROOT_ID;
+  root.innerHTML = renderReceiptQrDialog(ball);
+  document.body.appendChild(root);
+
+  const backdrop = root.querySelector<HTMLElement>("[data-dialog-backdrop]");
+  const closeButton = root.querySelector<HTMLButtonElement>("[data-dialog-close]");
+  backdrop?.addEventListener("click", (event) => {
+    if (event.target === backdrop) {
+      closeBallDialog();
+    }
+  });
+  closeButton?.addEventListener("click", closeBallDialog);
+  root.querySelector<HTMLButtonElement>("[data-dialog-receipt-ball-id]")?.addEventListener("click", () => {
+    showReceiptDialog(ballId);
+  });
+  root.querySelector<HTMLButtonElement>("[data-copy-ball-url-id]")?.addEventListener("click", () => {
+    void copyBallUrl(ballId);
+  });
+  installBallDialogEscapeHandler(closeBallDialog);
   closeButton?.focus({ preventScroll: true });
 }
 
@@ -930,37 +1190,120 @@ function showBallEditDialog(ballId: string): void {
   const backdrop = root.querySelector<HTMLElement>("[data-dialog-backdrop]");
   const closeButtons = root.querySelectorAll<HTMLButtonElement>("[data-dialog-close]");
   const form = root.querySelector<HTMLFormElement>("#ball-edit-form");
+  const requestClose = () => requestCloseBallEditDialog(root, form, ball);
   backdrop?.addEventListener("click", (event) => {
     if (event.target === backdrop) {
-      closeBallDialog();
+      requestClose();
     }
   });
-  closeButtons.forEach((button) => button.addEventListener("click", closeBallDialog));
+  closeButtons.forEach((button) => button.addEventListener("click", requestClose));
   form?.addEventListener("submit", (event) => {
     event.preventDefault();
-    const editingId = form.dataset.editingBallId;
-    if (!editingId) {
-      return;
-    }
-    ledger = updateBall(ledger, editingId, readDraft(form));
-    selectedBallId = editingId;
-    render();
-    showBallDialog(editingId);
+    requestSaveBallEditDialog(root, form, ball);
   });
   bindNamePresetEvents(root);
-  document.addEventListener("keydown", closeBallDialogOnEscape);
-  form?.querySelector<HTMLInputElement>("input[name='title']")?.focus({ preventScroll: true });
+  installBallDialogEscapeHandler(requestClose);
+  root.querySelector<HTMLButtonElement>("[data-dialog-close]")?.focus({ preventScroll: true });
 }
 
 function closeBallDialog(): void {
   document.querySelector(`#${BALL_DIALOG_ROOT_ID}`)?.remove();
   document.removeEventListener("keydown", closeBallDialogOnEscape);
+  activeBallDialogEscapeHandler = null;
 }
 
 function closeBallDialogOnEscape(event: KeyboardEvent): void {
   if (event.key === "Escape") {
-    closeBallDialog();
+    activeBallDialogEscapeHandler?.();
   }
+}
+
+function installBallDialogEscapeHandler(handler: () => void): void {
+  document.removeEventListener("keydown", closeBallDialogOnEscape);
+  activeBallDialogEscapeHandler = handler;
+  document.addEventListener("keydown", closeBallDialogOnEscape);
+}
+
+function saveBallEditForm(form: HTMLFormElement | null, saveMode: BallSaveMode): void {
+  const editingId = form?.dataset.editingBallId;
+  if (!form || !editingId) {
+    return;
+  }
+  ledger = updateBall(ledger, editingId, readDraft(form), saveMode);
+  selectedBallId = editingId;
+  render();
+  showBallDialog(editingId);
+}
+
+function requestSaveBallEditDialog(root: HTMLElement, form: HTMLFormElement | null, originalBall: HappyBall): void {
+  if (!form) {
+    return;
+  }
+  if (!hasEditDraftChanged(originalBall, readDraft(form))) {
+    closeBallDialog();
+    showBallDialog(originalBall.id);
+    return;
+  }
+
+  showEditSaveModeConfirm(root, form, "save");
+}
+
+function requestCloseBallEditDialog(root: HTMLElement, form: HTMLFormElement | null, originalBall: HappyBall): void {
+  if (!form || !hasEditDraftChanged(originalBall, readDraft(form))) {
+    closeBallDialog();
+    return;
+  }
+
+  showEditSaveModeConfirm(root, form, "close");
+}
+
+function showEditSaveModeConfirm(root: HTMLElement, form: HTMLFormElement, reason: "save" | "close"): void {
+  const existing = root.querySelector<HTMLDivElement>("[data-edit-unsaved-confirm]");
+  if (existing) {
+    existing.remove();
+  }
+
+  const confirmRoot = document.createElement("div");
+  confirmRoot.className = "edit-unsaved-backdrop";
+  confirmRoot.dataset.editUnsavedConfirm = "true";
+  const isClose = reason === "close";
+  confirmRoot.innerHTML = `
+    <section class="edit-unsaved-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-unsaved-title">
+      <h3 id="edit-unsaved-title">${isClose ? "保存しますか？" : "保存方法を選んでください"}</h3>
+      <p>${isClose ? "変更した内容があります。" : "前の状態を余韻に残すか、訂正として保存できます。"}</p>
+      <div class="edit-unsaved-actions">
+        <button class="primary-action" type="button" data-edit-save-echo>${isClose ? "余韻として保存して閉じる" : "余韻として保存"}</button>
+        <button class="ghost-action" type="button" data-edit-save-correction>${isClose ? "訂正として保存して閉じる" : "訂正として保存"}</button>
+        <button class="ghost-action" type="button" data-edit-continue>編集を続ける</button>
+        ${isClose ? `<button class="ghost-action danger-action" type="button" data-edit-discard-close>保存せず閉じる</button>` : ""}
+      </div>
+    </section>
+  `;
+  root.appendChild(confirmRoot);
+  confirmRoot.querySelector<HTMLButtonElement>("[data-edit-save-echo]")?.addEventListener("click", () => {
+    saveBallEditForm(form, "withEcho");
+  });
+  confirmRoot.querySelector<HTMLButtonElement>("[data-edit-save-correction]")?.addEventListener("click", () => {
+    saveBallEditForm(form, "correction");
+  });
+  confirmRoot.querySelector<HTMLButtonElement>("[data-edit-continue]")?.addEventListener("click", () => {
+    confirmRoot.remove();
+  });
+  confirmRoot.querySelector<HTMLButtonElement>("[data-edit-discard-close]")?.addEventListener("click", closeBallDialog);
+  confirmRoot.querySelector<HTMLButtonElement>("[data-edit-save-echo]")?.focus({ preventScroll: true });
+}
+
+function hasEditDraftChanged(ball: HappyBall, next: BallDraft): boolean {
+  return (
+    next.date !== ball.date ||
+    next.subject.trim() !== ball.subject ||
+    next.issuerType !== ball.issuerType ||
+    Number(next.count) !== ball.count ||
+    next.title.trim() !== ball.title ||
+    next.category.trim() !== ball.category ||
+    next.note.trim() !== ball.note ||
+    next.visibility !== ball.visibility
+  );
 }
 
 function renderToolsPanel(): string {
@@ -997,7 +1340,7 @@ function renderToolsPanel(): string {
           <input id="setting-memo-field" type="checkbox" ${appSettings.showMemoField ? "checked" : ""} />
           <span>メモ欄表示</span>
         </label>
-        <p class="settings-copy">メモ本文を見せない玉でも、空欄や伏せたメモ欄として存在感だけを表示します。</p>
+        <p class="settings-copy">メモ本文を見せない玉でも、欄だけを伏せて表示します。メモも表示の玉では空欄も表示します。</p>
         <label class="select-control">
           <span>余韻光芒</span>
           <select id="setting-echo-strength">
@@ -1075,6 +1418,16 @@ function renderToolsPanel(): string {
         <pre>${escapeHtml(serializeLedger(ledger))}</pre>
       </details>
 
+      <details class="settings-group ball-management-panel">
+        <summary class="panel-title">
+          <h2>玉管理</h2>
+        </summary>
+        <p class="settings-copy">保存された玉の選択、編集、削除、共有URLコピーを行います。</p>
+        <div class="settings-group-actions">
+          <button class="ghost-action" type="button" data-open-panel="list">保存された玉を開く</button>
+        </div>
+      </details>
+
       <details class="settings-group danger-zone">
         <summary class="panel-title">
           <h2>データ管理</h2>
@@ -1144,18 +1497,61 @@ function mountRapierStage(balls: HappyBall[]): void {
 function expandVisualBalls(balls: HappyBall[]): VisualBallSource[] {
   return balls.flatMap((ball) => {
     const count = Math.max(1, Math.min(ball.count, 12));
-    return Array.from({ length: count }, (_, index) => ({
-      id: `${ball.id}_${index}`,
-      ballId: ball.id,
-      hue: ball.visual.hue,
-      saturation: ball.visual.saturation,
-      lightness: ball.visual.lightness,
-      echo: shouldShowEmotionEcho(ball) ? ball.emotionEcho?.visual ?? null : null,
-      snapshot: physicsSnapshots.get(`${ball.id}_${index}`) ?? null,
-      label: count > 1 ? `${ball.visual.label}${index + 1}` : ball.visual.label,
-      title: ball.title,
-    }));
+    return Array.from({ length: count }, (_, index) => {
+      const label = createBallDisplayLabel(ball, appSettings.ballLabelMode);
+      return {
+        id: `${ball.id}_${index}`,
+        ballId: ball.id,
+        hue: ball.visual.hue,
+        saturation: ball.visual.saturation,
+        lightness: ball.visual.lightness,
+        echo: shouldShowEmotionEcho(ball) ? ball.emotionEcho?.visual ?? null : null,
+        snapshot: physicsSnapshots.get(`${ball.id}_${index}`) ?? null,
+        label,
+        labelClass: createBallLabelClass(label),
+        title: ball.title,
+      };
+    });
   });
+}
+
+function createBallDisplayLabel(ball: HappyBall, mode: BallLabelMode): string {
+  if (mode === "date") {
+    return formatBallDateLabel(ball.date);
+  }
+  if (mode === "title") {
+    return createVisibilitySafeTitleLabel(ball);
+  }
+  return "";
+}
+
+function createVisibilitySafeTitleLabel(ball: HappyBall): string {
+  if (ball.visibility === "category") {
+    return Array.from(ball.category.trim() || "玉").slice(0, 16).join("");
+  }
+  if (ball.visibility === "issuer") {
+    return Array.from(ball.issuedBy.trim() || ball.subject.trim() || "発行者").slice(0, 16).join("");
+  }
+  return Array.from(ball.title.trim() || ball.visual.label).slice(0, 32).join("");
+}
+
+function createBallLabelClass(label: string): string {
+  const length = Array.from(label).length;
+  if (length <= 4) {
+    return "label-short";
+  }
+  if (length <= 8) {
+    return "label-medium";
+  }
+  if (length <= 16) {
+    return "label-long";
+  }
+  return "label-xlong";
+}
+
+function formatBallDateLabel(date: string): string {
+  const [, month, day] = date.split("-");
+  return month && day ? `${Number(month)}/${Number(day)}` : date;
 }
 
 function countVisualBalls(balls: HappyBall[]): number {
@@ -1173,41 +1569,48 @@ function updateSelectedSummary(): void {
   const selectedBall = getVisibleBalls().find((ball) => ball.id === selectedBallId) ?? null;
   const title = document.querySelector<HTMLElement>("#stage-title");
   if (title) {
-    title.textContent = selectedBall?.title || "最初の玉を置く";
+    title.textContent = selectedBall ? createVisibilitySafeSummaryLabel(selectedBall) : "最初の玉を置く";
   }
-}
-
-function getVisibleDetail(ball: HappyBall): string {
-  if (ball.visibility === "hidden") {
-    return "内容は伏せて預かっています。";
-  }
-
-  if (ball.visibility === "category") {
-    return `${ball.category} の玉`;
-  }
-
-  return ball.note ? `${ball.title} - ${ball.note}` : ball.title;
 }
 
 function renderDialogDetail(ball: HappyBall): string {
+  return renderMemoSurface(getMemoSurfaceMode(ball.visibility, ball.note, appSettings.showMemoField), ball.note);
+}
+
+function createVisibilitySafeSummaryLabel(ball: HappyBall): string {
   if (ball.visibility === "category") {
-    return appSettings.showMemoField ? renderPrivateMemoSurface(ball.note) : "";
+    return ball.category || "玉";
   }
-
-  if (ball.visibility === "open") {
-    return renderVisibleMemoSurface(ball.note);
+  if (ball.visibility === "issuer") {
+    return ball.issuedBy || ball.subject || "発行者";
   }
+  return ball.title || ball.visual.label || ball.category || "玉";
+}
 
-  const notice = `<p class="dialog-detail">${escapeHtml(getVisibleDetail(ball))}</p>`;
-  return appSettings.showMemoField ? `${notice}${renderPrivateMemoSurface(ball.note)}` : notice;
+function canShowIssuer(ball: HappyBall): boolean {
+  return ball.visibility === "issuer" || ball.visibility === "title" || ball.visibility === "open";
+}
+
+function canShowTitle(ball: HappyBall): boolean {
+  return ball.visibility === "title" || ball.visibility === "open";
+}
+
+function canShowMemo(ball: HappyBall): boolean {
+  return canShowMemoText(ball.visibility);
+}
+
+function renderMemoSurface(mode: MemoSurfaceMode, note: string): string {
+  if (mode === "none") {
+    return "";
+  }
+  if (mode === "visible" || mode === "visible-empty") {
+    return renderVisibleMemoSurface(note);
+  }
+  return renderPrivateMemoSurface(mode);
 }
 
 function renderVisibleMemoSurface(note: string): string {
   const memo = note.trim();
-  if (!memo && !appSettings.showMemoField) {
-    return "";
-  }
-
   return `
     <section class="dialog-memo ${memo ? "" : "is-empty"}" aria-label="メモ">
       <span>メモ</span>
@@ -1216,9 +1619,8 @@ function renderVisibleMemoSurface(note: string): string {
   `;
 }
 
-function renderPrivateMemoSurface(note: string): string {
-  const hasMemo = note.trim().length > 0;
-  const body = hasMemo
+function renderPrivateMemoSurface(mode: Extract<MemoSurfaceMode, "private-obscured" | "private-empty">): string {
+  const body = mode === "private-obscured"
     ? `
       <p class="memo-obscured" aria-label="非公開メモがあります">
         <span style="--memo-line: 68%"></span>
@@ -1229,7 +1631,7 @@ function renderPrivateMemoSurface(note: string): string {
     : `<p aria-label="メモは未入力です"></p>`;
 
   return `
-    <section class="dialog-memo ${hasMemo ? "is-private" : "is-empty"}" aria-label="メモ欄">
+    <section class="dialog-memo ${mode === "private-obscured" ? "is-private" : "is-empty"}" aria-label="メモ欄">
       <span>メモ</span>
       ${body}
     </section>
@@ -1244,9 +1646,21 @@ function bindEvents(): void {
         return;
       }
       if (panel === "calendar") {
-        calendarMonth = (selectedDateFilter ?? draft.date).slice(0, 7);
+        calendarMonth = displayAnchorDate.slice(0, 7);
       }
       activeOverlay = panel;
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>("[data-display-mode]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const mode = readDisplayMode(button.dataset.displayMode);
+      if (!mode) {
+        return;
+      }
+      displayMode = mode;
+      draft = { ...draft, date: displayAnchorDate };
       render();
     });
   });
@@ -1263,7 +1677,7 @@ function bindEvents(): void {
   });
 
   document.querySelector("#label-toggle")?.addEventListener("click", () => {
-    updateAppSettings({ showBallLabels: !appSettings.showBallLabels });
+    updateAppSettings({ ballLabelMode: nextBallLabelMode(appSettings.ballLabelMode) });
     render();
   });
 
@@ -1276,21 +1690,17 @@ function bindEvents(): void {
 
   document.querySelectorAll<HTMLButtonElement>("[data-filter-date]").forEach((button) => {
     button.addEventListener("click", () => {
-      selectedDateFilter = button.dataset.filterDate ?? null;
-      if (selectedDateFilter) {
-        draft = { ...draft, date: selectedDateFilter };
+      displayAnchorDate = button.dataset.filterDate ?? displayAnchorDate;
+      displayMode = "day";
+      if (displayAnchorDate) {
+        draft = { ...draft, date: displayAnchorDate };
       }
       activeOverlay = "none";
       render();
     });
   });
 
-  document.querySelector("#clear-date-filter")?.addEventListener("click", () => {
-    selectedDateFilter = null;
-    draft = { ...draft, date: todayIsoDate() };
-    activeOverlay = "none";
-    render();
-  });
+  bindDisplaySwipeEvents();
 
   const form = document.querySelector<HTMLFormElement>("#ball-form");
   form?.addEventListener("submit", (event) => {
@@ -1299,7 +1709,8 @@ function bindEvents(): void {
     draft = readDraft(form);
     ledger = addBall(ledger, draft);
     selectedBallId = ledger.balls[0]?.id ?? null;
-    selectedDateFilter = null;
+    displayAnchorDate = draft.date;
+    displayMode = "day";
     activeOverlay = "none";
     draft = { ...createDefaultDraft(getPrimarySelfName(ledger)), subject: draft.subject, issuerType: draft.issuerType };
     render();
@@ -1408,12 +1819,6 @@ function bindSummaryActionEvents(): void {
   });
 }
 
-const exportSectionSlugs: Record<ExportSection, string> = {
-  ledger: "ledger",
-  appSettings: "app-settings",
-  categories: "categories",
-};
-
 function exportSelectedJson(): void {
   const sections = Array.from(document.querySelectorAll<HTMLInputElement>("input[name='export-section']:checked"))
     .map((input) => input.value)
@@ -1424,43 +1829,8 @@ function exportSelectedJson(): void {
     return;
   }
 
-  const payload = createExportPayload(sections);
+  const payload = createExportPayload(sections, { ledger, appSettings, categories: editableCategories });
   downloadJsonFile(payload, createExportFileName(sections));
-}
-
-function isExportSection(value: string): value is ExportSection {
-  return value === "ledger" || value === "appSettings" || value === "categories";
-}
-
-function createExportPayload(sections: ExportSection[]): Record<string, unknown> {
-  const payload: Record<string, unknown> = {
-    v: 1,
-    type: "happy-ball-export",
-    exportedAt: new Date().toISOString(),
-    sections,
-  };
-
-  if (sections.includes("ledger")) {
-    payload.ledger = ledger;
-  }
-  if (sections.includes("appSettings")) {
-    payload.appSettings = appSettings;
-  }
-  if (sections.includes("categories")) {
-    payload.categories = editableCategories;
-  }
-
-  return payload;
-}
-
-function createExportFileName(sections: ExportSection[]): string {
-  const selected = sections.map((section) => exportSectionSlugs[section]).join("-");
-  const stamp = new Date()
-    .toISOString()
-    .replace(/[-:]/g, "")
-    .replace(/\.\d{3}Z$/, "")
-    .replace("T", "-");
-  return `emoi-dama-export-${selected}-${stamp}.json`;
 }
 
 function downloadJsonFile(payload: unknown, fileName: string): void {
@@ -1484,7 +1854,7 @@ async function handleJsonImportFile(input: HTMLInputElement): Promise<void> {
 
   try {
     const parsed = JSON.parse(await file.text()) as unknown;
-    pendingJsonImport = reviewJsonImport(parsed, file.name);
+    pendingJsonImport = reviewJsonImport(parsed, file.name, ledger);
   } catch {
     pendingJsonImport = {
       fileName: file.name,
@@ -1505,119 +1875,6 @@ function bindJsonImportEvents(): void {
   document.querySelector("#confirm-json-import")?.addEventListener("click", () => {
     applyPendingJsonImport();
   });
-}
-
-function reviewJsonImport(value: unknown, fileName: string): JsonImportReview {
-  if (!isPlainObject(value)) {
-    return { fileName, sections: [], error: "対応していないJSON形式です。" };
-  }
-
-  const exportSections = readExportSections(value.sections);
-  const isExportPackage = value.v === 1 && value.type === "happy-ball-export";
-  const ledgerSource = isExportPackage ? value.ledger : value;
-  const settingsSource = isExportPackage ? value.appSettings : value;
-  const categoriesSource = isExportPackage ? value.categories : value;
-  const review: JsonImportReview = {
-    fileName,
-    sections: [],
-  };
-
-  const ledgerReview = reviewLedgerImport(ledgerSource);
-  if (ledgerReview && (isExportPackage ? exportSections.includes("ledger") : true)) {
-    review.sections.push("ledger");
-    review.ledger = ledgerReview;
-  }
-
-  if ((isExportPackage ? exportSections.includes("appSettings") && isPlainObject(settingsSource) : looksLikeAppSettings(settingsSource))) {
-    review.sections.push("appSettings");
-    review.appSettings = normalizeAppSettings(settingsSource);
-  }
-
-  const categoryReview = reviewCategoryImport(categoriesSource);
-  if (categoryReview && (isExportPackage ? exportSections.includes("categories") : true)) {
-    review.sections.push("categories");
-    review.categories = categoryReview;
-  }
-
-  if (!review.ledger && !review.appSettings && !review.categories) {
-    return { fileName, sections: [], error: "読み込める台帳データ、アプリ設定、カテゴリ設定が見つかりませんでした。" };
-  }
-
-  return review;
-}
-
-function readExportSections(value: unknown): ExportSection[] {
-  return Array.isArray(value) ? value.filter((item): item is ExportSection => typeof item === "string" && isExportSection(item)) : [];
-}
-
-function reviewLedgerImport(value: unknown): JsonImportReview["ledger"] | null {
-  if (!isPlainObject(value) || !Array.isArray(value.balls)) {
-    return null;
-  }
-
-  const balls = value.balls.map(normalizePacketBall).filter((ball): ball is HappyBall => Boolean(ball));
-  const packet = {
-    v: 1,
-    type: PACKET_TYPE,
-    mode: "append",
-    exportedAt: new Date().toISOString(),
-    items: balls,
-  } as const;
-  const ballReview = reviewPacketImport(packet, ledger.balls);
-  return {
-    ...ballReview,
-    rejectedItemCount: value.balls.length - balls.length,
-    nameBookToAdd: collectImportNameBookAdditions(value.ownerProfile),
-  };
-}
-
-function collectImportNameBookAdditions(ownerProfile: unknown): NameBookEntry[] {
-  if (!isPlainObject(ownerProfile) || !Array.isArray(ownerProfile.nameBook)) {
-    return [];
-  }
-
-  const existing = new Set(ledger.ownerProfile.nameBook.map((entry) => entry.name));
-  const additions: NameBookEntry[] = [];
-  for (const item of ownerProfile.nameBook) {
-    if (ledger.ownerProfile.nameBook.length + additions.length >= MAX_NAME_BOOK_ENTRIES) {
-      break;
-    }
-    if (!isPlainObject(item)) {
-      continue;
-    }
-    const name = typeof item.name === "string" ? item.name.trim() : "";
-    const role = item.role === "proxy" ? "proxy" : item.role === "self" ? "self" : null;
-    if (!name || !role || existing.has(name)) {
-      continue;
-    }
-    additions.push({
-      id: typeof item.id === "string" && item.id.trim() ? item.id.trim() : `imported-${additions.length + 1}`,
-      name,
-      role,
-    });
-    existing.add(name);
-  }
-  return additions;
-}
-
-function looksLikeAppSettings(value: unknown): boolean {
-  if (!isPlainObject(value)) {
-    return false;
-  }
-  return [
-    "wallRestitution",
-    "contactRestitution",
-    "linearDamping",
-    "gravityEnabled",
-    "soundEnabled",
-    "showBallLabels",
-    "showMemoField",
-    "emotionEchoStrength",
-  ].some((key) => key in value);
-}
-
-function reviewCategoryImport(value: unknown): CategoryColorPreset[] | null {
-  return Array.isArray(value) ? normalizeCategoryColorPresets(value) : null;
 }
 
 function applyPendingJsonImport(): void {
@@ -1658,8 +1915,370 @@ function applyPendingJsonImport(): void {
   render();
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+async function shareReceiptImage(ballId: string): Promise<void> {
+  const prepared = prepareReceiptImageBall(ballId);
+  if (!prepared) {
+    return;
+  }
+
+  const { ball } = prepared;
+  const fileName = createReceiptImageFileName(ball);
+  const blob = await createReceiptImageBlob(ball);
+  const file = new File([blob], fileName, { type: "image/png" });
+
+  try {
+    if (!navigator.share || !navigator.canShare?.({ files: [file] })) {
+      throw new Error("File sharing is unavailable.");
+    }
+    await navigator.share({
+      files: [file],
+      title: `えもい玉 ${receiptTitleLabels[ball.issuerType]}`,
+      text: `${receiptTitleLabels[ball.issuerType]}です。`,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      return;
+    }
+    downloadBlob(blob, fileName);
+    alert("この端末では直接共有できなかったため、画像として保存しました。LINEで画像添付してください。");
+  }
+}
+
+async function downloadReceiptImage(ballId: string): Promise<void> {
+  const prepared = prepareReceiptImageBall(ballId);
+  if (!prepared) {
+    return;
+  }
+
+  const blob = await createReceiptImageBlob(prepared.ball);
+  downloadBlob(blob, createReceiptImageFileName(prepared.ball));
+}
+
+function prepareReceiptImageBall(ballId: string): { ball: HappyBall } | null {
+  ledger = markReceiptCreated(ledger, ballId);
+  const ball = ledger.balls.find((item) => item.id === ballId);
+  if (!ball) {
+    return null;
+  }
+  updateReceiptCreatedIndicators(ball);
+  return { ball };
+}
+
+function downloadBlob(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function createReceiptImageFileName(ball: HappyBall): string {
+  const title = (ball.title || ball.category || "emoi-dama")
+    .replace(/[\\/:*?"<>|]/g, "")
+    .trim()
+    .slice(0, 32) || "emoi-dama";
+  return `emoi-dama-${ball.date}-${receiptTitleLabels[ball.issuerType]}-${title}.png`;
+}
+
+async function createReceiptImageBlob(ball: HappyBall): Promise<Blob> {
+  const width = 1080;
+  const height = 1800;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Canvas is unavailable.");
+  }
+
+  drawReceiptImage(context, ball, width, height);
+
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((result) => {
+      if (result) {
+        resolve(result);
+      } else {
+        reject(new Error("Receipt image could not be created."));
+      }
+    }, "image/png");
+  });
+  return blob;
+}
+
+function drawReceiptImage(context: CanvasRenderingContext2D, ball: HappyBall, width: number, height: number): void {
+  const receiptTitle = receiptTitleLabels[ball.issuerType];
+  const stamp = ball.issuerType === "proxy" ? "預" : "託";
+  const packetUrl = createPacketImportUrl(ball, window.location.href);
+  const margin = 72;
+  const contentWidth = width - margin * 2;
+  let y = 86;
+
+  context.fillStyle = "#f4e6c9";
+  context.fillRect(0, 0, width, height);
+  context.fillStyle = "rgba(255, 255, 255, 0.32)";
+  context.fillRect(0, 0, width, 360);
+  context.strokeStyle = "rgba(96, 63, 23, 0.2)";
+  context.lineWidth = 3;
+  drawRoundedRect(context, 38, 38, width - 76, height - 76, 18);
+  context.stroke();
+
+  context.fillStyle = "#6b5638";
+  context.font = "900 28px sans-serif";
+  context.fillText("emoi dama app", margin, y);
+  y += 76;
+
+  context.fillStyle = "#2c2418";
+  context.font = "900 62px 'Yu Mincho', 'Hiragino Mincho ProN', serif";
+  context.fillText("えもい玉", margin, y);
+  y += 72;
+  context.fillText(receiptTitle, margin, y);
+
+  drawReceiptStamp(context, width - margin - 92, 86, 92, stamp);
+
+  y += 82;
+  drawReceiptHero(context, ball, margin, y, contentWidth);
+  y += 174;
+
+  const rows = createReceiptImageRows(ball);
+  y = drawReceiptRows(context, rows, margin, y, contentWidth);
+  y += 34;
+
+  context.fillStyle = "#6b5638";
+  context.font = "900 28px sans-serif";
+  context.textAlign = "center";
+  context.fillText("QRで開く", width / 2, y);
+  y += 28;
+
+  const qr = createQrCode(packetUrl);
+  drawQrImage(context, qr, width / 2 - 180, y, 360);
+  y += 392;
+
+  context.fillStyle = "#5e4a2f";
+  context.font = "900 28px sans-serif";
+  drawCenteredWrappedText(context, `相手のスマホで読み取ると、届いた${receiptTitle}が開きます。`, width / 2, y, contentWidth, 36);
+  context.textAlign = "left";
+}
+
+function drawReceiptStamp(context: CanvasRenderingContext2D, x: number, y: number, size: number, text: string): void {
+  context.save();
+  context.translate(x + size / 2, y + size / 2);
+  context.rotate(-0.16);
+  context.strokeStyle = "rgba(129, 36, 30, 0.62)";
+  context.lineWidth = 5;
+  context.beginPath();
+  context.arc(0, 0, size / 2, 0, Math.PI * 2);
+  context.stroke();
+  context.fillStyle = "rgba(129, 36, 30, 0.72)";
+  context.font = "900 46px 'Yu Mincho', 'Hiragino Mincho ProN', serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(text, 0, 3);
+  context.restore();
+}
+
+function drawReceiptHero(context: CanvasRenderingContext2D, ball: HappyBall, x: number, y: number, width: number): void {
+  context.fillStyle = "rgba(255, 250, 237, 0.68)";
+  context.strokeStyle = "rgba(96, 63, 23, 0.18)";
+  context.lineWidth = 2;
+  drawRoundedRect(context, x, y, width, 132, 16);
+  context.fill();
+  context.stroke();
+
+  drawReceiptBall(context, ball, x + 76, y + 66, 84);
+  context.fillStyle = "#6b5638";
+  context.font = "900 28px sans-serif";
+  context.fillText(ball.date, x + 154, y + 48);
+  context.fillStyle = "#2c2418";
+  context.font = "900 40px sans-serif";
+  drawWrappedText(context, createVisibilitySafeSummaryLabel(ball), x + 154, y + 92, width - 190, 45, 2);
+}
+
+function drawReceiptBall(context: CanvasRenderingContext2D, ball: HappyBall, cx: number, cy: number, size: number): void {
+  const radius = size / 2;
+  const gradient = context.createRadialGradient(cx - radius * 0.34, cy - radius * 0.38, 6, cx, cy, radius);
+  gradient.addColorStop(0, "#fff8dd");
+  gradient.addColorStop(0.28, `hsl(${ball.visual.hue} ${ball.visual.saturation}% ${Math.min(ball.visual.lightness + 12, 86)}%)`);
+  gradient.addColorStop(1, `hsl(${ball.visual.hue} ${ball.visual.saturation}% ${Math.max(ball.visual.lightness - 14, 18)}%)`);
+  context.fillStyle = gradient;
+  context.beginPath();
+  context.arc(cx, cy, radius, 0, Math.PI * 2);
+  context.fill();
+}
+
+function createReceiptImageRows(ball: HappyBall): Array<{ label: string; value: string; wide?: boolean }> {
+  const keeperLabel = ball.issuerType === "proxy" ? "預かり者" : "預け先";
+  const keepers = ball.keepers.length > 0 ? ball.keepers.join(", ") : "未設定";
+  const rows: Array<{ label: string; value: string; wide?: boolean }> = [];
+  if (canShowIssuer(ball)) {
+    rows.push({ label: "発行者", value: ball.issuedBy });
+    rows.push({ label: keeperLabel, value: keepers });
+  }
+  if (canShowTitle(ball)) {
+    rows.push({ label: "タイトル", value: ball.title, wide: true });
+  }
+  rows.push({ label: "カテゴリ／余韻", value: `${ball.category}／${ball.emotionEcho?.category ?? "ー"}`, wide: true });
+  if (canShowMemo(ball) && (ball.note.trim() || appSettings.showMemoField)) {
+    rows.push({ label: "メモ", value: ball.note.trim(), wide: true });
+  }
+  return rows;
+}
+
+function drawReceiptRows(
+  context: CanvasRenderingContext2D,
+  rows: Array<{ label: string; value: string; wide?: boolean }>,
+  x: number,
+  y: number,
+  width: number,
+): number {
+  const gap = 12;
+  const columnWidth = (width - gap) / 2;
+  let cursorY = y;
+  let halfRow: { label: string; value: string } | null = null;
+
+  for (const row of rows) {
+    if (row.wide) {
+      if (halfRow) {
+        drawReceiptRowBox(context, halfRow, x, cursorY, columnWidth);
+        cursorY += 102 + gap;
+        halfRow = null;
+      }
+      const height = Math.max(102, estimateWrappedLineCount(context, row.value, width - 44) * 34 + 62);
+      drawReceiptRowBox(context, row, x, cursorY, width, height);
+      cursorY += height + gap;
+    } else if (halfRow) {
+      drawReceiptRowBox(context, halfRow, x, cursorY, columnWidth);
+      drawReceiptRowBox(context, row, x + columnWidth + gap, cursorY, columnWidth);
+      cursorY += 102 + gap;
+      halfRow = null;
+    } else {
+      halfRow = row;
+    }
+  }
+
+  if (halfRow) {
+    drawReceiptRowBox(context, halfRow, x, cursorY, columnWidth);
+    cursorY += 102 + gap;
+  }
+
+  return cursorY;
+}
+
+function drawReceiptRowBox(
+  context: CanvasRenderingContext2D,
+  row: { label: string; value: string },
+  x: number,
+  y: number,
+  width: number,
+  height = 102,
+): void {
+  context.fillStyle = "rgba(255, 250, 237, 0.54)";
+  context.strokeStyle = "rgba(96, 63, 23, 0.16)";
+  context.lineWidth = 2;
+  drawRoundedRect(context, x, y, width, height, 10);
+  context.fill();
+  context.stroke();
+
+  context.fillStyle = "#6b5638";
+  context.font = "900 25px sans-serif";
+  context.fillText(row.label, x + 22, y + 33);
+  context.fillStyle = "#2c2418";
+  context.font = "900 31px sans-serif";
+  drawWrappedText(context, row.value || "ー", x + 22, y + 76, width - 44, 34, Math.max(1, Math.floor((height - 54) / 34)));
+}
+
+function drawQrImage(context: CanvasRenderingContext2D, qr: QrCodeMatrix, x: number, y: number, size: number): void {
+  const quietZone = 4;
+  const totalModules = qr.size + quietZone * 2;
+  const moduleSize = size / totalModules;
+  context.fillStyle = "#fffdf4";
+  context.fillRect(x, y, size, size);
+  context.fillStyle = "#17241f";
+  qr.modules.forEach((row, rowIndex) => {
+    row.forEach((isDark, columnIndex) => {
+      if (isDark) {
+        context.fillRect(
+          x + (columnIndex + quietZone) * moduleSize,
+          y + (rowIndex + quietZone) * moduleSize,
+          Math.ceil(moduleSize),
+          Math.ceil(moduleSize),
+        );
+      }
+    });
+  });
+}
+
+function drawWrappedText(
+  context: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  lineHeight: number,
+  maxLines = 3,
+): number {
+  const lines = wrapCanvasText(context, text, maxWidth, maxLines);
+  lines.forEach((line, index) => context.fillText(line, x, y + index * lineHeight));
+  return y + lines.length * lineHeight;
+}
+
+function drawCenteredWrappedText(
+  context: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  lineHeight: number,
+): void {
+  const lines = wrapCanvasText(context, text, maxWidth, 3);
+  lines.forEach((line, index) => context.fillText(line, x, y + index * lineHeight));
+}
+
+function estimateWrappedLineCount(context: CanvasRenderingContext2D, text: string, maxWidth: number): number {
+  return wrapCanvasText(context, text || "ー", maxWidth, 6).length;
+}
+
+function wrapCanvasText(context: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number): string[] {
+  const source = Array.from((text || "ー").replace(/\s+/g, " ").trim() || "ー");
+  const lines: string[] = [];
+  let current = "";
+
+  for (const char of source) {
+    const next = `${current}${char}`;
+    if (current && context.measureText(next).width > maxWidth) {
+      lines.push(current);
+      current = char;
+      if (lines.length === maxLines) {
+        const last = lines[maxLines - 1];
+        lines[maxLines - 1] = `${Array.from(last).slice(0, Math.max(1, Array.from(last).length - 1)).join("")}…`;
+        return lines;
+      }
+    } else {
+      current = next;
+    }
+  }
+
+  if (current) {
+    lines.push(current);
+  }
+  return lines.slice(0, maxLines);
+}
+
+function drawRoundedRect(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
+  const r = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + r, y);
+  context.lineTo(x + width - r, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + r);
+  context.lineTo(x + width, y + height - r);
+  context.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  context.lineTo(x + r, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - r);
+  context.lineTo(x, y + r);
+  context.quadraticCurveTo(x, y, x + r, y);
+  context.closePath();
 }
 
 function bindPendingUrlPacketEvents(): void {
@@ -1698,7 +2317,8 @@ function bindPendingUrlPacketEvents(): void {
     const review = reviewPacketImport(pendingUrlPacket.packet, ledger.balls);
     ledger = importNewBalls(ledger, review.newItems);
     selectedBallId = review.newItems[0]?.id ?? selectedBallId;
-    selectedDateFilter = null;
+    displayAnchorDate = review.newItems[0]?.date ?? displayAnchorDate;
+    displayMode = "day";
     activeOverlay = "none";
     pendingUrlPacket = null;
     snoozedUrlPacket = null;
@@ -1716,7 +2336,8 @@ function bindPendingUrlPacketEvents(): void {
     }
     ledger = importNewAndReplaceBalls(ledger, review.newItems, review.conflicts);
     selectedBallId = review.newItems[0]?.id ?? review.conflicts[0]?.id ?? selectedBallId;
-    selectedDateFilter = null;
+    displayAnchorDate = review.newItems[0]?.date ?? review.conflicts[0]?.date ?? displayAnchorDate;
+    displayMode = "day";
     activeOverlay = "none";
     pendingUrlPacket = null;
     snoozedUrlPacket = null;
@@ -1856,8 +2477,87 @@ function clearLocationPacketParams(): void {
   history.replaceState(null, document.title, `${location.pathname}${search ? `?${search}` : ""}`);
 }
 
+function bindDisplaySwipeEvents(): void {
+  const field = document.querySelector<HTMLElement>("#ball-field");
+  if (!field) {
+    return;
+  }
+
+  field.addEventListener("pointerdown", (event) => {
+    if (isBallInteractionTarget(event.target)) {
+      stageSwipeStart = null;
+      return;
+    }
+    stageSwipeStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+  });
+
+  field.addEventListener("pointerup", (event) => {
+    if (!stageSwipeStart || stageSwipeStart.pointerId !== event.pointerId) {
+      return;
+    }
+    const deltaX = event.clientX - stageSwipeStart.x;
+    const deltaY = event.clientY - stageSwipeStart.y;
+    stageSwipeStart = null;
+    if (Math.abs(deltaX) < 72 || Math.abs(deltaY) > 64) {
+      return;
+    }
+    navigateDisplayPeriod(deltaX < 0 ? 1 : -1);
+  });
+
+  field.addEventListener("pointercancel", () => {
+    stageSwipeStart = null;
+  });
+}
+
+function isBallInteractionTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest(".physics-ball"));
+}
+
+function handleDisplayNavigationKey(event: KeyboardEvent): void {
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+    return;
+  }
+  if (activeOverlay !== "none" || document.querySelector(`#${BALL_DIALOG_ROOT_ID}`)) {
+    return;
+  }
+  if (isEditableKeyboardTarget(event.target)) {
+    return;
+  }
+  event.preventDefault();
+  navigateDisplayPeriod(event.key === "ArrowRight" ? 1 : -1);
+}
+
+function navigateDisplayPeriod(delta: -1 | 1): void {
+  if (activeOverlay !== "none") {
+    return;
+  }
+  shiftDisplayAnchor(delta);
+  render();
+}
+
+function isEditableKeyboardTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  return Boolean(target.closest("input, textarea, select, button, [contenteditable='true']"));
+}
+
 function isActiveOverlay(value: string | undefined): value is ActiveOverlay {
   return value === "create" || value === "list" || value === "settings" || value === "calendar";
+}
+
+function readDisplayMode(value: string | undefined): DisplayMode | null {
+  return value === "day" || value === "week" || value === "month" ? value : null;
+}
+
+function nextBallLabelMode(mode: BallLabelMode): BallLabelMode {
+  if (mode === "none") {
+    return "date";
+  }
+  if (mode === "date") {
+    return "title";
+  }
+  return "none";
 }
 
 async function toggleGravitySensor(): Promise<void> {
@@ -1868,7 +2568,7 @@ async function toggleGravitySensor(): Promise<void> {
     return;
   }
 
-  const granted = await requestDeviceOrientationPermission();
+  const granted = await requestDeviceGravityPermission();
   if (!granted) {
     alert("この端末またはブラウザでは重力センサーを有効にできませんでした。");
     return;
@@ -1876,37 +2576,6 @@ async function toggleGravitySensor(): Promise<void> {
 
   updateAppSettings({ gravityEnabled: true });
   render();
-}
-
-async function requestDeviceOrientationPermission(): Promise<boolean> {
-  const hasOrientation = "DeviceOrientationEvent" in window;
-  const hasMotion = "DeviceMotionEvent" in window;
-  if (!hasOrientation && !hasMotion) {
-    return false;
-  }
-
-  const permissionChecks: Promise<boolean>[] = [];
-  if (hasOrientation) {
-    permissionChecks.push(requestSensorPermission(DeviceOrientationEvent as DeviceSensorEventConstructorWithPermission));
-  }
-  if (hasMotion) {
-    permissionChecks.push(requestSensorPermission(DeviceMotionEvent as DeviceSensorEventConstructorWithPermission));
-  }
-
-  const results = await Promise.all(permissionChecks);
-  return results.some(Boolean);
-}
-
-async function requestSensorPermission(eventConstructor: DeviceSensorEventConstructorWithPermission): Promise<boolean> {
-  if (typeof eventConstructor.requestPermission !== "function") {
-    return true;
-  }
-
-  try {
-    return (await eventConstructor.requestPermission()) === "granted";
-  } catch {
-    return false;
-  }
 }
 
 function syncGravityController(): void {
@@ -2102,7 +2771,7 @@ function readDraft(form: HTMLFormElement): BallDraft {
     title: String(data.get("title") || ""),
     category: String(data.get("category") || "日常"),
     note: String(data.get("note") || ""),
-    visibility: readUnion(data.get("visibility"), ["hidden", "category", "open"], "category"),
+    visibility: readUnion(data.get("visibility"), visibilityValues, "open"),
   };
 }
 
@@ -2138,6 +2807,18 @@ function renderNamePresetSelect(selectedName: string): string {
       <option value="">登録名から選ぶ</option>
       ${options}
     </select>
+  `;
+}
+
+function renderCurrentCategoryBadge(category: string): string {
+  const preset = editableCategories.find((item) => item.name === category) ?? editableCategories[0];
+  const visualStyle = preset ? renderVisualStyle(preset) : "";
+
+  return `
+    <span class="edit-category-current">
+      <span class="category-swatch" style="${visualStyle}" aria-hidden="true"></span>
+      <strong>${escapeHtml(category || preset?.name || "日常")}</strong>
+    </span>
   `;
 }
 
@@ -2299,832 +2980,4 @@ function showFatalError(error: unknown): void {
       </div>
     </main>
   `;
-}
-
-interface VisualBallSource {
-  id: string;
-  ballId: string;
-  hue: number;
-  saturation: number;
-  lightness: number;
-  echo: { hue: number; saturation: number; lightness: number } | null;
-  snapshot: PhysicsBallSnapshot | null;
-  label: string;
-  title: string;
-}
-
-interface PhysicsBallSnapshot {
-  id: string;
-  position: { x: number; y: number };
-  linvel: { x: number; y: number };
-  rotation: number;
-  angvel: number;
-}
-
-interface AppSettings {
-  wallRestitution: number;
-  contactRestitution: number;
-  linearDamping: number;
-  angularDamping: number;
-  friction: number;
-  flickPower: number;
-  maxSpeed: number;
-  radius: number;
-  soundEnabled: boolean;
-  gravityEnabled: boolean;
-  gravityStrength: number;
-  masterVolume: number;
-  frequencyHz: number;
-  frequencySpread: number;
-  durationMs: number;
-  soundThreshold: number;
-  showBallLabels: boolean;
-  showMemoField: boolean;
-  emotionEchoStrength: EmotionEchoStrength;
-}
-
-const SETTINGS_KEY = "happyBall.settings.v2";
-
-const DEFAULT_APP_SETTINGS: AppSettings = {
-  wallRestitution: 0.38,
-  contactRestitution: 0.34,
-  linearDamping: 0.12,
-  angularDamping: 0.28,
-  friction: 0.02,
-  flickPower: 0.92,
-  maxSpeed: 1900,
-  radius: 42,
-  soundEnabled: true,
-  gravityEnabled: false,
-  gravityStrength: 720,
-  masterVolume: 0.28,
-  frequencyHz: 1100,
-  frequencySpread: 1.35,
-  durationMs: 130,
-  soundThreshold: 85,
-  showBallLabels: false,
-  showMemoField: false,
-  emotionEchoStrength: "weak",
-};
-
-function loadAppSettings(): AppSettings {
-  try {
-    const stored = localStorage.getItem(SETTINGS_KEY);
-    return stored ? normalizeAppSettings(JSON.parse(stored)) : DEFAULT_APP_SETTINGS;
-  } catch {
-    return DEFAULT_APP_SETTINGS;
-  }
-}
-
-function saveAppSettings(settings: AppSettings): void {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings, null, 2));
-}
-
-function normalizeAppSettings(value: unknown): AppSettings {
-  const source = typeof value === "object" && value ? (value as Partial<AppSettings>) : {};
-  return {
-    wallRestitution: clampNumber(source.wallRestitution, 0, 1, DEFAULT_APP_SETTINGS.wallRestitution),
-    contactRestitution: clampNumber(source.contactRestitution, 0, 1, DEFAULT_APP_SETTINGS.contactRestitution),
-    linearDamping: clampNumber(source.linearDamping, 0, 2, DEFAULT_APP_SETTINGS.linearDamping),
-    angularDamping: clampNumber(source.angularDamping, 0, 2, DEFAULT_APP_SETTINGS.angularDamping),
-    friction: clampNumber(source.friction, 0, 1, DEFAULT_APP_SETTINGS.friction),
-    flickPower: clampNumber(source.flickPower, 0.2, 2.2, DEFAULT_APP_SETTINGS.flickPower),
-    maxSpeed: clampNumber(source.maxSpeed, 400, 5000, DEFAULT_APP_SETTINGS.maxSpeed),
-    radius: clampNumber(source.radius, 24, 64, DEFAULT_APP_SETTINGS.radius),
-    soundEnabled: source.soundEnabled ?? DEFAULT_APP_SETTINGS.soundEnabled,
-    gravityEnabled: source.gravityEnabled ?? DEFAULT_APP_SETTINGS.gravityEnabled,
-    gravityStrength: clampNumber(source.gravityStrength, 80, 1800, DEFAULT_APP_SETTINGS.gravityStrength),
-    masterVolume: clampNumber(source.masterVolume, 0, 1, DEFAULT_APP_SETTINGS.masterVolume),
-    frequencyHz: clampNumber(source.frequencyHz, 200, 4200, DEFAULT_APP_SETTINGS.frequencyHz),
-    frequencySpread: clampNumber(source.frequencySpread, 1, 3, DEFAULT_APP_SETTINGS.frequencySpread),
-    durationMs: clampNumber(source.durationMs, 30, 420, DEFAULT_APP_SETTINGS.durationMs),
-    soundThreshold: clampNumber(source.soundThreshold, 20, 500, DEFAULT_APP_SETTINGS.soundThreshold),
-    showBallLabels: source.showBallLabels ?? DEFAULT_APP_SETTINGS.showBallLabels,
-    showMemoField: source.showMemoField ?? DEFAULT_APP_SETTINGS.showMemoField,
-    emotionEchoStrength: readEchoStrength(source.emotionEchoStrength),
-  };
-}
-
-function readEchoStrength(value: unknown): EmotionEchoStrength {
-  return value === "off" || value === "medium" || value === "strong" || value === "weak"
-    ? value
-    : DEFAULT_APP_SETTINGS.emotionEchoStrength;
-}
-
-function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) ? clamp(value, min, max) : fallback;
-}
-
-type ImpactKind = "wall" | "contact";
-
-interface ImpactEvent {
-  kind: ImpactKind;
-  energy: number;
-}
-
-type GravityVector = { x: number; y: number };
-
-interface DeviceSensorEventConstructorWithPermission {
-  requestPermission?: () => Promise<"granted" | "denied">;
-}
-
-class DeviceGravityController {
-  private active = false;
-  private strength = DEFAULT_APP_SETTINGS.gravityStrength;
-
-  constructor(private readonly onGravity: (gravity: GravityVector) => void) {}
-
-  start(): void {
-    if (this.active) {
-      return;
-    }
-    this.active = true;
-    window.addEventListener("deviceorientation", this.handleOrientation);
-    window.addEventListener("devicemotion", this.handleMotion);
-  }
-
-  stop(): void {
-    if (!this.active) {
-      return;
-    }
-    this.active = false;
-    window.removeEventListener("deviceorientation", this.handleOrientation);
-    window.removeEventListener("devicemotion", this.handleMotion);
-    this.onGravity({ x: 0, y: 0 });
-  }
-
-  updateStrength(strength: number): void {
-    this.strength = strength;
-  }
-
-  private readonly handleOrientation = (event: DeviceOrientationEvent): void => {
-    const beta = typeof event.beta === "number" ? event.beta : 0;
-    const gamma = typeof event.gamma === "number" ? event.gamma : 0;
-    const x = clamp(gamma / 35, -1, 1) * this.strength;
-    const y = clamp(beta / 45, -1, 1) * this.strength;
-    this.onGravity({ x, y });
-  };
-
-  private readonly handleMotion = (event: DeviceMotionEvent): void => {
-    const gravity = event.accelerationIncludingGravity;
-    if (!gravity) {
-      return;
-    }
-    const x = typeof gravity.x === "number" ? clamp(gravity.x / 6, -1, 1) * this.strength : 0;
-    const y = typeof gravity.y === "number" ? clamp(-gravity.y / 6, -1, 1) * this.strength : 0;
-    if (x !== 0 || y !== 0) {
-      this.onGravity({ x, y });
-    }
-  };
-}
-
-class TinyImpactAudio {
-  private context: AudioContext | null = null;
-  private voices = 0;
-  private lastPlayedAt = 0;
-
-  unlock(): void {
-    const context = this.ensureContext();
-    if (context?.state === "suspended") {
-      void context.resume();
-    }
-  }
-
-  play(impacts: ImpactEvent[], settings: AppSettings): void {
-    if (!settings.soundEnabled || impacts.length === 0) {
-      return;
-    }
-
-    const context = this.ensureContext();
-    if (!context || context.state !== "running") {
-      return;
-    }
-
-    const nowMs = performance.now();
-    if (nowMs - this.lastPlayedAt < 28) {
-      return;
-    }
-
-    const selected = impacts
-      .filter((impact) => impact.energy >= settings.soundThreshold)
-      .sort((a, b) => b.energy - a.energy)
-      .slice(0, 3);
-
-    selected.forEach((impact, index) => this.playPing(context, impact, settings, index * 0.018));
-    if (selected.length > 0) {
-      this.lastPlayedAt = nowMs;
-    }
-  }
-
-  private ensureContext(): AudioContext | null {
-    if (this.context) {
-      return this.context;
-    }
-
-    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextCtor) {
-      return null;
-    }
-
-    this.context = new AudioContextCtor();
-    return this.context;
-  }
-
-  private playPing(context: AudioContext, impact: ImpactEvent, settings: AppSettings, offset: number): void {
-    if (this.voices >= 8) {
-      return;
-    }
-
-    const now = context.currentTime;
-    const start = now + offset;
-    const duration = settings.durationMs / 1000;
-    const energyGain = Math.min(1, Math.log1p(impact.energy / 70) / Math.log1p(3000 / 70));
-    const gainValue = Math.max(0.001, settings.masterVolume * (0.16 + energyGain * 0.84));
-    const spread = impact.kind === "wall" ? 1 : settings.frequencySpread;
-    const pitchJitter = 1 + (Math.random() - 0.5) * (spread - 1);
-    const oscillator = context.createOscillator();
-    const filter = context.createBiquadFilter();
-    const gain = context.createGain();
-
-    this.voices += 1;
-    oscillator.type = impact.kind === "wall" ? "triangle" : "sine";
-    oscillator.frequency.setValueAtTime(settings.frequencyHz * pitchJitter, start);
-    filter.type = "lowpass";
-    filter.frequency.setValueAtTime(7400, start);
-    filter.Q.setValueAtTime(0.4, start);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(gainValue, start + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-
-    oscillator.connect(filter);
-    filter.connect(gain);
-    gain.connect(context.destination);
-    oscillator.start(start);
-    oscillator.stop(start + duration);
-    oscillator.addEventListener("ended", () => {
-      this.voices = Math.max(0, this.voices - 1);
-      oscillator.disconnect();
-      filter.disconnect();
-      gain.disconnect();
-    });
-  }
-}
-
-declare global {
-  interface Window {
-    webkitAudioContext?: typeof AudioContext;
-  }
-}
-
-interface RapierBall extends VisualBallSource {
-  body: RigidBody;
-  radius: number;
-  element: HTMLButtonElement;
-}
-
-class RapierStage {
-  private world: World;
-  private readonly balls: RapierBall[] = [];
-  private readonly resizeObserver: ResizeObserver;
-  private readonly collisionCooldown = new Map<string, number>();
-  private animationId = 0;
-  private width = 0;
-  private height = 0;
-  private dragging: RapierBall | null = null;
-  private dragOffset = { x: 0, y: 0 };
-  private dragVelocity = { x: 0, y: 0 };
-  private lastPointer: { x: number; y: number; time: number } | null = null;
-  private tapStart: { x: number; y: number; time: number; ball: RapierBall } | null = null;
-  private movedBeyondTap = false;
-  private dragActive = false;
-  private heldBallMotion: { position: { x: number; y: number }; linvel: { x: number; y: number }; angvel: number } | null = null;
-  private gravityVector: GravityVector = { x: 0, y: 0 };
-  private disposed = false;
-
-  constructor(
-    private readonly field: HTMLDivElement,
-    sources: VisualBallSource[],
-    private readonly onSelect: (ballId: string) => void,
-    private readonly onOpenDetail: (ballId: string) => void,
-    private settings: AppSettings,
-    private readonly audio: TinyImpactAudio,
-  ) {
-    this.world = new RAPIER.World({ x: 0, y: 0 });
-    this.world.timestep = 1 / 60;
-    this.resizeObserver = new ResizeObserver(() => {
-      if (!this.disposed) {
-        this.updateBounds();
-      }
-    });
-    this.rebuild(sources);
-    this.resizeObserver.observe(this.field);
-    this.field.addEventListener("pointerdown", this.handlePointerDown);
-    this.field.addEventListener("pointermove", this.handlePointerMove);
-    this.field.addEventListener("pointerup", this.handlePointerUp);
-    this.field.addEventListener("pointercancel", this.handlePointerUp);
-  }
-
-  start(): void {
-    if (this.disposed || this.balls.length === 0) {
-      return;
-    }
-    this.animationId = requestAnimationFrame(this.tick);
-  }
-
-  destroy(): void {
-    if (this.disposed) {
-      return;
-    }
-    this.disposed = true;
-    cancelAnimationFrame(this.animationId);
-    this.resizeObserver.disconnect();
-    this.field.removeEventListener("pointerdown", this.handlePointerDown);
-    this.field.removeEventListener("pointermove", this.handlePointerMove);
-    this.field.removeEventListener("pointerup", this.handlePointerUp);
-    this.field.removeEventListener("pointercancel", this.handlePointerUp);
-    this.safeFreeWorld();
-  }
-
-  updateSettings(settings: AppSettings): void {
-    if (this.disposed) {
-      return;
-    }
-    this.settings = settings;
-    if (!settings.gravityEnabled) {
-      this.setGravityVector({ x: 0, y: 0 });
-    }
-    for (const ball of this.balls) {
-      ball.radius = settings.radius;
-      ball.element.style.width = `${ball.radius * 2}px`;
-      ball.element.style.height = `${ball.radius * 2}px`;
-      ball.body.setLinearDamping(settings.linearDamping);
-      ball.body.setAngularDamping(settings.angularDamping);
-    }
-  }
-
-  captureSnapshots(): PhysicsBallSnapshot[] {
-    if (this.disposed) {
-      return [];
-    }
-
-    return this.balls.map((ball) => {
-      const position = ball.body.translation();
-      const linvel = ball.body.linvel();
-      return {
-        id: ball.id,
-        position: { x: position.x, y: position.y },
-        linvel: { x: linvel.x, y: linvel.y },
-        rotation: ball.body.rotation(),
-        angvel: ball.body.angvel(),
-      };
-    });
-  }
-
-  setGravityVector(gravity: GravityVector): void {
-    if (this.disposed) {
-      return;
-    }
-    this.gravityVector = gravity;
-  }
-
-  private rebuild(sources: VisualBallSource[]): void {
-    if (this.disposed) {
-      return;
-    }
-    this.resetPointerState();
-    this.updateBounds();
-    this.field.innerHTML = "";
-    this.balls.length = 0;
-    this.safeFreeWorld();
-    this.world = new RAPIER.World({ x: 0, y: 0 });
-    this.world.timestep = 1 / 60;
-    this.collisionCooldown.clear();
-
-    if (sources.length === 0) {
-      this.field.innerHTML = `<div class="empty-state"><div class="seed-ball" aria-hidden="true"></div></div>`;
-      return;
-    }
-
-    this.createBalls(sources);
-  }
-
-  private updateBounds(): void {
-    const rect = this.field.getBoundingClientRect();
-    this.width = Math.max(280, rect.width);
-    this.height = Math.max(280, rect.height);
-  }
-
-  private resetPointerState(): void {
-    this.dragging?.element.classList.remove("is-dragging");
-    this.dragging = null;
-    this.dragOffset = { x: 0, y: 0 };
-    this.dragVelocity = { x: 0, y: 0 };
-    this.lastPointer = null;
-    this.tapStart = null;
-    this.movedBeyondTap = false;
-    this.dragActive = false;
-    this.heldBallMotion = null;
-  }
-
-  private safeFreeWorld(): void {
-    try {
-      this.world.free();
-    } catch {
-      // Rapier may already have invalidated the WASM-side world after an error.
-    }
-  }
-
-  private createBalls(sources: VisualBallSource[]): void {
-    const columns = Math.max(1, Math.ceil(Math.sqrt(sources.length)));
-
-    sources.forEach((source, index) => {
-      const radius = this.settings.radius;
-      const column = index % columns;
-      const row = Math.floor(index / columns);
-      const x = ((column + 1) / (columns + 1)) * this.width + (index % 2) * 12;
-      const y = Math.min(this.height - radius, 80 + row * (radius * 1.78));
-      const snapshot = source.snapshot;
-      const startX = snapshot ? snapshot.position.x : x;
-      const startY = snapshot ? snapshot.position.y : y;
-      const startLinvel = snapshot?.linvel ?? { x: (index % 2 === 0 ? 1 : -1) * (20 + index * 3), y: 8 + index * 2 };
-      const body = this.world.createRigidBody(
-        RAPIER.RigidBodyDesc.dynamic()
-          .setTranslation(clamp(startX, radius, this.width - radius), clamp(startY, radius, this.height - radius))
-          .setRotation(snapshot?.rotation ?? 0)
-          .setLinvel(startLinvel.x, startLinvel.y)
-          .setAngularDamping(this.settings.angularDamping)
-          .setLinearDamping(this.settings.linearDamping)
-          .setCanSleep(false)
-          .setCcdEnabled(true),
-      );
-      this.world.createCollider(
-        RAPIER.ColliderDesc.ball(radius)
-          .setRestitution(this.settings.contactRestitution)
-          .setFriction(this.settings.friction)
-          .setDensity(0.7),
-        body,
-      );
-      if (snapshot) {
-        body.setAngvel(snapshot.angvel, true);
-      }
-
-      const element = document.createElement("button");
-      element.type = "button";
-      element.tabIndex = -1;
-      element.className = `physics-ball${source.echo ? ` has-echo echo-${this.settings.emotionEchoStrength}` : ""}`;
-      element.dataset.visualBallId = source.id;
-      element.style.width = `${radius * 2}px`;
-      element.style.height = `${radius * 2}px`;
-      element.style.setProperty("--ball-hue", String(source.hue));
-      element.style.setProperty("--ball-saturation", `${source.saturation}%`);
-      element.style.setProperty("--ball-lightness", `${source.lightness}%`);
-      if (source.echo) {
-        element.style.setProperty("--echo-hue", String(source.echo.hue));
-        element.style.setProperty("--echo-saturation", `${source.echo.saturation}%`);
-        element.style.setProperty("--echo-lightness", `${source.echo.lightness}%`);
-      }
-      element.setAttribute("aria-label", source.title);
-      element.innerHTML = `
-        <span class="ball-body" aria-hidden="true">
-          <span class="ball-core"></span>
-          <span class="ball-shade"></span>
-          <span class="ball-highlight"></span>
-        </span>
-        <span class="ball-label">${escapeHtml(source.label)}</span>
-      `;
-      this.field.appendChild(element);
-      this.balls.push({ ...source, body, radius, element });
-    });
-    this.paint();
-  }
-
-  private readonly tick = (): void => {
-    if (this.disposed) {
-      return;
-    }
-    try {
-      this.world.gravity = this.settings.gravityEnabled ? this.gravityVector : { x: 0, y: 0 };
-      this.world.step();
-      const impacts = [
-        ...this.containBalls(),
-        ...this.resolveBallOverlaps(),
-        ...this.detectContactImpacts(),
-      ];
-      this.audio.play(impacts, this.settings);
-      this.paint();
-      if (!this.disposed) {
-        this.animationId = requestAnimationFrame(this.tick);
-      }
-    } catch (error) {
-      console.error("Rapier stage stopped after physics error.", error);
-      this.disposed = true;
-    }
-  };
-
-  private containBalls(): ImpactEvent[] {
-    const impacts: ImpactEvent[] = [];
-
-    for (const ball of this.balls) {
-      const position = ball.body.translation();
-      const velocity = ball.body.linvel();
-      const nextX = clamp(position.x, ball.radius, this.width - ball.radius);
-      const nextY = clamp(position.y, ball.radius, this.height - ball.radius);
-      const outX = Math.abs(nextX - position.x) > 0.001;
-      const outY = Math.abs(nextY - position.y) > 0.001;
-      const speed = Math.hypot(velocity.x, velocity.y);
-      let nextVx = velocity.x;
-      let nextVy = velocity.y;
-
-      if (!Number.isFinite(position.x) || !Number.isFinite(position.y) || !Number.isFinite(speed)) {
-        ball.body.setTranslation({ x: this.width / 2, y: this.height / 2 }, true);
-        ball.body.setLinvel({ x: 0, y: 0 }, true);
-        continue;
-      }
-
-      if (outX) {
-        nextVx = position.x < nextX
-          ? Math.abs(nextVx) * this.settings.wallRestitution
-          : -Math.abs(nextVx) * this.settings.wallRestitution;
-      }
-
-      if (outY) {
-        nextVy = position.y < nextY
-          ? Math.abs(nextVy) * this.settings.wallRestitution
-          : -Math.abs(nextVy) * this.settings.wallRestitution;
-      }
-
-      if (outX || outY) {
-        ball.body.setTranslation({ x: nextX, y: nextY }, true);
-        ball.body.setLinvel(this.limitVelocity({ x: nextVx, y: nextVy }), true);
-        if (speed > this.settings.soundThreshold) {
-          impacts.push({ kind: "wall", energy: speed });
-        }
-        continue;
-      }
-
-      if (speed > this.settings.maxSpeed) {
-        ball.body.setLinvel(this.limitVelocity(velocity), true);
-      }
-    }
-
-    return impacts;
-  }
-
-  private detectContactImpacts(): ImpactEvent[] {
-    const now = performance.now();
-    const impacts: ImpactEvent[] = [];
-
-    for (let i = 0; i < this.balls.length; i += 1) {
-      for (let j = i + 1; j < this.balls.length; j += 1) {
-        const a = this.balls[i];
-        const b = this.balls[j];
-        const pa = a.body.translation();
-        const pb = b.body.translation();
-        const distance = Math.hypot(pa.x - pb.x, pa.y - pb.y);
-        if (distance > a.radius + b.radius + 2) {
-          continue;
-        }
-
-        const key = a.id < b.id ? `${a.id}:${b.id}` : `${b.id}:${a.id}`;
-        if ((this.collisionCooldown.get(key) ?? 0) > now) {
-          continue;
-        }
-
-        const va = a.body.linvel();
-        const vb = b.body.linvel();
-        const energy = Math.hypot(va.x - vb.x, va.y - vb.y);
-        if (energy > this.settings.soundThreshold) {
-          impacts.push({ kind: "contact", energy });
-          this.collisionCooldown.set(key, now + 95);
-        }
-      }
-    }
-
-    return impacts;
-  }
-
-  private resolveBallOverlaps(): ImpactEvent[] {
-    const impacts: ImpactEvent[] = [];
-    const slop = 0.35;
-
-    for (let i = 0; i < this.balls.length; i += 1) {
-      for (let j = i + 1; j < this.balls.length; j += 1) {
-        const a = this.balls[i];
-        const b = this.balls[j];
-        const pa = a.body.translation();
-        const pb = b.body.translation();
-        const dx = pb.x - pa.x;
-        const dy = pb.y - pa.y;
-        const distance = Math.hypot(dx, dy);
-        const minDistance = a.radius + b.radius;
-        const overlap = minDistance - distance;
-
-        if (overlap <= slop) {
-          continue;
-        }
-
-        const normal = distance > 0.001
-          ? { x: dx / distance, y: dy / distance }
-          : separationNormal(i, j);
-        const aDragging = a === this.dragging;
-        const bDragging = b === this.dragging;
-        const correction = overlap + slop;
-
-        if (aDragging || bDragging) {
-          continue;
-        }
-
-        this.moveBallTo(a, pa.x - normal.x * correction * 0.5, pa.y - normal.y * correction * 0.5);
-        this.moveBallTo(b, pb.x + normal.x * correction * 0.5, pb.y + normal.y * correction * 0.5);
-
-        const va = a.body.linvel();
-        const vb = b.body.linvel();
-        const relativeNormalSpeed = ((va.x - vb.x) * normal.x) + ((va.y - vb.y) * normal.y);
-        if (relativeNormalSpeed > 0) {
-          const impulse = relativeNormalSpeed * this.settings.contactRestitution;
-          if (!aDragging) {
-            a.body.setLinvel(this.limitVelocity({ x: va.x - normal.x * impulse * 0.5, y: va.y - normal.y * impulse * 0.5 }), true);
-          }
-          if (!bDragging) {
-            b.body.setLinvel(this.limitVelocity({ x: vb.x + normal.x * impulse * 0.5, y: vb.y + normal.y * impulse * 0.5 }), true);
-          }
-        }
-
-        const energy = Math.hypot(va.x - vb.x, va.y - vb.y);
-        if (energy > this.settings.soundThreshold) {
-          impacts.push({ kind: "contact", energy });
-        }
-      }
-    }
-
-    return impacts;
-  }
-
-  private moveBallTo(ball: RapierBall, x: number, y: number): void {
-    ball.body.setTranslation(
-      {
-        x: clamp(x, ball.radius, this.width - ball.radius),
-        y: clamp(y, ball.radius, this.height - ball.radius),
-      },
-      true,
-    );
-  }
-
-  private limitVelocity(velocity: { x: number; y: number }): { x: number; y: number } {
-    const speed = Math.hypot(velocity.x, velocity.y);
-    if (speed <= this.settings.maxSpeed || speed === 0) {
-      return velocity;
-    }
-    const scale = this.settings.maxSpeed / speed;
-    return {
-      x: velocity.x * scale,
-      y: velocity.y * scale,
-    };
-  }
-
-  private paint(): void {
-    for (const ball of this.balls) {
-      const position = ball.body.translation();
-      ball.element.style.transform = `translate3d(${position.x - ball.radius}px, ${position.y - ball.radius}px, 0)`;
-      ball.element.style.setProperty("--ball-rotation", `${ball.body.rotation()}rad`);
-    }
-  }
-
-  private readonly handlePointerDown = (event: PointerEvent): void => {
-    const point = this.pointerPoint(event);
-    const target = this.findBall(point.x, point.y);
-    if (!target) {
-      return;
-    }
-
-    event.preventDefault();
-    this.dragging = target;
-    const position = target.body.translation();
-    const velocity = target.body.linvel();
-    const now = performance.now();
-    this.dragOffset = { x: position.x - point.x, y: position.y - point.y };
-    this.dragVelocity = { x: 0, y: 0 };
-    this.lastPointer = { x: position.x, y: position.y, time: now };
-    this.tapStart = { x: point.x, y: point.y, time: now, ball: target };
-    this.movedBeyondTap = false;
-    this.heldBallMotion = {
-      position: { x: position.x, y: position.y },
-      linvel: { x: velocity.x, y: velocity.y },
-      angvel: target.body.angvel(),
-    };
-    this.field.setPointerCapture(event.pointerId);
-    this.onSelect(target.ballId);
-  };
-
-  private readonly handlePointerMove = (event: PointerEvent): void => {
-    if (!this.dragging) {
-      return;
-    }
-
-    event.preventDefault();
-    const point = this.pointerPoint(event);
-    const now = performance.now();
-    const x = clamp(point.x + this.dragOffset.x, this.dragging.radius, this.width - this.dragging.radius);
-    const y = clamp(point.y + this.dragOffset.y, this.dragging.radius, this.height - this.dragging.radius);
-    if (this.tapStart && Math.hypot(point.x - this.tapStart.x, point.y - this.tapStart.y) > BALL_TAP_MOVE_PX) {
-      this.movedBeyondTap = true;
-    }
-
-    if (!this.movedBeyondTap) {
-      return;
-    }
-
-    if (!this.dragActive) {
-      this.dragActive = true;
-      this.dragging.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
-      this.dragging.body.setNextKinematicTranslation({ x, y });
-      this.dragging.body.setLinvel({ x: 0, y: 0 }, true);
-      this.dragging.body.setAngvel(0, true);
-      this.dragging.element.classList.add("is-dragging");
-    }
-
-    if (this.lastPointer) {
-      const dt = Math.max(0.016, (now - this.lastPointer.time) / 1000);
-      this.dragVelocity = this.limitVelocity({
-        x: ((x - this.lastPointer.x) / dt) * this.settings.flickPower,
-        y: ((y - this.lastPointer.y) / dt) * this.settings.flickPower,
-      });
-    }
-
-    this.dragging.body.setNextKinematicTranslation({ x, y });
-    this.lastPointer = { x, y, time: now };
-  };
-
-  private readonly handlePointerUp = (event: PointerEvent): void => {
-    if (!this.dragging) {
-      return;
-    }
-
-    const released = this.dragging;
-    const point = this.pointerPoint(event);
-    const now = performance.now();
-    const tapDistance = this.tapStart ? Math.hypot(point.x - this.tapStart.x, point.y - this.tapStart.y) : Infinity;
-    const isTap = event.type !== "pointercancel"
-      && this.tapStart?.ball === released
-      && !this.movedBeyondTap
-      && tapDistance <= BALL_TAP_MOVE_PX
-      && now - this.tapStart.time <= BALL_TAP_MAX_MS;
-    if (this.dragActive) {
-      released.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
-      released.body.setLinvel(this.limitVelocity(this.dragVelocity), true);
-      released.body.setAngvel(this.dragVelocity.x / Math.max(released.radius, 1), true);
-      released.element.classList.remove("is-dragging");
-    } else if (isTap && this.heldBallMotion) {
-      released.body.setTranslation(this.heldBallMotion.position, true);
-      released.body.setLinvel(this.limitVelocity(this.heldBallMotion.linvel), true);
-      released.body.setAngvel(this.heldBallMotion.angvel, true);
-    }
-    this.dragging = null;
-    this.dragOffset = { x: 0, y: 0 };
-    this.dragVelocity = { x: 0, y: 0 };
-    this.lastPointer = null;
-    this.tapStart = null;
-    this.movedBeyondTap = false;
-    this.dragActive = false;
-    this.heldBallMotion = null;
-    if (this.field.hasPointerCapture(event.pointerId)) {
-      this.field.releasePointerCapture(event.pointerId);
-    }
-    if (isTap) {
-      this.onOpenDetail(released.ballId);
-    }
-    this.paint();
-  };
-
-  private pointerPoint(event: PointerEvent): { x: number; y: number } {
-    const rect = this.field.getBoundingClientRect();
-    return {
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
-    };
-  }
-
-  private findBall(x: number, y: number): RapierBall | null {
-    let best: RapierBall | null = null;
-    let bestDistance = Number.POSITIVE_INFINITY;
-    for (const ball of this.balls) {
-      const position = ball.body.translation();
-      const distance = Math.hypot(position.x - x, position.y - y);
-      if (distance <= ball.radius && distance < bestDistance) {
-        best = ball;
-        bestDistance = distance;
-      }
-    }
-    return best;
-  }
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
-function separationNormal(a: number, b: number): { x: number; y: number } {
-  const angle = ((a * 41 + b * 17) % 360) * (Math.PI / 180);
-  return { x: Math.cos(angle), y: Math.sin(angle) };
 }

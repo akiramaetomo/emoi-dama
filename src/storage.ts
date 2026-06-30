@@ -1,11 +1,20 @@
-import { getCategoryColorPreset } from "./categories";
-import type { CategoryColorPreset } from "./categories";
+import { getCategoryColorPreset } from "./categories.js";
+import type { CategoryColorPreset } from "./categories.js";
+import { normalizeVisibilityValue } from "./models.js";
 import type { BallDraft, HappyBall, HappyBallEmotionSnapshot, HappyBallLedger, HappyBallVisual, NameBookEntry, NameRole } from "./models";
 
 const STORAGE_KEY = "happyBall.ledger.v1";
 const LEDGER_TYPE = "happy-ball-ledger";
 export const DEFAULT_SAMPLE_NAME = "エモ次郎";
 export const MAX_NAME_BOOK_ENTRIES = 10;
+
+export interface StoredLedgerRecovery {
+  ledger: HappyBallLedger;
+  shouldSave: boolean;
+  rejectedBallCount: number;
+}
+
+export type BallSaveMode = "withEcho" | "correction";
 
 export function todayIsoDate(date = new Date()): string {
   const year = date.getFullYear();
@@ -23,7 +32,7 @@ export function createDefaultDraft(subject = DEFAULT_SAMPLE_NAME): BallDraft {
     title: "",
     category: "日常",
     note: "",
-    visibility: "category",
+    visibility: "open",
   };
 }
 
@@ -34,34 +43,64 @@ export function loadLedger(): HappyBallLedger {
   }
 
   try {
-    const parsed = JSON.parse(stored) as Partial<HappyBallLedger>;
-    if (parsed.type !== LEDGER_TYPE || parsed.v !== 1 || !Array.isArray(parsed.balls)) {
-      return createEmptyLedger();
+    const recovery = normalizeStoredLedger(JSON.parse(stored));
+    if (recovery.shouldSave) {
+      saveLedger(recovery.ledger);
     }
-
-    let visualIndex = 0;
-    const balls = parsed.balls.map((ball) => {
-      const normalized = normalizeBall(ball, visualIndex);
-      visualIndex += clampCount(Number(ball.count) || 1);
-      return normalized;
-    });
-    const ownerProfile = normalizeOwnerProfile(parsed.ownerProfile);
-    const ledger: HappyBallLedger = {
-      v: 1,
-      type: LEDGER_TYPE,
-      ledgerId: parsed.ledgerId || createLedgerId(),
-      ownerProfile,
-      balls,
-      createdAt: parsed.createdAt || new Date().toISOString(),
-      updatedAt: parsed.updatedAt || new Date().toISOString(),
-    };
-    if (parsed.balls.some((ball) => !hasValidVisual((ball as Partial<HappyBall>).visual))) {
-      saveLedger(ledger);
-    }
-    return ledger;
+    return recovery.ledger;
   } catch {
     return createEmptyLedger();
   }
+}
+
+export function normalizeStoredLedger(value: unknown): StoredLedgerRecovery {
+  if (!isPlainObject(value) || value.type !== LEDGER_TYPE || value.v !== 1 || !Array.isArray(value.balls)) {
+    return {
+      ledger: createEmptyLedger(),
+      shouldSave: false,
+      rejectedBallCount: 0,
+    };
+  }
+
+  const parsed = value as Partial<HappyBallLedger>;
+  const balls: HappyBall[] = [];
+  let visualIndex = 0;
+  let rejectedBallCount = 0;
+  let shouldSave = false;
+
+  for (const rawBall of value.balls) {
+    const ball = normalizeRecoverableBall(rawBall, visualIndex);
+    if (!ball) {
+      rejectedBallCount += 1;
+      shouldSave = true;
+      continue;
+    }
+
+    if (!hasValidVisual((rawBall as Partial<HappyBall>).visual)) {
+      shouldSave = true;
+    }
+    if (isPlainObject(rawBall) && normalizeVisibilityValue(rawBall.visibility) !== rawBall.visibility) {
+      shouldSave = true;
+    }
+    balls.push(ball);
+    visualIndex += ball.count;
+  }
+
+  const ledger: HappyBallLedger = {
+    v: 1,
+    type: LEDGER_TYPE,
+    ledgerId: typeof parsed.ledgerId === "string" && parsed.ledgerId.trim() ? parsed.ledgerId.trim() : createLedgerId(),
+    ownerProfile: normalizeOwnerProfile(parsed.ownerProfile),
+    balls,
+    createdAt: typeof parsed.createdAt === "string" && parsed.createdAt.trim() ? parsed.createdAt.trim() : new Date().toISOString(),
+    updatedAt: shouldSave ? new Date().toISOString() : typeof parsed.updatedAt === "string" && parsed.updatedAt.trim() ? parsed.updatedAt.trim() : new Date().toISOString(),
+  };
+
+  return {
+    ledger,
+    shouldSave,
+    rejectedBallCount,
+  };
 }
 
 export function saveLedger(ledger: HappyBallLedger): void {
@@ -99,7 +138,12 @@ export function getPrimarySelfName(ledger: HappyBallLedger): string {
   return getPrimarySelfNameFromBook(ledger.ownerProfile.nameBook);
 }
 
-export function updateBall(ledger: HappyBallLedger, id: string, draft: BallDraft): HappyBallLedger {
+export function updateBall(
+  ledger: HappyBallLedger,
+  id: string,
+  draft: BallDraft,
+  saveMode: BallSaveMode = "withEcho",
+): HappyBallLedger {
   const now = new Date().toISOString();
   let updated = false;
   const balls = ledger.balls.map((ball) => {
@@ -107,7 +151,7 @@ export function updateBall(ledger: HappyBallLedger, id: string, draft: BallDraft
       return ball;
     }
     updated = true;
-    return updateExistingBall(ball, draft, now);
+    return updateExistingBall(ball, draft, now, saveMode);
   });
   if (!updated) {
     return ledger;
@@ -301,7 +345,7 @@ function createBall(draft: BallDraft, now: string, localSelfName: string): Happy
   };
 }
 
-function updateExistingBall(ball: HappyBall, draft: BallDraft, now: string): HappyBall {
+function updateExistingBall(ball: HappyBall, draft: BallDraft, now: string, saveMode: BallSaveMode): HappyBall {
   const subject = draft.subject.trim() || ball.subject || DEFAULT_SAMPLE_NAME;
   const title = draft.title.trim() || "小さなえもいゴト";
   const category = draft.category.trim() || "日常";
@@ -322,22 +366,58 @@ function updateExistingBall(ball: HappyBall, draft: BallDraft, now: string): Hap
     note,
     visibility: draft.visibility,
     visual: updateVisualForDraft(ball, title, category),
-    emotionEcho: createEmotionSnapshot(ball, now),
+    emotionEcho: saveMode === "withEcho" ? createEmotionSnapshot(ball, now) : ball.emotionEcho,
     updatedAt: now,
   };
 }
 
-function normalizeBall(ball: HappyBall, visualIndex = 0): HappyBall {
-  return {
+function normalizeRecoverableBall(value: unknown, visualIndex = 0): HappyBall | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+  const id = normalizeRequiredText(value.id);
+  const date = normalizeRequiredText(value.date);
+  if (!id || !date) {
+    return null;
+  }
+  return normalizeBall({ ...value, id, date }, visualIndex);
+}
+
+function normalizeBall(ball: Partial<HappyBall>, visualIndex = 0): HappyBall {
+  const subject = normalizeText(ball.subject, DEFAULT_SAMPLE_NAME);
+  const title = normalizeText(ball.title, "小さなえもいゴト");
+  const category = normalizeText(ball.category, "日常");
+  const issuedBy = normalizeText(ball.issuedBy, subject);
+  const enteredBy = normalizeText(ball.enteredBy, issuedBy || subject || DEFAULT_SAMPLE_NAME);
+  const id = normalizeRequiredText(ball.id) ?? createBallId(todayIsoDate(), subject);
+  const date = normalizeRequiredText(ball.date) ?? todayIsoDate();
+  const now = new Date().toISOString();
+  const normalizedBall = {
     ...ball,
-    keepers: Array.isArray(ball.keepers) ? ball.keepers : [],
-    viewers: Array.isArray(ball.viewers) ? ball.viewers : [],
+    id,
+    date,
+    subject,
+    issuerType: normalizeIssuerType(ball.issuerType),
+    issuedBy,
+    enteredBy,
+    approvedBy: normalizeNullableText(ball.approvedBy),
     count: clampCount(Number(ball.count) || 1),
-    visibility: ball.visibility || "category",
-    visual: normalizeVisual(ball, visualIndex),
+    title,
+    category,
+    note: typeof ball.note === "string" ? ball.note.trim() : "",
+    visibility: normalizeVisibility(ball.visibility),
+    lifecycleStatus: normalizeLifecycleStatus(ball.lifecycleStatus),
+    createdAt: normalizeText(ball.createdAt, now),
+    updatedAt: normalizeText(ball.updatedAt, now),
+  };
+
+  return {
+    ...normalizedBall,
+    keepers: normalizeStringArray(ball.keepers),
+    viewers: normalizeStringArray(ball.viewers),
+    visual: normalizeVisual(normalizedBall, visualIndex),
     emotionEcho: normalizeEmotionEcho(ball.emotionEcho),
     receiptCreatedAt: normalizeOptionalIsoText(ball.receiptCreatedAt),
-    lifecycleStatus: ball.lifecycleStatus || "active",
   };
 }
 
@@ -453,14 +533,21 @@ function normalizeIssuerType(value: unknown): HappyBall["issuerType"] {
 }
 
 function normalizeVisibility(value: unknown): HappyBall["visibility"] {
-  return value === "hidden" || value === "open" || value === "category" ? value : "category";
+  return normalizeVisibilityValue(value);
+}
+
+function normalizeLifecycleStatus(value: unknown): HappyBall["lifecycleStatus"] {
+  return value === "archived" || value === "memorial" || value === "offered" || value === "active" ? value : "active";
 }
 
 function isLegacySelfPlaceholder(name: string): boolean {
   return name === "自分" || name === "本人";
 }
 
-function normalizeVisual(ball: HappyBall, visualIndex: number): HappyBallVisual {
+function normalizeVisual(
+  ball: Pick<Partial<HappyBall>, "visual"> & Pick<HappyBall, "id" | "title" | "category">,
+  visualIndex: number,
+): HappyBallVisual {
   const visual = ball.visual as Partial<HappyBallVisual> | undefined;
   const hue = typeof visual?.hue === "number" && Number.isFinite(visual.hue)
     ? clampHue(visual.hue)
@@ -512,6 +599,31 @@ function hasValidVisual(visual: Partial<HappyBallVisual> | undefined): boolean {
     typeof visual.label === "string" &&
     visual.label.trim().length > 0
   );
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeRequiredText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function normalizeText(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function normalizeNullableText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .map((item) => item.trim());
 }
 
 function createBallVisual(_id: string, title: string, category: string): HappyBallVisual {

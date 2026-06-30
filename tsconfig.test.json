@@ -6,5 +6,21 @@
     "outDir": ".test-build",
     "rootDir": "src"
   },
-  "include": ["src/packet.ts", "src/packet.test.ts"]
+  "include": [
+    "src/categories.ts",
+    "src/device-gravity.ts",
+    "src/device-gravity.test.ts",
+    "src/json-transfer.ts",
+    "src/json-transfer.test.ts",
+    "src/packet.ts",
+    "src/packet.test.ts",
+    "src/qr-code.ts",
+    "src/qr-code.test.ts",
+    "src/settings.ts",
+    "src/settings.test.ts",
+    "src/storage.ts",
+    "src/storage.test.ts",
+    "src/visibility.ts",
+    "src/visibility.test.ts"
+  ]
 }

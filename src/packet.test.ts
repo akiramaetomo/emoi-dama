@@ -53,6 +53,15 @@ const parsedLineQuery = parsePacketQuery(lineUrl.search);
 assertOk(parsedLineQuery, "LINE query import URL should parse");
 assertEqual(parsedLineQuery.packet.items[0].title, sampleBall.title, "query import should preserve Japanese title text");
 
+const issuerVisibilityPacket = createBallPacket({ ...sampleBall, visibility: "issuer" });
+assertEqual(issuerVisibilityPacket.items[0].visibility, "issuer", "packet should preserve issuer-level visibility");
+
+const legacyHiddenPacket = createBallPacket({ ...sampleBall, visibility: "hidden" as unknown as HappyBall["visibility"] });
+const legacyHiddenUrl = createPacketImportUrl(legacyHiddenPacket.items[0], "https://example.test/happy-ball/");
+const parsedLegacyHidden = parsePacketHash(new URL(legacyHiddenUrl).hash);
+assertOk(parsedLegacyHidden, "legacy hidden import URL should parse");
+assertEqual(parsedLegacyHidden.packet.items[0].visibility, "category", "legacy hidden packet visibility should normalize to category");
+
 const parsedLocation = parsePacketLocation(lineUrl.search, "");
 assertOk(parsedLocation, "location parser should accept query import URL");
 

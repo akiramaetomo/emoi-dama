@@ -1,5 +1,6 @@
 export type IssuerType = "self" | "assisted" | "proxy";
-export type Visibility = "hidden" | "category" | "open";
+export type Visibility = "category" | "issuer" | "title" | "open";
+export type LegacyVisibility = Visibility | "hidden";
 export type LifecycleStatus = "active" | "archived" | "memorial" | "offered";
 export type NameRole = "self" | "proxy";
 
@@ -77,13 +78,27 @@ export interface BallDraft {
 }
 
 export const issuerLabels: Record<IssuerType, string> = {
-  self: "本人から",
+  self: "本人が作成",
   assisted: "いっしょに作成",
   proxy: "会話から代理作成",
 };
 
+export const visibilityValues = ["category", "issuer", "title", "open"] as const satisfies readonly Visibility[];
+
 export const visibilityLabels: Record<Visibility, string> = {
-  hidden: "存在だけ",
   category: "カテゴリまで",
+  issuer: "発行者まで",
+  title: "タイトルまで",
   open: "メモも表示",
 };
+
+export function isKnownVisibility(value: unknown): value is LegacyVisibility {
+  return value === "hidden" || visibilityValues.includes(value as Visibility);
+}
+
+export function normalizeVisibilityValue(value: unknown, fallback: Visibility = "category"): Visibility {
+  if (value === "hidden") {
+    return "category";
+  }
+  return visibilityValues.includes(value as Visibility) ? (value as Visibility) : fallback;
+}
