@@ -1,5 +1,6 @@
 export type EmotionEchoStrength = "off" | "weak" | "medium" | "strong";
 export type BallLabelMode = "none" | "date" | "title";
+export type BackgroundTexture = "grid" | "paper" | "grain" | "mist" | "random";
 
 export interface AppSettings {
   wallRestitution: number;
@@ -21,6 +22,7 @@ export interface AppSettings {
   ballLabelMode: BallLabelMode;
   showMemoField: boolean;
   emotionEchoStrength: EmotionEchoStrength;
+  backgroundTexture: BackgroundTexture;
 }
 
 const SETTINGS_KEY = "happyBall.settings.v2";
@@ -45,6 +47,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   ballLabelMode: "none",
   showMemoField: false,
   emotionEchoStrength: "weak",
+  backgroundTexture: "grid",
 };
 
 export function loadAppSettings(): AppSettings {
@@ -82,6 +85,7 @@ export function normalizeAppSettings(value: unknown): AppSettings {
     ballLabelMode: readBallLabelMode(source.ballLabelMode, source.showBallLabels),
     showMemoField: readBoolean(source.showMemoField, DEFAULT_APP_SETTINGS.showMemoField),
     emotionEchoStrength: readEchoStrength(source.emotionEchoStrength),
+    backgroundTexture: readBackgroundTexture(source.backgroundTexture),
   };
 }
 
@@ -99,7 +103,14 @@ export function looksLikeAppSettings(value: unknown): boolean {
     "showBallLabels",
     "showMemoField",
     "emotionEchoStrength",
+    "backgroundTexture",
   ].some((key) => key in value);
+}
+
+export function readBackgroundTexture(value: unknown): BackgroundTexture {
+  return value === "paper" || value === "grain" || value === "mist" || value === "random" || value === "grid"
+    ? value
+    : DEFAULT_APP_SETTINGS.backgroundTexture;
 }
 
 export function readEchoStrength(value: unknown): EmotionEchoStrength {

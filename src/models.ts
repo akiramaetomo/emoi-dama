@@ -3,11 +3,13 @@ export type Visibility = "category" | "issuer" | "title" | "open";
 export type LegacyVisibility = Visibility | "hidden";
 export type LifecycleStatus = "active" | "archived" | "memorial" | "offered";
 export type NameRole = "self" | "proxy";
+export type BallVisualKind = "filled" | "ring";
 
 export interface HappyBallVisual {
   hue: number;
   saturation: number;
   lightness: number;
+  kind: BallVisualKind;
   label: string;
 }
 

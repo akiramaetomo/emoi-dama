@@ -8,6 +8,9 @@
   },
   "include": [
     "src/categories.ts",
+    "src/categories.test.ts",
+    "src/display-period.ts",
+    "src/display-period.test.ts",
     "src/device-gravity.ts",
     "src/device-gravity.test.ts",
     "src/json-transfer.ts",

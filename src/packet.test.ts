@@ -28,6 +28,7 @@ const sampleBall: HappyBall = {
     hue: 214,
     saturation: 42,
     lightness: 54,
+    kind: "filled",
     label: "夕方の空",
   },
   lifecycleStatus: "active",
@@ -40,6 +41,7 @@ const parsed = parsePacketHash(new URL(importUrl).hash);
 assertOk(parsed, "generated import URL should parse");
 assertEqual(parsed.packet.items[0].title, sampleBall.title, "packet should preserve Japanese title text");
 assertEqual(parsed.packet.items[0].visual.label, "夕方の空", "packet should preserve Japanese visual label text");
+assertEqual(parsed.packet.items[0].visual.kind, "filled", "packet should preserve visual kind");
 assert(new URL(importUrl).hash.startsWith("#import="), "standard import URL should use a fragment payload");
 assert(!new URL(importUrl).searchParams.has("openExternalBrowser"), "standard import URL should not keep LINE query parameters");
 

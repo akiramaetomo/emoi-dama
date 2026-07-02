@@ -10,6 +10,7 @@ export interface VisualBallSource {
   hue: number;
   saturation: number;
   lightness: number;
+  visualKind: "filled" | "ring";
   echo: { hue: number; saturation: number; lightness: number } | null;
   snapshot: PhysicsBallSnapshot | null;
   label: string;
@@ -164,7 +165,7 @@ export class RapierStage {
     this.collisionCooldown.clear();
 
     if (sources.length === 0) {
-      this.field.innerHTML = `<div class="empty-state"><div class="seed-ball" aria-hidden="true"></div></div>`;
+      this.field.innerHTML = `<div class="empty-state" aria-hidden="true"></div>`;
       return;
     }
 
@@ -234,7 +235,7 @@ export class RapierStage {
       const element = document.createElement("button");
       element.type = "button";
       element.tabIndex = -1;
-      element.className = `physics-ball ${source.labelClass}${source.echo ? ` has-echo echo-${this.settings.emotionEchoStrength}` : ""}`;
+      element.className = `physics-ball ${source.labelClass} ${source.visualKind === "ring" ? "is-ring-ball" : "is-filled-ball"}${source.echo ? ` has-echo echo-${this.settings.emotionEchoStrength}` : ""}`;
       element.dataset.visualBallId = source.id;
       element.style.width = `${radius * 2}px`;
       element.style.height = `${radius * 2}px`;

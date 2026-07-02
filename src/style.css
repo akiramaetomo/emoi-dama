@@ -184,13 +184,74 @@ h2 {
   border-radius: 0;
   background:
     linear-gradient(180deg, rgba(255, 242, 206, 0.08), transparent 30%, rgba(12, 18, 16, 0.34)),
-    repeating-linear-gradient(90deg, rgba(248, 223, 176, 0.035) 0 1px, transparent 1px 56px),
-    repeating-linear-gradient(0deg, rgba(81, 190, 155, 0.035) 0 1px, transparent 1px 56px),
     linear-gradient(135deg, rgba(17, 40, 35, 0.98), rgba(24, 25, 34, 0.92) 56%, rgba(61, 39, 23, 0.92));
-  background-size: auto, 56px 56px, 56px 56px, auto;
+  background-size: auto, auto;
   box-shadow:
     inset 0 0 120px rgba(0, 0, 0, 0.42),
     inset 0 0 0 1px rgba(246, 210, 145, 0.08);
+}
+
+.ball-field.texture-grid {
+  background:
+    linear-gradient(180deg, rgba(255, 242, 206, 0.08), transparent 30%, rgba(12, 18, 16, 0.34)),
+    repeating-linear-gradient(90deg, rgba(248, 223, 176, 0.058) 0 1px, transparent 1px 54px),
+    repeating-linear-gradient(0deg, rgba(81, 190, 155, 0.052) 0 1px, transparent 1px 54px),
+    linear-gradient(135deg, rgba(17, 40, 35, 0.98), rgba(24, 25, 34, 0.92) 56%, rgba(61, 39, 23, 0.92));
+  background-size: auto, 54px 54px, 54px 54px, auto;
+}
+
+.ball-field.texture-paper {
+  background:
+    linear-gradient(180deg, rgba(255, 242, 206, 0.09), transparent 32%, rgba(12, 18, 16, 0.34)),
+    radial-gradient(circle at 18% 22%, rgba(255, 246, 218, 0.12) 0 1px, transparent 1.6px),
+    radial-gradient(circle at 78% 64%, rgba(82, 186, 154, 0.11) 0 1px, transparent 1.7px),
+    repeating-linear-gradient(26deg, rgba(255, 230, 184, 0.028) 0 1px, transparent 1px 7px),
+    linear-gradient(135deg, rgba(18, 38, 34, 0.98), rgba(29, 27, 34, 0.92) 58%, rgba(63, 42, 25, 0.92));
+  background-size: auto, 19px 23px, 29px 31px, 100% 100%, auto;
+}
+
+.ball-field.texture-grain {
+  background:
+    linear-gradient(180deg, rgba(255, 242, 206, 0.08), transparent 30%, rgba(12, 18, 16, 0.35)),
+    radial-gradient(circle at 12% 30%, rgba(246, 223, 177, 0.14) 0 1.2px, transparent 1.8px),
+    radial-gradient(circle at 68% 18%, rgba(142, 225, 205, 0.12) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 42% 74%, rgba(224, 142, 105, 0.1) 0 1px, transparent 1.7px),
+    linear-gradient(135deg, rgba(16, 39, 35, 0.98), rgba(24, 25, 34, 0.92) 56%, rgba(61, 39, 23, 0.92));
+  background-size: auto, 31px 37px, 47px 43px, 59px 53px, auto;
+}
+
+.ball-field.texture-mist {
+  background:
+    radial-gradient(ellipse at 24% 28%, rgba(246, 223, 177, 0.16), transparent 34%),
+    radial-gradient(ellipse at 76% 66%, rgba(102, 205, 178, 0.14), transparent 36%),
+    linear-gradient(115deg, rgba(255, 246, 218, 0.05), transparent 28%, rgba(131, 82, 108, 0.1) 68%, transparent),
+    linear-gradient(135deg, rgba(17, 40, 35, 0.98), rgba(24, 25, 34, 0.92) 56%, rgba(61, 39, 23, 0.92));
+  background-size: auto;
+}
+
+.ball-field.texture-random {
+  background:
+    linear-gradient(180deg, rgba(255, 242, 206, 0.08), transparent 30%, rgba(12, 18, 16, 0.35)),
+    radial-gradient(circle at var(--texture-random-dot-1, 12% 26%), rgba(246, 223, 177, 0.14) 0 1px, transparent 1.8px),
+    radial-gradient(circle at var(--texture-random-dot-2, 76% 18%), rgba(142, 225, 205, 0.12) 0 1px, transparent 1.9px),
+    radial-gradient(circle at var(--texture-random-dot-3, 44% 78%), rgba(224, 142, 105, 0.1) 0 1px, transparent 1.8px),
+    radial-gradient(circle at var(--texture-random-dot-4, 28% 58%), rgba(255, 246, 218, 0.09) 0 1.2px, transparent 2px),
+    radial-gradient(circle at var(--texture-random-dot-5, 88% 72%), rgba(82, 186, 154, 0.1) 0 0.9px, transparent 1.8px),
+    radial-gradient(circle at var(--texture-random-dot-6, 16% 84%), rgba(246, 223, 177, 0.08) 0 1px, transparent 2px),
+    radial-gradient(circle at var(--texture-random-dot-7, 62% 42%), rgba(255, 246, 218, 0.08) 0 0.9px, transparent 1.9px),
+    radial-gradient(circle at var(--texture-random-dot-8, 36% 14%), rgba(142, 225, 205, 0.08) 0 1px, transparent 2px),
+    linear-gradient(135deg, rgba(16, 39, 35, 0.98), rgba(24, 25, 34, 0.92) 56%, rgba(61, 39, 23, 0.92));
+  background-size:
+    auto,
+    var(--texture-random-size-1, 37px 41px),
+    var(--texture-random-size-2, 51px 47px),
+    var(--texture-random-size-3, 63px 59px),
+    var(--texture-random-size-4, 43px 61px),
+    var(--texture-random-size-5, 71px 67px),
+    var(--texture-random-size-6, 57px 39px),
+    var(--texture-random-size-7, 35px 73px),
+    var(--texture-random-size-8, 69px 45px),
+    auto;
 }
 
 .ball-field::before {
@@ -211,11 +272,11 @@ h2 {
   left: 50%;
   z-index: 0;
   max-width: 86vw;
-  color: rgba(246, 223, 177, 0.24);
+  color: rgba(246, 223, 177, 0.29);
   font-family:
     "Cormorant Garamond", "Baskerville", "Times New Roman",
     "Yu Mincho", "Hiragino Mincho ProN", serif;
-  font-size: clamp(2.35rem, 5vw, 3.8rem);
+  font-size: clamp(3rem, 7vw, 6rem);
   font-style: italic;
   font-weight: 500;
   letter-spacing: 0;
@@ -240,12 +301,30 @@ h2 {
   text-shadow: 0 3px 14px rgba(0, 0, 0, 0.36);
 }
 
-.world-actions {
+.world-control-dock {
   position: absolute;
   z-index: var(--z-stage-ui);
   right: auto;
   bottom: 22px;
   left: 50%;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  transform: translateX(-50%);
+}
+
+.world-action-prompt {
+  margin: 0;
+  color: rgba(246, 223, 177, 0.72);
+  font-size: var(--readable-xs);
+  font-weight: 800;
+  text-align: center;
+  text-shadow: 0 3px 14px rgba(0, 0, 0, 0.42);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.world-actions {
   display: flex;
   gap: 12px;
   align-items: center;
@@ -258,7 +337,6 @@ h2 {
     0 18px 52px rgba(0, 0, 0, 0.32),
     inset 0 1px 0 rgba(255, 246, 218, 0.12);
   backdrop-filter: blur(12px);
-  transform: translateX(-50%);
 }
 
 .world-actions button {
@@ -359,7 +437,8 @@ h2 {
 
 .physics-ball,
 .happy-ball,
-.seed-ball {
+.seed-ball,
+.settings-brand-ball {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -489,6 +568,17 @@ h2 {
     inset 8px 7px 15px rgba(255, 255, 255, 0.18);
 }
 
+.is-ring-ball .ball-body {
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0.12) 18%, transparent 29%),
+    radial-gradient(circle at 50% 50%, hsl(var(--ball-hue, 34) max(8%, calc(var(--ball-saturation, 68%) - 18%)) min(94%, calc(var(--ball-lightness, 58%) + 18%)) / 0.12) 0 63%, hsl(var(--ball-hue, 34) calc(var(--ball-saturation, 68%) + 4%) min(88%, calc(var(--ball-lightness, 58%) + 6%)) / 0.44) 67% 78%, hsl(var(--ball-hue, 34) calc(var(--ball-saturation, 68%) + 6%) min(86%, calc(var(--ball-lightness, 58%) + 8%)) / 0.96) 82% 100%);
+  box-shadow:
+    0 22px 48px rgba(48, 74, 67, 0.2),
+    inset 0 0 0 max(7px, 10.25%) hsl(var(--ball-hue, 34) calc(var(--ball-saturation, 68%) + 6%) min(86%, calc(var(--ball-lightness, 58%) + 8%)) / 0.94),
+    inset 0 0 18px rgba(255, 255, 255, 0.18),
+    inset -10px -12px 22px rgba(18, 28, 25, 0.12);
+}
+
 .ball-core {
   background:
     radial-gradient(circle at 38% 34%, hsl(var(--ball-hue, 34) calc(var(--ball-saturation, 68%) + 10%) calc(var(--ball-lightness, 58%) + 10%)), transparent 32%),
@@ -505,6 +595,24 @@ h2 {
   will-change: transform;
 }
 
+.is-ring-ball .ball-core {
+  inset: 0;
+  border: 0;
+  background:
+    conic-gradient(
+      from 18deg,
+      hsl(var(--ball-hue, 34) calc(var(--ball-saturation, 68%) + 8%) min(96%, calc(var(--ball-lightness, 58%) + 22%)) / 0.9),
+      transparent 14%,
+      hsl(var(--ball-hue, 34) var(--ball-saturation, 68%) max(22%, calc(var(--ball-lightness, 58%) - 10%)) / 0.68) 30%,
+      transparent 46%,
+      rgba(255, 255, 255, 0.56) 61%,
+      transparent 76%,
+      hsl(var(--ball-hue, 34) calc(var(--ball-saturation, 68%) + 6%) min(88%, calc(var(--ball-lightness, 58%) + 8%)) / 0.78)
+    );
+  mask-image: radial-gradient(circle, transparent 0 63%, #000 67% 100%);
+  -webkit-mask-image: radial-gradient(circle, transparent 0 63%, #000 67% 100%);
+}
+
 .ball-shade {
   background:
     radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 0.18), transparent 30%),
@@ -512,11 +620,21 @@ h2 {
     linear-gradient(145deg, transparent 0%, rgba(25, 38, 33, 0.16) 100%);
 }
 
+.is-ring-ball .ball-shade {
+  background:
+    radial-gradient(circle at 70% 78%, rgba(20, 35, 30, 0.18), transparent 50%),
+    linear-gradient(145deg, transparent 0%, rgba(25, 38, 33, 0.08) 100%);
+}
+
 .ball-highlight {
   background:
     radial-gradient(circle at 31% 26%, rgba(255, 255, 255, 0.68), rgba(255, 255, 255, 0.16) 18%, transparent 30%),
     radial-gradient(circle at 42% 35%, rgba(255, 255, 255, 0.16), transparent 18%);
   opacity: 0.78;
+}
+
+.is-ring-ball .ball-highlight {
+  opacity: 0.92;
 }
 
 .ball-label,
@@ -571,6 +689,47 @@ h2 {
   position: relative;
   opacity: 0.55;
   animation: settle 5.6s ease-in-out infinite;
+}
+
+.settings-brand-mark {
+  display: grid;
+  justify-items: center;
+  padding: 0 0 2px;
+  pointer-events: none;
+}
+
+.settings-brand-ball {
+  --size: 62px;
+  display: grid;
+  position: relative;
+  left: auto;
+  top: auto;
+  place-items: center;
+  opacity: 0.92;
+  transform: none;
+  animation: settle 5.6s ease-in-out infinite;
+  box-shadow:
+    0 16px 36px rgba(48, 74, 67, 0.28),
+    inset -12px -14px 24px rgba(42, 49, 46, 0.18),
+    inset 8px 7px 16px rgba(255, 255, 255, 0.42);
+}
+
+.settings-brand-word {
+  position: relative;
+  z-index: 1;
+  color: rgba(255, 246, 218, 0.9);
+  font-family:
+    "Yu Mincho", "Hiragino Mincho ProN", "Hiragino Mincho Pro", "YuMincho",
+    "Noto Serif CJK JP", serif;
+  font-size: 0.94rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1.04;
+  text-align: center;
+  text-shadow:
+    0 1px 3px rgba(30, 40, 34, 0.58),
+    0 5px 16px rgba(0, 0, 0, 0.32);
+  white-space: nowrap;
 }
 
 .empty-state {
@@ -672,6 +831,11 @@ h2 {
 }
 
 .panel-backdrop-create {
+  place-items: center;
+  justify-items: center;
+}
+
+.panel-backdrop-settings {
   place-items: center;
   justify-items: center;
 }
@@ -856,10 +1020,46 @@ h2 {
   background: rgba(54, 74, 56, 0.76);
 }
 
+.calendar-cell.is-today {
+  border-color: rgba(124, 222, 218, 0.64);
+  box-shadow:
+    inset 0 0 0 2px rgba(124, 222, 218, 0.22),
+    0 0 0 1px rgba(124, 222, 218, 0.12);
+}
+
+.calendar-cell.is-today::after {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 1;
+  padding: 2px 6px;
+  border: 1px solid rgba(156, 243, 239, 0.44);
+  border-radius: 999px;
+  background: rgba(11, 45, 47, 0.74);
+  color: #9cf3ef;
+  font-size: 0.76rem;
+  font-weight: 900;
+  line-height: 1.1;
+  content: "本日";
+}
+
+.calendar-cell.is-selected.is-today {
+  border-color: #f0c06f;
+  box-shadow:
+    inset 0 0 0 2px rgba(124, 222, 218, 0.34),
+    0 0 0 2px rgba(124, 222, 218, 0.28),
+    0 0 0 4px rgba(240, 192, 111, 0.12);
+}
+
 .calendar-day {
   font-size: var(--readable-sm);
   font-weight: 900;
   line-height: 1;
+}
+
+.calendar-cell.is-today .calendar-day {
+  color: #9cf3ef;
+  text-shadow: 0 0 12px rgba(124, 222, 218, 0.34);
 }
 
 .mini-ball-row {
@@ -885,11 +1085,36 @@ h2 {
   box-shadow: inset -3px -4px 6px rgba(28, 42, 37, 0.22);
 }
 
+.mini-ball.is-ring-ball,
+.category-swatch.is-ring-ball {
+  border: 0;
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.68), transparent 32%),
+    hsl(var(--ball-hue, 34) max(8%, calc(var(--ball-saturation, 68%) - 18%)) min(92%, calc(var(--ball-lightness, 58%) + 14%)) / 0.18);
+  box-shadow:
+    inset 0 0 0 3.5px hsl(var(--ball-hue, 34) calc(var(--ball-saturation, 68%) + 6%) min(86%, calc(var(--ball-lightness, 58%) + 8%)) / 0.96),
+    inset -2px -3px 5px rgba(28, 42, 37, 0.14);
+}
+
+.category-swatch.is-ring-ball {
+  box-shadow:
+    inset 0 0 0 4.25px hsl(var(--ball-hue, 34) calc(var(--ball-saturation, 68%) + 6%) min(86%, calc(var(--ball-lightness, 58%) + 8%)) / 0.96),
+    inset -2px -3px 5px rgba(28, 42, 37, 0.12);
+}
+
 .mini-ball.has-echo {
   box-shadow:
     0 0 0 var(--mini-echo-ring, 2px) hsl(var(--echo-hue, 44) calc(var(--echo-saturation, 54%) + 6%) calc(var(--echo-lightness, 58%) + 14%) / var(--mini-echo-alpha, 0.8)),
     0 0 var(--mini-echo-blur, 10px) hsl(var(--echo-hue, 44) var(--echo-saturation, 54%) calc(var(--echo-lightness, 58%) + 8%) / var(--mini-echo-soft-alpha, 0.58)),
     inset -3px -4px 6px rgba(28, 42, 37, 0.22);
+}
+
+.mini-ball.is-ring-ball.has-echo {
+  box-shadow:
+    0 0 0 var(--mini-echo-ring, 2px) hsl(var(--echo-hue, 44) calc(var(--echo-saturation, 54%) + 6%) calc(var(--echo-lightness, 58%) + 14%) / var(--mini-echo-alpha, 0.8)),
+    0 0 var(--mini-echo-blur, 10px) hsl(var(--echo-hue, 44) var(--echo-saturation, 54%) calc(var(--echo-lightness, 58%) + 8%) / var(--mini-echo-soft-alpha, 0.58)),
+    inset 0 0 0 3.5px hsl(var(--ball-hue, 34) calc(var(--ball-saturation, 68%) + 6%) min(86%, calc(var(--ball-lightness, 58%) + 8%)) / 0.96),
+    inset -2px -3px 5px rgba(28, 42, 37, 0.14);
 }
 
 .mini-ball.echo-weak {
@@ -1156,15 +1381,37 @@ h2 {
   gap: 8px;
 }
 
+.detail-info-list {
+  grid-template-columns: 1fr;
+}
+
 .detail-info-card {
   display: grid;
   gap: 5px;
   min-width: 0;
   min-height: 94px;
   padding: 10px 12px;
-  border: 1px solid rgba(244, 215, 160, 0.14);
+  border: 2px solid rgba(244, 215, 160, 0.22);
   border-radius: 8px;
   background: rgba(10, 17, 15, 0.44);
+}
+
+.detail-info-row {
+  grid-template-columns: minmax(4.6em, auto) minmax(0, 1fr);
+  align-items: center;
+  min-height: 54px;
+}
+
+.detail-feeling-card {
+  gap: 9px;
+}
+
+.detail-feeling-card .detail-info-row {
+  min-height: 34px;
+}
+
+.detail-info-row small {
+  grid-column: 2;
 }
 
 .detail-info-card > span:first-child,
@@ -1194,27 +1441,26 @@ h2 {
   white-space: nowrap;
 }
 
-.detail-echo-value {
+.detail-info-value {
   display: flex;
   min-width: 0;
   align-items: center;
   gap: 8px;
 }
 
+.detail-info-value strong,
+.detail-echo-value strong {
+  min-width: 0;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .detail-info-ball {
   flex: 0 0 auto;
   width: 24px;
   height: 24px;
-}
-
-.detail-feeling-card {
-  gap: 10px;
-}
-
-.detail-feeling-card div {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
 }
 
 .detail-receipt-card {
@@ -2209,12 +2455,7 @@ textarea:focus {
   color: var(--color-accent-soft);
 }
 
-/* Settings / JSON Tools */
-
-.ledger-panel {
-  display: grid;
-  gap: 12px;
-}
+/* Settings */
 
 .tools-panel {
   display: grid;
@@ -2302,6 +2543,39 @@ textarea:focus {
   background: var(--color-accent);
 }
 
+.app-version-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.app-version-list div {
+  display: grid;
+  grid-template-columns: minmax(92px, auto) minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 10px;
+  border: 1px solid var(--border-panel-subtle);
+  border-radius: var(--radius-panel);
+  background: var(--surface-panel-soft);
+}
+
+.app-version-list dt {
+  color: #d9eee7;
+  font-size: var(--readable-sm);
+  font-weight: 800;
+}
+
+.app-version-list dd {
+  margin: 0;
+  color: #f6dfb1;
+  font-size: var(--readable-sm);
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
 .settings-group-actions {
   display: flex;
   flex-wrap: wrap;
@@ -2314,6 +2588,19 @@ textarea:focus {
   min-height: 36px;
   padding: 0 12px;
   font-size: var(--readable-sm);
+}
+
+.display-setting-item {
+  display: grid;
+  gap: 2px;
+}
+
+.display-setting-item + .display-setting-item {
+  margin-top: 14px;
+}
+
+.display-setting-item-with-help .settings-copy {
+  padding-left: 28px;
 }
 
 .export-options,
@@ -2366,16 +2653,20 @@ textarea:focus {
   padding: 0;
 }
 
-.settings-json {
+.tuning-section {
   display: grid;
   gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border-panel-subtle);
+  border-radius: var(--radius-panel);
+  background: rgba(8, 14, 12, 0.24);
 }
 
-.settings-json summary {
-  color: #f6dfb1;
-  cursor: pointer;
+.tuning-section h3 {
+  margin: 0;
+  color: #b8d8ce;
   font-size: var(--readable-sm);
-  font-weight: 800;
+  font-weight: 900;
 }
 
 .name-preset-select {
@@ -2434,12 +2725,34 @@ textarea:focus {
   gap: 14px;
 }
 
+.settings-feedback {
+  flex: 0 0 auto;
+  min-width: 5.5em;
+  color: #f6dfb1;
+  font-size: var(--readable-xs);
+  font-weight: 800;
+  text-align: right;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.settings-feedback[data-visible="true"] {
+  opacity: 1;
+}
+
 .category-edit-tone {
   display: grid;
   gap: 8px;
 }
 
+.category-edit-tone-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .category-edit-tone h3 {
+  flex: 1 1 auto;
   margin: 0;
   color: #b8d8ce;
   font-size: var(--readable-sm);
@@ -2467,8 +2780,23 @@ textarea:focus {
   padding: 0 10px;
 }
 
-.danger-zone h2 {
-  color: var(--color-danger-strong);
+.category-reset-zone,
+.name-book-reset-zone,
+.ball-data-clear-zone {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(244, 215, 160, 0.13);
+}
+
+.category-reset-action,
+.name-book-reset-action,
+.ball-data-clear-action {
+  min-height: 44px;
+  padding: 0 14px;
+  background: rgba(86, 27, 24, 0.42);
 }
 
 .danger-action {
@@ -2626,6 +2954,7 @@ pre {
   }
 
   .panel-backdrop-settings {
+    place-items: stretch;
     justify-items: stretch;
     padding: 0;
   }
@@ -2703,6 +3032,22 @@ pre {
   .name-book-row select {
     min-height: 34px;
     padding: 0 7px;
+  }
+
+  .category-edit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .category-edit-item {
+    grid-template-columns: 22px minmax(0, 1fr);
+    padding: 7px;
+  }
+
+  .category-edit-item input {
+    min-width: 0;
+    min-height: 38px;
+    padding: 0 8px;
+    font-size: 0.98rem;
   }
 
   .button-row {
@@ -2826,10 +3171,17 @@ pre {
     grid-template-columns: 1fr;
   }
 
-  .world-actions {
+  .world-control-dock {
     right: auto;
     bottom: 12px;
     left: 50%;
+  }
+
+  .world-action-prompt {
+    font-size: 0.95rem;
+  }
+
+  .world-actions {
     gap: 8px;
     padding: 8px;
   }

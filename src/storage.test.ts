@@ -1,5 +1,5 @@
 import type { HappyBall, HappyBallLedger } from "./models";
-import { createDefaultDraft, DEFAULT_SAMPLE_NAME, normalizeStoredLedger, updateBall } from "./storage.js";
+import { clearBallData, createDefaultDraft, DEFAULT_SAMPLE_NAME, normalizeStoredLedger, resetNameBook, updateBall } from "./storage.js";
 
 Object.defineProperty(globalThis, "localStorage", {
   value: {
@@ -33,6 +33,7 @@ const sampleBall: HappyBall = {
     hue: 214,
     saturation: 42,
     lightness: 54,
+    kind: "filled",
     label: "夕方の空",
   },
   lifecycleStatus: "active",
@@ -86,6 +87,7 @@ assertEqual(legacyVisualRecovery.ledger.balls.length, 1, "legacy visual recovery
 assertEqual(legacyVisualRecovery.ledger.balls[0]?.count, 99, "legacy visual recovery should clamp unsafe counts");
 assertEqual(legacyVisualRecovery.ledger.balls[0]?.visual.label, "夕方の空", "legacy visual recovery should recreate a readable label");
 assertEqual(typeof legacyVisualRecovery.ledger.balls[0]?.visual.hue, "number", "legacy visual recovery should recreate a hue");
+assertEqual(legacyVisualRecovery.ledger.balls[0]?.visual.kind, "filled", "legacy visual recovery should use filled visuals");
 assert(legacyVisualRecovery.shouldSave, "legacy visual recovery should be rewritten with a stable visual");
 
 const legacyHiddenRecovery = normalizeStoredLedger({
@@ -108,6 +110,25 @@ assertEqual(emptyRecovery.rejectedBallCount, 0, "invalid ledger envelope should 
 const defaultDraft = createDefaultDraft();
 assertEqual(defaultDraft.visibility, "open", "new ball drafts should default to memo-visible sharing");
 
+const clearedBallData = clearBallData(sampleLedger);
+assertEqual(clearedBallData.balls.length, 0, "clearing ball data should remove saved balls");
+assertEqual(clearedBallData.ownerProfile.name, sampleLedger.ownerProfile.name, "clearing ball data should keep the owner profile name");
+assertEqual(clearedBallData.ownerProfile.nameBook.length, sampleLedger.ownerProfile.nameBook.length, "clearing ball data should keep the name book");
+
+const resetNameBookLedger = resetNameBook({
+  ...sampleLedger,
+  ownerProfile: {
+    name: "利用者",
+    nameBook: [
+      { id: "person_user", name: "利用者", role: "self" },
+      { id: "person_proxy", name: "代理相手", role: "proxy" },
+    ],
+  },
+});
+assertEqual(resetNameBookLedger.ownerProfile.name, DEFAULT_SAMPLE_NAME, "resetting the name book should restore the default sample name");
+assertEqual(resetNameBookLedger.ownerProfile.nameBook.length, 1, "resetting the name book should restore a single default entry");
+assertEqual(resetNameBookLedger.balls.length, sampleLedger.balls.length, "resetting the name book should keep saved balls");
+
 const editedDraft = {
   date: sampleBall.date,
   subject: sampleBall.subject,
@@ -123,6 +144,7 @@ const echoSavedBall = echoSaved.balls[0];
 assertEqual(echoSavedBall?.title, editedDraft.title, "echo save should update the current ball");
 assertEqual(echoSavedBall?.emotionEcho?.title, sampleBall.title, "echo save should preserve the previous title as echo data");
 assertEqual(echoSavedBall?.emotionEcho?.category, sampleBall.category, "echo save should preserve the previous category as echo data");
+assertEqual(echoSavedBall?.visual.kind, "filled", "normal categories should keep filled visuals");
 
 const correctionDraft = {
   ...editedDraft,
@@ -137,6 +159,14 @@ assertEqual(correctionSavedBall?.emotionEcho?.category, sampleBall.category, "co
 
 const correctionWithoutEcho = updateBall(sampleLedger, sampleBall.id, correctionDraft, "correction");
 assert(!correctionWithoutEcho.balls[0]?.emotionEcho, "correction save should not create a new echo when none exists");
+
+const sakisakiDraft = {
+  ...editedDraft,
+  category: "先々・予定",
+};
+const sakisakiSaved = updateBall(sampleLedger, sampleBall.id, sakisakiDraft, "withEcho");
+assertEqual(sakisakiSaved.balls[0]?.visual.kind, "ring", "sakisaki categories should create ring visuals");
+assertEqual(sakisakiSaved.balls[0]?.emotionEcho?.visual.kind, "filled", "echo snapshots should preserve the previous visual kind");
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {

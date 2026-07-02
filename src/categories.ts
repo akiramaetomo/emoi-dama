@@ -1,4 +1,5 @@
-export type CategoryTone = "bright" | "dark" | "neutral";
+export type CategoryTone = "bright" | "dark" | "neutral" | "future";
+export type CategoryVisualKind = "filled" | "ring";
 
 export interface CategoryColorPreset {
   name: string;
@@ -6,33 +7,41 @@ export interface CategoryColorPreset {
   hue: number;
   saturation: number;
   lightness: number;
+  visualKind: CategoryVisualKind;
 }
 
 export const toneLabels: Record<CategoryTone, string> = {
   bright: "明るい系",
   dark: "ダーク系",
   neutral: "ニュートラル",
+  future: "先々",
 };
 
 export const categoryColorPresets: CategoryColorPreset[] = [
-  { name: "よろこび", tone: "bright", hue: 18, saturation: 64, lightness: 62 },
-  { name: "ひらめき", tone: "bright", hue: 43, saturation: 68, lightness: 58 },
-  { name: "やさしさ", tone: "bright", hue: 118, saturation: 40, lightness: 58 },
-  { name: "安心", tone: "bright", hue: 176, saturation: 42, lightness: 58 },
-  { name: "ときめき", tone: "bright", hue: 334, saturation: 54, lightness: 64 },
-  { name: "祝福", tone: "bright", hue: 266, saturation: 48, lightness: 66 },
-  { name: "しずけさ", tone: "dark", hue: 190, saturation: 36, lightness: 36 },
-  { name: "余韻", tone: "dark", hue: 234, saturation: 32, lightness: 40 },
-  { name: "祈り", tone: "dark", hue: 286, saturation: 30, lightness: 38 },
-  { name: "覚悟", tone: "dark", hue: 350, saturation: 38, lightness: 37 },
-  { name: "夜明け前", tone: "dark", hue: 216, saturation: 28, lightness: 34 },
-  { name: "深呼吸", tone: "dark", hue: 148, saturation: 34, lightness: 36 },
-  { name: "日常", tone: "neutral", hue: 92, saturation: 22, lightness: 54 },
-  { name: "記録", tone: "neutral", hue: 38, saturation: 16, lightness: 58 },
-  { name: "感謝", tone: "neutral", hue: 22, saturation: 30, lightness: 55 },
-  { name: "家族", tone: "neutral", hue: 54, saturation: 18, lightness: 60 },
-  { name: "仕事", tone: "neutral", hue: 204, saturation: 20, lightness: 52 },
-  { name: "供養", tone: "neutral", hue: 278, saturation: 16, lightness: 52 },
+  { name: "よろこび", tone: "bright", hue: 18, saturation: 64, lightness: 62, visualKind: "filled" },
+  { name: "ひらめき", tone: "bright", hue: 43, saturation: 68, lightness: 58, visualKind: "filled" },
+  { name: "やさしさ", tone: "bright", hue: 118, saturation: 40, lightness: 58, visualKind: "filled" },
+  { name: "安心", tone: "bright", hue: 176, saturation: 42, lightness: 58, visualKind: "filled" },
+  { name: "ときめき", tone: "bright", hue: 334, saturation: 54, lightness: 64, visualKind: "filled" },
+  { name: "祝福", tone: "bright", hue: 266, saturation: 48, lightness: 66, visualKind: "filled" },
+  { name: "しずけさ", tone: "dark", hue: 190, saturation: 36, lightness: 36, visualKind: "filled" },
+  { name: "余韻", tone: "dark", hue: 234, saturation: 32, lightness: 40, visualKind: "filled" },
+  { name: "祈り", tone: "dark", hue: 286, saturation: 30, lightness: 38, visualKind: "filled" },
+  { name: "覚悟", tone: "dark", hue: 350, saturation: 38, lightness: 37, visualKind: "filled" },
+  { name: "夜明け前", tone: "dark", hue: 216, saturation: 28, lightness: 34, visualKind: "filled" },
+  { name: "深呼吸", tone: "dark", hue: 148, saturation: 34, lightness: 36, visualKind: "filled" },
+  { name: "日常", tone: "neutral", hue: 92, saturation: 22, lightness: 54, visualKind: "filled" },
+  { name: "記録", tone: "neutral", hue: 38, saturation: 16, lightness: 58, visualKind: "filled" },
+  { name: "感謝", tone: "neutral", hue: 22, saturation: 30, lightness: 55, visualKind: "filled" },
+  { name: "家族", tone: "neutral", hue: 54, saturation: 18, lightness: 60, visualKind: "filled" },
+  { name: "仕事", tone: "neutral", hue: 204, saturation: 20, lightness: 52, visualKind: "filled" },
+  { name: "供養", tone: "neutral", hue: 278, saturation: 16, lightness: 52, visualKind: "filled" },
+  { name: "先々・期待", tone: "future", hue: 43, saturation: 78, lightness: 62, visualKind: "ring" },
+  { name: "先々・楽しみ", tone: "future", hue: 330, saturation: 66, lightness: 66, visualKind: "ring" },
+  { name: "先々・重要", tone: "future", hue: 264, saturation: 52, lightness: 58, visualKind: "ring" },
+  { name: "先々・不安", tone: "future", hue: 204, saturation: 58, lightness: 54, visualKind: "ring" },
+  { name: "先々・仕事", tone: "future", hue: 178, saturation: 26, lightness: 66, visualKind: "ring" },
+  { name: "先々・予定", tone: "future", hue: 46, saturation: 14, lightness: 82, visualKind: "ring" },
 ];
 
 const CATEGORY_SETTINGS_KEY = "happyBall.categories.v1";

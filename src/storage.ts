@@ -1,6 +1,5 @@
 import { getCategoryColorPreset } from "./categories.js";
-import type { CategoryColorPreset } from "./categories.js";
-import { normalizeVisibilityValue } from "./models.js";
+import { normalizeVisibilityValue, type BallVisualKind } from "./models.js";
 import type { BallDraft, HappyBall, HappyBallEmotionSnapshot, HappyBallLedger, HappyBallVisual, NameBookEntry, NameRole } from "./models";
 
 const STORAGE_KEY = "happyBall.ledger.v1";
@@ -171,6 +170,20 @@ export function clearLedger(): HappyBallLedger {
   return next;
 }
 
+export function clearBallData(ledger: HappyBallLedger): HappyBallLedger {
+  const next: HappyBallLedger = {
+    ...ledger,
+    balls: [],
+    updatedAt: new Date().toISOString(),
+  };
+  saveLedger(next);
+  return next;
+}
+
+export function resetNameBook(ledger: HappyBallLedger): HappyBallLedger {
+  return updateNameBook(ledger, createDefaultNameBook(DEFAULT_SAMPLE_NAME));
+}
+
 export function deleteBall(ledger: HappyBallLedger, id: string): HappyBallLedger {
   const now = new Date().toISOString();
   const next: HappyBallLedger = {
@@ -243,49 +256,6 @@ export function importNewAndReplaceBalls(
       ...newBalls,
       ...ledger.balls.map((ball) => replacementById.get(ball.id) ?? ball),
     ],
-    updatedAt: now,
-  };
-  saveLedger(next);
-  return next;
-}
-
-export function applyCategoryRenames(
-  ledger: HappyBallLedger,
-  renames: Array<{ from: string; to: string; preset: CategoryColorPreset }>,
-): HappyBallLedger {
-  if (renames.length === 0) {
-    return ledger;
-  }
-
-  const now = new Date().toISOString();
-  let changed = false;
-  const balls = ledger.balls.map((ball) => {
-    const rename = renames.find((item) => item.from === ball.category);
-    if (!rename || rename.from === rename.to) {
-      return ball;
-    }
-
-    changed = true;
-    return {
-      ...ball,
-      category: rename.to,
-      visual: {
-        hue: rename.preset.hue,
-        saturation: rename.preset.saturation,
-        lightness: rename.preset.lightness,
-        label: createVisualLabel(ball.title, rename.to),
-      },
-      updatedAt: now,
-    };
-  });
-
-  if (!changed) {
-    return ledger;
-  }
-
-  const next: HappyBallLedger = {
-    ...ledger,
-    balls,
     updatedAt: now,
   };
   saveLedger(next);
@@ -558,11 +528,12 @@ function normalizeVisual(
   const lightness = typeof visual?.lightness === "number" && Number.isFinite(visual.lightness)
     ? clampPercent(visual.lightness, 26, 72)
     : 58;
+  const kind = normalizeVisualKind(visual?.kind);
   const existingLabel = typeof visual?.label === "string" ? visual.label.trim() : "";
   const label = existingLabel && Array.from(existingLabel).length >= 4
     ? Array.from(existingLabel).slice(0, 4).join("")
     : createVisualLabel(ball.title, ball.category);
-  return { hue, saturation, lightness, label };
+  return { hue, saturation, lightness, kind, label };
 }
 
 function normalizeSnapshotVisual(visual: Partial<HappyBallVisual> | undefined, title: string, category: string): HappyBallVisual | null {
@@ -581,11 +552,12 @@ function normalizeSnapshotVisual(visual: Partial<HappyBallVisual> | undefined, t
   if (hue === null || saturation === null || lightness === null) {
     return null;
   }
+  const kind = normalizeVisualKind(visual.kind);
   const existingLabel = typeof visual.label === "string" ? visual.label.trim() : "";
   const label = existingLabel
     ? Array.from(existingLabel).slice(0, 4).join("")
     : createVisualLabel(title, category);
-  return { hue, saturation, lightness, label };
+  return { hue, saturation, lightness, kind, label };
 }
 
 function hasValidVisual(visual: Partial<HappyBallVisual> | undefined): boolean {
@@ -596,6 +568,7 @@ function hasValidVisual(visual: Partial<HappyBallVisual> | undefined): boolean {
     Number.isFinite(visual.saturation) &&
     typeof visual.lightness === "number" &&
     Number.isFinite(visual.lightness) &&
+    (visual.kind === "filled" || visual.kind === "ring") &&
     typeof visual.label === "string" &&
     visual.label.trim().length > 0
   );
@@ -632,6 +605,7 @@ function createBallVisual(_id: string, title: string, category: string): HappyBa
     hue: preset.hue,
     saturation: preset.saturation,
     lightness: preset.lightness,
+    kind: preset.visualKind,
     label: createVisualLabel(title, category),
   };
 }
@@ -647,8 +621,13 @@ function updateVisualForDraft(ball: HappyBall, title: string, category: string):
     hue: preset.hue,
     saturation: preset.saturation,
     lightness: preset.lightness,
+    kind: preset.visualKind,
     label,
   };
+}
+
+function normalizeVisualKind(value: unknown): BallVisualKind {
+  return value === "ring" || value === "filled" ? value : "filled";
 }
 
 function createVisualLabel(title: string, category: string): string {

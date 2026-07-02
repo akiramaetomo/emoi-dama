@@ -227,6 +227,7 @@ export function normalizePacketBall(value: unknown): HappyBall | null {
       hue: clampHue(hue),
       saturation: clampPercent(saturation, 8, 76),
       lightness: clampPercent(lightness, 26, 72),
+      kind: value.visual.kind === "ring" ? "ring" : "filled",
       label: Array.from(label).slice(0, 4).join(""),
     },
     lifecycleStatus,
@@ -283,6 +284,7 @@ function normalizePacketEmotionEcho(value: unknown): HappyBall["emotionEcho"] | 
       hue: clampHue(hue),
       saturation: clampPercent(saturation, 8, 76),
       lightness: clampPercent(lightness, 26, 72),
+      kind: visual.kind === "ring" ? "ring" : "filled",
       label: Array.from(label).slice(0, 4).join(""),
     },
   };

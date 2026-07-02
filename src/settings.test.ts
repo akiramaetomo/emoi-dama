@@ -16,6 +16,7 @@ const normalized = normalizeAppSettings({
   ballLabelMode: "date",
   showMemoField: true,
   emotionEchoStrength: "strong",
+  backgroundTexture: "random",
 });
 assertEqual(normalized.wallRestitution, 1, "wall restitution should clamp to the maximum");
 assertEqual(normalized.contactRestitution, 0, "contact restitution should clamp to the minimum");
@@ -28,17 +29,24 @@ assertEqual(normalized.gravityEnabled, true, "explicit true should be preserved"
 assertEqual(normalized.ballLabelMode, "date", "valid ball label mode should be preserved");
 assertEqual(normalized.showMemoField, true, "memo field boolean should be preserved");
 assertEqual(normalized.emotionEchoStrength, "strong", "valid echo strength should be preserved");
+assertEqual(normalized.backgroundTexture, "random", "valid background texture should be preserved");
 
 const booleanFallback = normalizeAppSettings({
   soundEnabled: "false",
   gravityEnabled: 1,
   ballLabelMode: "wide",
   showMemoField: null,
+  backgroundTexture: "stripe",
 });
 assertEqual(booleanFallback.soundEnabled, DEFAULT_APP_SETTINGS.soundEnabled, "string false should not become a truthy setting");
 assertEqual(booleanFallback.gravityEnabled, DEFAULT_APP_SETTINGS.gravityEnabled, "numeric booleans should not be accepted");
 assertEqual(booleanFallback.ballLabelMode, DEFAULT_APP_SETTINGS.ballLabelMode, "invalid label mode should fall back to defaults");
 assertEqual(booleanFallback.showMemoField, DEFAULT_APP_SETTINGS.showMemoField, "null booleans should fall back to defaults");
+assertEqual(
+  booleanFallback.backgroundTexture,
+  DEFAULT_APP_SETTINGS.backgroundTexture,
+  "invalid background texture should fall back to defaults",
+);
 
 const legacyLabelMode = normalizeAppSettings({
   showBallLabels: true,
@@ -48,6 +56,7 @@ assertEqual(legacyLabelMode.ballLabelMode, "title", "legacy true label display s
 const defaults = normalizeAppSettings("not settings");
 assertEqual(defaults.wallRestitution, DEFAULT_APP_SETTINGS.wallRestitution, "non-object settings should use defaults");
 assertEqual(defaults.emotionEchoStrength, DEFAULT_APP_SETTINGS.emotionEchoStrength, "invalid echo strength should use default");
+assertEqual(defaults.backgroundTexture, DEFAULT_APP_SETTINGS.backgroundTexture, "missing texture should use default");
 
 assert(looksLikeAppSettings({ soundEnabled: false }), "settings-like objects should be recognized");
 assert(!looksLikeAppSettings({ ledger: [] }), "unrelated objects should not be recognized as settings");

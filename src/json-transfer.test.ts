@@ -27,6 +27,7 @@ const sampleBall: HappyBall = {
     hue: 214,
     saturation: 42,
     lightness: 54,
+    kind: "filled",
     label: "夕方の空",
   },
   lifecycleStatus: "active",
