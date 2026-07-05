@@ -1,10 +1,10 @@
 import {
-  receiptTitleLabels,
+  getReceiptTitle,
   renderReceiptPaper,
   type DialogRenderContext,
 } from "./dialog-renderers";
 import type { JsonImportReview } from "./json-transfer";
-import type { HappyBall } from "./models";
+import type { HappyBall, SendMode } from "./models";
 import { reviewPacketImport, type PacketImportReview, type UrlPacketParseResult } from "./packet";
 import type { EmotionEchoStrength } from "./settings";
 
@@ -43,12 +43,13 @@ export function renderPendingUrlPacketDialog(
   const importStatus = renderUrlImportStatus(review);
   const localConflictBalls = getExistingBallsForIncoming(review.conflicts, context.localBalls);
   const previewBall = pendingUrlPacket.packet.items[0];
-  const receiptTitle = previewBall ? receiptTitleLabels[previewBall.issuerType] : "お預け状";
+  const sendMode = getPacketSendMode(pendingUrlPacket.packet.sendMode);
+  const receiptTitle = previewBall ? getReceiptTitle(previewBall, sendMode) : "お預け状";
   return `
     <div class="ball-dialog-backdrop import-dialog-backdrop">
       <section class="ball-dialog import-dialog receive-dialog" role="dialog" aria-modal="true" aria-label="届いたえもい玉 ${escapeAttribute(receiptTitle)}">
         <p class="receive-dialog-title">貴方に届いた${escapeHtml(receiptTitle)}です</p>
-        ${previewBall ? renderReceiptPaper(previewBall, { idPrefix: "receive", showUrl: false }, context.dialogContext) : ""}
+        ${previewBall ? renderReceiptPaper(previewBall, { idPrefix: "receive", showUrl: false, sendMode }, context.dialogContext) : ""}
         ${importStatus}
         <div class="import-counts" aria-label="読み込み結果">
           ${renderImportCountChip(review.newItems.length, "新しい玉", "new")}
@@ -76,13 +77,18 @@ export function renderSnoozedUrlPacketReminder(snoozedUrlPacket: UrlPacketParseR
   }
 
   const firstBall = snoozedUrlPacket.packet.items[0];
-  const receiptTitle = firstBall ? receiptTitleLabels[firstBall.issuerType] : "お預け状";
+  const sendMode = getPacketSendMode(snoozedUrlPacket.packet.sendMode);
+  const receiptTitle = firstBall ? getReceiptTitle(firstBall, sendMode) : "お預け状";
   return `
-    <aside class="receive-reminder" aria-label="保留中のお預け状">
+    <aside class="receive-reminder" aria-label="保留中の送付紙面">
       <span>届いた${escapeHtml(receiptTitle)}があります</span>
       <button class="ghost-action" type="button" id="show-snoozed-url-packet">見る</button>
     </aside>
   `;
+}
+
+function getPacketSendMode(packetSendMode: SendMode | undefined): SendMode {
+  return packetSendMode === "casual" ? "casual" : "formal";
 }
 
 export function renderPendingJsonImportDialog(

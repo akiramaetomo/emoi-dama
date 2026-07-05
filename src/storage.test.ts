@@ -1,5 +1,5 @@
 import type { HappyBall, HappyBallLedger } from "./models";
-import { clearBallData, createDefaultDraft, DEFAULT_SAMPLE_NAME, normalizeStoredLedger, resetNameBook, updateBall } from "./storage.js";
+import { clearBallData, createDefaultDraft, DEFAULT_SAMPLE_NAME, normalizeStoredLedger, resetNameBook, updateBall, updateBallLifecycleStatus } from "./storage.js";
 
 Object.defineProperty(globalThis, "localStorage", {
   value: {
@@ -17,6 +17,7 @@ Object.defineProperty(globalThis, "localStorage", {
 const sampleBall: HappyBall = {
   id: "ball_20260626_self_ab12",
   date: "2026-06-26",
+  time: "18:42",
   subject: "エモ次郎",
   issuerType: "self",
   issuedBy: "エモ次郎",
@@ -109,6 +110,7 @@ assertEqual(emptyRecovery.rejectedBallCount, 0, "invalid ledger envelope should 
 
 const defaultDraft = createDefaultDraft();
 assertEqual(defaultDraft.visibility, "open", "new ball drafts should default to memo-visible sharing");
+assert(typeof defaultDraft.time === "string", "new ball drafts should default to timestamp recording");
 
 const clearedBallData = clearBallData(sampleLedger);
 assertEqual(clearedBallData.balls.length, 0, "clearing ball data should remove saved balls");
@@ -131,6 +133,7 @@ assertEqual(resetNameBookLedger.balls.length, sampleLedger.balls.length, "resett
 
 const editedDraft = {
   date: sampleBall.date,
+  time: "19:15",
   subject: sampleBall.subject,
   issuerType: sampleBall.issuerType,
   count: sampleBall.count,
@@ -142,7 +145,9 @@ const editedDraft = {
 const echoSaved = updateBall(sampleLedger, sampleBall.id, editedDraft, "withEcho");
 const echoSavedBall = echoSaved.balls[0];
 assertEqual(echoSavedBall?.title, editedDraft.title, "echo save should update the current ball");
+assertEqual(echoSavedBall?.time, "19:15", "echo save should update the ball timestamp");
 assertEqual(echoSavedBall?.emotionEcho?.title, sampleBall.title, "echo save should preserve the previous title as echo data");
+assertEqual(echoSavedBall?.emotionEcho?.time, sampleBall.time, "echo save should preserve the previous timestamp as echo data");
 assertEqual(echoSavedBall?.emotionEcho?.category, sampleBall.category, "echo save should preserve the previous category as echo data");
 assertEqual(echoSavedBall?.visual.kind, "filled", "normal categories should keep filled visuals");
 
@@ -160,6 +165,59 @@ assertEqual(correctionSavedBall?.emotionEcho?.category, sampleBall.category, "co
 const correctionWithoutEcho = updateBall(sampleLedger, sampleBall.id, correctionDraft, "correction");
 assert(!correctionWithoutEcho.balls[0]?.emotionEcho, "correction save should not create a new echo when none exists");
 
+const removedTimeDraft = {
+  ...editedDraft,
+  time: undefined,
+};
+const removedTimeSaved = updateBall(sampleLedger, sampleBall.id, removedTimeDraft, "correction");
+assertEqual(removedTimeSaved.balls[0]?.time, undefined, "editing with timestamp disabled should remove the ball timestamp");
+
+const invalidTimeRecovery = normalizeStoredLedger({
+  ...sampleLedger,
+  balls: [
+    {
+      ...sampleBall,
+      time: "25:99",
+    },
+  ],
+});
+assertEqual(invalidTimeRecovery.ledger.balls[0]?.time, undefined, "invalid stored timestamps should be ignored");
+
+const descentRecovery = normalizeStoredLedger({
+  ...sampleLedger,
+  balls: [
+    {
+      ...sampleBall,
+      descents: [
+        {
+          id: "descent_1",
+          sequence: 9,
+          recordedAt: "2026-06-26T11:00:00.000Z",
+          latitude: 35.681236,
+          longitude: 139.767125,
+          accuracyMeters: 14,
+          distanceFromPreviousMeters: 700,
+          badgeAwarded: true,
+          memo: "駅前で降臨",
+        },
+        {
+          id: "bad",
+          latitude: "north",
+          longitude: 139,
+        },
+      ],
+      descentBadgeCount: 21,
+      isKamiBall: false,
+    },
+  ],
+});
+const descentBall = descentRecovery.ledger.balls[0];
+assertEqual(descentBall?.descents?.length, 1, "stored descent records should be normalized");
+assertEqual(descentBall?.descents?.[0]?.sequence, 1, "stored descent sequences should be rebuilt in order");
+assertEqual(descentBall?.descents?.[0]?.memo, "駅前で降臨", "stored descent memo should be preserved");
+assertEqual(descentBall?.descentBadgeCount, 20, "stored descent badge count should clamp to max");
+assertEqual(descentBall?.isKamiBall, true, "max descent badges should normalize to kami ball");
+
 const sakisakiDraft = {
   ...editedDraft,
   category: "先々・予定",
@@ -167,6 +225,18 @@ const sakisakiDraft = {
 const sakisakiSaved = updateBall(sampleLedger, sampleBall.id, sakisakiDraft, "withEcho");
 assertEqual(sakisakiSaved.balls[0]?.visual.kind, "ring", "sakisaki categories should create ring visuals");
 assertEqual(sakisakiSaved.balls[0]?.emotionEcho?.visual.kind, "filled", "echo snapshots should preserve the previous visual kind");
+
+const archivedLedger = updateBallLifecycleStatus(sampleLedger, sampleBall.id, "archived");
+assertEqual(archivedLedger.balls[0]?.lifecycleStatus, "archived", "lifecycle update should archive a ball");
+assertEqual(archivedLedger.balls.length, sampleLedger.balls.length, "archiving should keep the ball data");
+
+const restoredLedger = updateBallLifecycleStatus(archivedLedger, sampleBall.id, "active");
+assertEqual(restoredLedger.balls[0]?.lifecycleStatus, "active", "lifecycle update should restore an archived ball");
+assertEqual(restoredLedger.balls.length, sampleLedger.balls.length, "restoring should keep the ball data");
+
+const offeredLedger = updateBallLifecycleStatus(sampleLedger, sampleBall.id, "offered");
+assertEqual(offeredLedger.balls[0]?.lifecycleStatus, "offered", "lifecycle update should mark a ball as offered");
+assertEqual(offeredLedger.balls.length, sampleLedger.balls.length, "offering should keep the ball data");
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {

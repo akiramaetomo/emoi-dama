@@ -1,6 +1,7 @@
 import { getCategoryColorPreset } from "./categories.js";
-import { normalizeVisibilityValue, type BallVisualKind } from "./models.js";
-import type { BallDraft, HappyBall, HappyBallEmotionSnapshot, HappyBallLedger, HappyBallVisual, NameBookEntry, NameRole } from "./models";
+import { normalizeDescentBadgeCount, normalizeDescentRecords } from "./descent.js";
+import { normalizeBallTime, normalizeVisibilityValue, type BallVisualKind } from "./models.js";
+import type { BallDraft, HappyBall, HappyBallEmotionSnapshot, HappyBallLedger, HappyBallVisual, LifecycleStatus, NameBookEntry, NameRole } from "./models";
 
 const STORAGE_KEY = "happyBall.ledger.v1";
 const LEDGER_TYPE = "happy-ball-ledger";
@@ -22,9 +23,16 @@ export function todayIsoDate(date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+export function currentLocalTime(date = new Date()): string {
+  const hours = `${date.getHours()}`.padStart(2, "0");
+  const minutes = `${date.getMinutes()}`.padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
 export function createDefaultDraft(subject = DEFAULT_SAMPLE_NAME): BallDraft {
   return {
     date: todayIsoDate(),
+    time: currentLocalTime(),
     subject,
     issuerType: "self",
     count: 1,
@@ -195,6 +203,30 @@ export function deleteBall(ledger: HappyBallLedger, id: string): HappyBallLedger
   return next;
 }
 
+export function updateBallLifecycleStatus(
+  ledger: HappyBallLedger,
+  id: string,
+  lifecycleStatus: LifecycleStatus,
+): HappyBallLedger {
+  const target = ledger.balls.find((ball) => ball.id === id);
+  if (!target || target.lifecycleStatus === lifecycleStatus) {
+    return ledger;
+  }
+
+  const now = new Date().toISOString();
+  const next: HappyBallLedger = {
+    ...ledger,
+    balls: ledger.balls.map((ball) => (
+      ball.id === id
+        ? { ...ball, lifecycleStatus, updatedAt: now }
+        : ball
+    )),
+    updatedAt: now,
+  };
+  saveLedger(next);
+  return next;
+}
+
 export function markReceiptCreated(ledger: HappyBallLedger, id: string): HappyBallLedger {
   const target = ledger.balls.find((ball) => ball.id === id);
   if (!target || target.receiptCreatedAt) {
@@ -296,6 +328,7 @@ function createBall(draft: BallDraft, now: string, localSelfName: string): Happy
   return {
     id,
     date: draft.date,
+    time: normalizeBallTime(draft.time),
     subject,
     issuerType: draft.issuerType,
     issuedBy,
@@ -309,6 +342,9 @@ function createBall(draft: BallDraft, now: string, localSelfName: string): Happy
     note,
     visibility: draft.visibility,
     visual: createBallVisual(id, title, category),
+    descents: [],
+    descentBadgeCount: 0,
+    isKamiBall: false,
     lifecycleStatus: "active",
     createdAt: now,
     updatedAt: now,
@@ -326,6 +362,7 @@ function updateExistingBall(ball: HappyBall, draft: BallDraft, now: string, save
   return {
     ...ball,
     date: draft.date,
+    time: normalizeBallTime(draft.time),
     subject,
     issuerType: draft.issuerType,
     issuedBy,
@@ -361,11 +398,13 @@ function normalizeBall(ball: Partial<HappyBall>, visualIndex = 0): HappyBall {
   const enteredBy = normalizeText(ball.enteredBy, issuedBy || subject || DEFAULT_SAMPLE_NAME);
   const id = normalizeRequiredText(ball.id) ?? createBallId(todayIsoDate(), subject);
   const date = normalizeRequiredText(ball.date) ?? todayIsoDate();
+  const time = normalizeBallTime(ball.time);
   const now = new Date().toISOString();
   const normalizedBall = {
     ...ball,
     id,
     date,
+    time,
     subject,
     issuerType: normalizeIssuerType(ball.issuerType),
     issuedBy,
@@ -387,6 +426,9 @@ function normalizeBall(ball: Partial<HappyBall>, visualIndex = 0): HappyBall {
     viewers: normalizeStringArray(ball.viewers),
     visual: normalizeVisual(normalizedBall, visualIndex),
     emotionEcho: normalizeEmotionEcho(ball.emotionEcho),
+    descents: normalizeDescentRecords(ball.descents),
+    descentBadgeCount: normalizeDescentBadgeCount(ball.descentBadgeCount),
+    isKamiBall: readBoolean(ball.isKamiBall, false) || normalizeDescentBadgeCount(ball.descentBadgeCount) >= 20,
     receiptCreatedAt: normalizeOptionalIsoText(ball.receiptCreatedAt),
   };
 }
@@ -395,6 +437,7 @@ function createEmotionSnapshot(ball: HappyBall, recordedAt: string): HappyBallEm
   return {
     recordedAt,
     date: ball.date,
+    time: ball.time,
     subject: ball.subject,
     issuerType: ball.issuerType,
     count: ball.count,
@@ -422,6 +465,7 @@ function normalizeEmotionEcho(value: unknown): HappyBallEmotionSnapshot | undefi
   return {
     recordedAt: typeof snapshot.recordedAt === "string" && snapshot.recordedAt ? snapshot.recordedAt : new Date().toISOString(),
     date: typeof snapshot.date === "string" && snapshot.date ? snapshot.date : todayIsoDate(),
+    time: normalizeBallTime(snapshot.time),
     subject: typeof snapshot.subject === "string" && snapshot.subject ? snapshot.subject : DEFAULT_SAMPLE_NAME,
     issuerType: normalizeIssuerType(snapshot.issuerType),
     count: clampCount(Number(snapshot.count) || 1),
@@ -508,6 +552,10 @@ function normalizeVisibility(value: unknown): HappyBall["visibility"] {
 
 function normalizeLifecycleStatus(value: unknown): HappyBall["lifecycleStatus"] {
   return value === "archived" || value === "memorial" || value === "offered" || value === "active" ? value : "active";
+}
+
+function readBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
 }
 
 function isLegacySelfPlaceholder(name: string): boolean {

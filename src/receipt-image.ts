@@ -1,11 +1,11 @@
 import {
   canShowIssuer,
   canShowMemo,
-  canShowTitle,
   createVisibilitySafeSummaryLabel,
-  receiptTitleLabels,
+  getReceiptTitle,
 } from "./dialog-renderers";
-import type { HappyBall } from "./models";
+import { formatBallDateTime } from "./models.js";
+import type { HappyBall, SendMode } from "./models";
 import { createPacketImportUrl } from "./packet";
 import { createQrCode, type QrCodeMatrix } from "./qr-code";
 
@@ -14,15 +14,20 @@ export interface ReceiptImageContext {
   showMemoField: boolean;
 }
 
-export function createReceiptImageFileName(ball: HappyBall): string {
+export function createReceiptImageFileName(ball: HappyBall, sendMode: SendMode = "formal"): string {
   const title = (ball.title || ball.category || "emoi-dama")
     .replace(/[\\/:*?"<>|]/g, "")
     .trim()
     .slice(0, 32) || "emoi-dama";
-  return `emoi-dama-${ball.date}-${receiptTitleLabels[ball.issuerType]}-${title}.png`;
+  const modeLabel = sendMode === "casual" ? "okubari" : "oazuke";
+  return `emoi-dama-${ball.date}-${modeLabel}-${title}.png`;
 }
 
-export async function createReceiptImageBlob(ball: HappyBall, receiptContext: ReceiptImageContext): Promise<Blob> {
+export async function createReceiptImageBlob(
+  ball: HappyBall,
+  receiptContext: ReceiptImageContext,
+  sendMode: SendMode = "formal",
+): Promise<Blob> {
   const width = 1080;
   const height = 1800;
   const canvas = document.createElement("canvas");
@@ -33,7 +38,7 @@ export async function createReceiptImageBlob(ball: HappyBall, receiptContext: Re
     throw new Error("Canvas is unavailable.");
   }
 
-  drawReceiptImage(context, ball, receiptContext, width, height);
+  drawReceiptImage(context, ball, receiptContext, width, height, sendMode);
 
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((result) => {
@@ -53,10 +58,12 @@ function drawReceiptImage(
   receiptContext: ReceiptImageContext,
   width: number,
   height: number,
+  sendMode: SendMode,
 ): void {
-  const receiptTitle = receiptTitleLabels[ball.issuerType];
-  const stamp = ball.issuerType === "proxy" ? "預" : "託";
-  const packetUrl = createPacketImportUrl(ball, receiptContext.currentUrl);
+  const receiptTitle = getReceiptTitle(ball, sendMode);
+  const stamp = sendMode === "casual" ? "配" : ball.issuerType === "proxy" ? "預" : "託";
+  const eyebrow = sendMode === "casual" ? "Emoi Dama Cover Note" : "emoi dama app";
+  const packetUrl = createPacketImportUrl(ball, receiptContext.currentUrl, sendMode);
   const margin = 72;
   const contentWidth = width - margin * 2;
   let y = 86;
@@ -72,7 +79,7 @@ function drawReceiptImage(
 
   context.fillStyle = "#6b5638";
   context.font = "900 28px sans-serif";
-  context.fillText("emoi dama app", margin, y);
+  context.fillText(eyebrow, margin, y);
   y += 76;
 
   context.fillStyle = "#2c2418";
@@ -84,10 +91,10 @@ function drawReceiptImage(
   drawReceiptStamp(context, width - margin - 92, 86, 92, stamp);
 
   y += 82;
-  drawReceiptHero(context, ball, margin, y, contentWidth);
+  drawReceiptHero(context, ball, margin, y, contentWidth, sendMode);
   y += 174;
 
-  const rows = createReceiptImageRows(ball, receiptContext.showMemoField);
+  const rows = createReceiptImageRows(ball, receiptContext.showMemoField, sendMode);
   y = drawReceiptRows(context, rows, margin, y, contentWidth);
   y += 34;
 
@@ -124,7 +131,14 @@ function drawReceiptStamp(context: CanvasRenderingContext2D, x: number, y: numbe
   context.restore();
 }
 
-function drawReceiptHero(context: CanvasRenderingContext2D, ball: HappyBall, x: number, y: number, width: number): void {
+function drawReceiptHero(
+  context: CanvasRenderingContext2D,
+  ball: HappyBall,
+  x: number,
+  y: number,
+  width: number,
+  sendMode: SendMode,
+): void {
   context.fillStyle = "rgba(255, 250, 237, 0.68)";
   context.strokeStyle = "rgba(96, 63, 23, 0.18)";
   context.lineWidth = 2;
@@ -135,10 +149,10 @@ function drawReceiptHero(context: CanvasRenderingContext2D, ball: HappyBall, x: 
   drawReceiptBall(context, ball, x + 76, y + 66, 84);
   context.fillStyle = "#6b5638";
   context.font = "900 28px sans-serif";
-  context.fillText(ball.date, x + 154, y + 48);
+  context.fillText(formatBallDateTime(ball.date, ball.time), x + 154, y + 48);
   context.fillStyle = "#2c2418";
   context.font = "900 40px sans-serif";
-  drawWrappedText(context, createVisibilitySafeSummaryLabel(ball), x + 154, y + 92, width - 190, 45, 2);
+  drawWrappedText(context, createReceiptHeroLabel(ball, sendMode), x + 154, y + 92, width - 190, 45, 2);
 }
 
 function drawReceiptBall(context: CanvasRenderingContext2D, ball: HappyBall, cx: number, cy: number, size: number): void {
@@ -171,22 +185,27 @@ function drawReceiptBall(context: CanvasRenderingContext2D, ball: HappyBall, cx:
   context.fill();
 }
 
-function createReceiptImageRows(ball: HappyBall, showMemoField: boolean): Array<{ label: string; value: string; wide?: boolean }> {
-  const keeperLabel = ball.issuerType === "proxy" ? "預かり者" : "預け先";
-  const keepers = ball.keepers.length > 0 ? ball.keepers.join(", ") : "未設定";
+function createReceiptImageRows(
+  ball: HappyBall,
+  showMemoField: boolean,
+  sendMode: SendMode,
+): Array<{ label: string; value: string; wide?: boolean }> {
   const rows: Array<{ label: string; value: string; wide?: boolean }> = [];
-  if (canShowIssuer(ball)) {
+  if (sendMode === "casual" || canShowIssuer(ball)) {
     rows.push({ label: "発行者", value: ball.issuedBy });
-    rows.push({ label: keeperLabel, value: keepers });
-  }
-  if (canShowTitle(ball)) {
-    rows.push({ label: "タイトル", value: ball.title, wide: true });
   }
   rows.push({ label: "カテゴリ／余韻", value: `${ball.category}／${ball.emotionEcho?.category ?? "ー"}`, wide: true });
-  if (canShowMemo(ball) && (ball.note.trim() || showMemoField)) {
+  if (sendMode === "formal" && canShowMemo(ball) && (ball.note.trim() || showMemoField)) {
     rows.push({ label: "メモ", value: ball.note.trim(), wide: true });
   }
   return rows;
+}
+
+function createReceiptHeroLabel(ball: HappyBall, sendMode: SendMode): string {
+  if (sendMode === "casual") {
+    return ball.title || ball.visual.label || ball.category || "玉";
+  }
+  return createVisibilitySafeSummaryLabel(ball);
 }
 
 function drawReceiptRows(

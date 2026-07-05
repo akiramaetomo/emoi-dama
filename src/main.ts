@@ -1,5 +1,5 @@
 import RAPIER from "@dimforge/rapier2d-compat";
-import { renderCalendarOverlay } from "./calendar-renderers";
+import { renderCalendarOverlay, type CalendarOverlayMode } from "./calendar-renderers";
 import {
   loadCategoryColorPresets,
   resetCategoryColorPresets,
@@ -17,11 +17,12 @@ import {
   reviewJsonImportFile,
 } from "./json-transfer-actions";
 import { DeviceGravityController, requestDeviceGravityPermission } from "./device-gravity";
+import { appendDescentToBall } from "./descent";
 import { getDisplayDateRange, shiftDisplayAnchor, type DisplayMode } from "./display-period";
 import {
   createVisibilitySafeSummaryLabel,
   createVisibilitySafeTitleLabel,
-  receiptTitleLabels,
+  getReceiptTitle,
   renderBallDialog,
   renderReceiptDialog,
   renderReceiptQrDialog,
@@ -39,7 +40,7 @@ import {
   renderSnoozedUrlPacketReminder,
 } from "./import-dialog-renderers";
 import { renderManualCopyDialog } from "./manual-copy-renderers";
-import { visibilityValues, type BallDraft, type HappyBall, type NameBookEntry } from "./models";
+import { visibilityValues, type BallDraft, type HappyBall, type LifecycleStatus, type NameBookEntry, type SendMode } from "./models";
 import {
   createLinePacketImportUrl,
   createPacketImportUrl,
@@ -63,10 +64,13 @@ import {
   renderToolsPanel,
   type ToolsPanelRenderContext,
 } from "./settings-renderers";
+import { capturePrimaryScreen, createMainPrimaryScreen, type PrimaryScreenState } from "./screen-navigation";
+import { createStartupScreenState } from "./startup-state";
 import {
   addBall,
   clearBallData,
   createDefaultDraft,
+  currentLocalTime,
   DEFAULT_SAMPLE_NAME,
   deleteBall,
   getPrimarySelfName,
@@ -76,8 +80,10 @@ import {
   markReceiptCreated,
   MAX_NAME_BOOK_ENTRIES,
   resetNameBook,
+  saveLedger,
   todayIsoDate,
   updateBall,
+  updateBallLifecycleStatus,
   updateNameBook,
   type BallSaveMode,
 } from "./storage";
@@ -86,14 +92,17 @@ const appRoot = getAppRoot();
 const MIN_APP_VIEWPORT_HEIGHT = 320;
 
 let ledger = loadLedger();
+let appSettings: AppSettings = loadAppSettings();
+const startupScreenState = createStartupScreenState(ledger.balls, todayIsoDate(), appSettings.startupScreen);
 let draft = createDefaultDraft(getPrimarySelfName(ledger));
-let appSettings: AppSettings;
 let editableCategories: CategoryColorPreset[] = loadCategoryColorPresets();
-let selectedBallId: string | null = ledger.balls[0]?.id ?? null;
-let activeOverlay: ActiveOverlay = "none";
+let selectedBallId: string | null = startupScreenState.selectedBallId;
+let activeOverlay: ActiveOverlay = startupScreenState.startupScreen === "main" ? "none" : "calendar";
 let displayMode: DisplayMode = "day";
-let displayAnchorDate = ledger.balls[0]?.date ?? todayIsoDate();
-let calendarMonth = createDefaultDraft().date.slice(0, 7);
+let displayAnchorDate = startupScreenState.displayAnchorDate;
+let calendarMonth = startupScreenState.calendarMonth;
+let calendarMode: CalendarOverlayMode = startupScreenState.startupScreen === "calendarDayList" ? "dayList" : "month";
+let subfeatureReturnScreen: PrimaryScreenState = createMainPrimaryScreen(calendarMonth, displayAnchorDate);
 let pendingUrlPacket: UrlPacketParseResult | null = parsePacketLocation(window.location.search, window.location.hash);
 let snoozedUrlPacket: UrlPacketParseResult | null = null;
 let pendingJsonImport: JsonImportReview | null = null;
@@ -108,6 +117,8 @@ let stageSwipeStart: { x: number; y: number; pointerId: number } | null = null;
 let activeBallDialogEscapeHandler: (() => void) | null = null;
 let createPromptDismissed = false;
 let randomTextureVariables: Record<string, string> | null = null;
+let ledgerListDateFilter: string | null = null;
+let pendingCalendarDayListScrollTop: number | null = null;
 
 const BALL_DIALOG_ROOT_ID = "ball-dialog-root";
 const RANDOM_TEXTURE_PROPERTY_NAMES = [
@@ -133,8 +144,9 @@ const SETTINGS_GROUP_CLASSES = [
   "name-book-settings",
   "category-settings",
   "display-settings",
+  "descent-settings",
   "tuning-panel",
-  "export-panel",
+  "backup-settings",
   "ball-management-panel",
   "app-about-panel",
 ];
@@ -193,7 +205,6 @@ async function boot(): Promise<void> {
   try {
     appRoot.innerHTML = `<main class="loading-shell">Rapierを起動しています...</main>`;
     await RAPIER.init();
-    appSettings = loadAppSettings();
     audioEngine = new TinyImpactAudio();
     installAudioLifecycleHandlers();
     deviceGravity = new DeviceGravityController((gravity) => {
@@ -247,15 +258,20 @@ function render(): void {
         <div class="world-control-dock">
           ${createPromptDismissed ? "" : `<p class="world-action-prompt">＋で玉を置きましょう</p>`}
           <div class="world-actions" aria-label="操作">
-            <button type="button" data-open-panel="create" aria-label="玉を作る">＋</button>
-            <button type="button" data-open-panel="calendar" aria-label="カレンダー">Cal</button>
-            <div class="display-mode-control" role="group" aria-label="表示期間">
-              ${renderDisplayModeButton("day", "日")}
-              ${renderDisplayModeButton("week", "週")}
-              ${renderDisplayModeButton("month", "月")}
-            </div>
-            <button type="button" id="label-toggle" class="${appSettings.ballLabelMode !== "none" ? "is-on" : ""}" aria-label="${renderBallLabelModeAriaLabel()}">${renderBallLabelModeButtonText()}</button>
-            <button type="button" data-open-panel="settings" aria-label="設定">⚙</button>
+            <button class="dock-symbol-button dock-create-button" type="button" data-open-panel="create" aria-label="玉を作る">＋</button>
+            <span class="primary-screen-control-group" aria-label="主要3画面">
+              <button class="calendar-main-ball-button is-primary-active ${appSettings.ballLabelMode !== "none" ? "is-label-on" : ""}" type="button" data-cycle-ball-label-mode aria-label="${escapeHtml(renderBallLabelModeCycleAriaLabel())}">
+                <span class="calendar-main-ball-icon" aria-hidden="true"></span>
+              </button>
+              <button class="calendar-screen-button" type="button" data-open-panel="calendar" aria-label="カレンダー">
+                ${renderCalendarScreenIcon()}
+              </button>
+              <button class="day-list-screen-button" type="button" data-open-calendar-day-list aria-label="玉リスト">
+                <span class="day-list-screen-icon" aria-hidden="true"></span>
+              </button>
+            </span>
+            <button type="button" data-cycle-display-mode aria-label="${escapeHtml(renderDisplayModeCycleAriaLabel())}">${renderDisplayModeCycleButtonText()}</button>
+            <button class="dock-symbol-button dock-settings-button" type="button" data-open-panel="settings" aria-label="設定">⚙</button>
           </div>
         </div>
       </section>
@@ -269,11 +285,16 @@ function render(): void {
   applyBallFieldTextureSetting();
   bindEvents();
   mountRapierStage(visibleBalls);
+  restorePendingCalendarDayListScroll();
 }
 
 function getVisibleBalls(): HappyBall[] {
   const range = getDisplayDateRange(displayMode, displayAnchorDate);
-  return ledger.balls.filter((ball) => ball.date >= range.start && ball.date <= range.end);
+  return ledger.balls.filter((ball) => (
+    ball.lifecycleStatus !== "offered" &&
+    ball.date >= range.start &&
+    ball.date <= range.end
+  ));
 }
 
 function getDialogRenderContext(): DialogRenderContext {
@@ -318,28 +339,6 @@ function getImportDialogRenderContext() {
   };
 }
 
-function renderDisplayModeButton(mode: DisplayMode, label: string): string {
-  return `
-    <button
-      class="${displayMode === mode ? "is-on" : ""}"
-      type="button"
-      data-display-mode="${mode}"
-      aria-label="${renderDisplayModeAriaLabel(mode)}"
-      aria-pressed="${displayMode === mode ? "true" : "false"}"
-    >${label}</button>
-  `;
-}
-
-function renderDisplayModeAriaLabel(mode: DisplayMode): string {
-  if (mode === "day") {
-    return "選択した日の玉";
-  }
-  if (mode === "week") {
-    return "選択した日を含む週の玉";
-  }
-  return "選択した日を含む月の玉";
-}
-
 function renderDisplayRangeLabel(): string {
   const range = getDisplayDateRange(displayMode, displayAnchorDate);
   if (displayMode === "day") {
@@ -351,24 +350,64 @@ function renderDisplayRangeLabel(): string {
   return `${displayAnchorDate.slice(0, 7)} の月`;
 }
 
-function renderBallLabelModeButtonText(): string {
-  if (appSettings.ballLabelMode === "date") {
+function renderDisplayModeCycleButtonText(): string {
+  if (displayMode === "day") {
     return "日";
   }
-  if (appSettings.ballLabelMode === "title") {
-    return "題";
+  if (displayMode === "week") {
+    return "週";
   }
-  return "無";
+  return "月";
 }
 
-function renderBallLabelModeAriaLabel(): string {
-  if (appSettings.ballLabelMode === "date") {
-    return "玉の文字表示: 日付";
+function renderCalendarScreenIcon(): string {
+  return `
+    <span class="calendar-screen-icon" aria-hidden="true">
+      <svg viewBox="0 0 32 28" focusable="false">
+        <rect class="calendar-icon-frame" x="2" y="2.5" width="28" height="24" rx="2.25"></rect>
+        <circle class="calendar-icon-dot" cx="8.5" cy="13" r="1.45"></circle>
+        <circle class="calendar-icon-dot" cx="13.5" cy="13" r="1.45"></circle>
+        <circle class="calendar-icon-dot" cx="18.5" cy="13" r="1.45"></circle>
+        <circle class="calendar-icon-dot" cx="23.5" cy="13" r="1.45"></circle>
+        <circle class="calendar-icon-dot" cx="8.5" cy="17.25" r="1.45"></circle>
+        <circle class="calendar-icon-dot" cx="13.5" cy="17.25" r="1.45"></circle>
+        <circle class="calendar-icon-dot" cx="18.5" cy="17.25" r="1.45"></circle>
+        <circle class="calendar-icon-dot" cx="23.5" cy="17.25" r="1.45"></circle>
+        <circle class="calendar-icon-dot" cx="8.5" cy="21.5" r="1.45"></circle>
+        <circle class="calendar-icon-dot" cx="13.5" cy="21.5" r="1.45"></circle>
+        <circle class="calendar-icon-dot" cx="18.5" cy="21.5" r="1.45"></circle>
+        <circle class="calendar-icon-dot" cx="23.5" cy="21.5" r="1.45"></circle>
+      </svg>
+    </span>
+  `;
+}
+
+function renderDisplayModeCycleAriaLabel(): string {
+  return `表示期間: ${renderDisplayModeCycleButtonText()}。押すと${renderDisplayModeName(nextDisplayMode(displayMode))}に切り替え`;
+}
+
+function renderDisplayModeName(mode: DisplayMode): string {
+  if (mode === "day") {
+    return "日";
   }
-  if (appSettings.ballLabelMode === "title") {
-    return "玉の文字表示: タイトル";
+  if (mode === "week") {
+    return "週";
   }
-  return "玉の文字表示: なし";
+  return "月";
+}
+
+function renderBallLabelModeCycleAriaLabel(): string {
+  return `玉の文字表示: ${renderBallLabelModeName(appSettings.ballLabelMode)}。押すと${renderBallLabelModeName(nextBallLabelMode(appSettings.ballLabelMode))}に切り替え`;
+}
+
+function renderBallLabelModeName(mode: BallLabelMode): string {
+  if (mode === "date") {
+    return "日付";
+  }
+  if (mode === "title") {
+    return "題";
+  }
+  return "なし";
 }
 
 function renderActiveOverlay(): string {
@@ -378,9 +417,13 @@ function renderActiveOverlay(): string {
 
   if (activeOverlay === "calendar") {
     return renderCalendarOverlay({
-      balls: ledger.balls,
+      balls: getCalendarBalls(),
+      dayListBalls: getCalendarDayListBalls(),
       calendarMonth,
+      calendarMode,
+      displayMode,
       selectedDate: displayAnchorDate,
+      selectedBallId,
       emotionEchoStrength: appSettings.emotionEchoStrength,
     });
   }
@@ -391,16 +434,72 @@ function renderActiveOverlay(): string {
   }
 
   if (activeOverlay === "list") {
-    return renderPanelOverlay("保存された玉", renderLedgerList(ledger.balls, selectedBallId), "list");
+    const managedBalls = getManagedBalls();
+    const title = ledgerListDateFilter ? `${ledgerListDateFilter} の保存された玉` : "保存された玉";
+    return renderPanelOverlay(
+      title,
+      renderLedgerList(managedBalls, selectedBallId, { dateFilter: ledgerListDateFilter }),
+      "list",
+    );
   }
 
   return renderPanelOverlay("設定とデータ", renderToolsPanel(getToolsPanelRenderContext()), "settings");
+}
+
+function getCalendarBalls(): HappyBall[] {
+  return ledger.balls.filter((ball) => ball.lifecycleStatus !== "offered");
+}
+
+function getCalendarDayListBalls(): HappyBall[] {
+  return ledger.balls.filter((ball) => ball.date === displayAnchorDate);
+}
+
+function getManagedBalls(): HappyBall[] {
+  if (!ledgerListDateFilter) {
+    return ledger.balls;
+  }
+  return ledger.balls.filter((ball) => ball.date === ledgerListDateFilter);
 }
 
 function shiftCurrentDisplayAnchor(delta: -1 | 1): void {
   displayAnchorDate = shiftDisplayAnchor(displayMode, displayAnchorDate, delta);
   calendarMonth = displayAnchorDate.slice(0, 7);
   draft = { ...draft, date: displayAnchorDate };
+}
+
+function shiftIsoDate(date: string, delta: number): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const next = new Date(year, month - 1, day);
+  next.setDate(next.getDate() + delta);
+  return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
+}
+
+function captureCurrentPrimaryScreen(): PrimaryScreenState {
+  return capturePrimaryScreen({
+    activePrimarySurface: activeOverlay === "calendar" ? "calendar" : "main",
+    calendarMode,
+    calendarMonth,
+    selectedDate: displayAnchorDate,
+  });
+}
+
+function rememberSubfeatureReturnScreen(): void {
+  subfeatureReturnScreen = captureCurrentPrimaryScreen();
+}
+
+function restoreSubfeatureReturnScreen(selectedDateOverride?: string): void {
+  const nextDate = selectedDateOverride ?? subfeatureReturnScreen.selectedDate;
+  displayAnchorDate = nextDate;
+  draft = { ...draft, date: nextDate };
+
+  if (subfeatureReturnScreen.kind === "main") {
+    activeOverlay = "none";
+    return;
+  }
+
+  activeOverlay = "calendar";
+  calendarMode = subfeatureReturnScreen.kind === "calendarDayList" ? "dayList" : "month";
+  calendarMonth = selectedDateOverride ? nextDate.slice(0, 7) : subfeatureReturnScreen.calendarMonth;
 }
 
 function showBallDialog(ballId: string): void {
@@ -428,8 +527,10 @@ function showBallDialog(ballId: string): void {
       showBallEditDialog(ballId);
     });
   });
-  root.querySelector<HTMLButtonElement>("[data-dialog-receipt-ball-id]")?.addEventListener("click", () => {
-    showReceiptDialog(ballId);
+  root.querySelectorAll<HTMLButtonElement>("[data-dialog-receipt-ball-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      showReceiptDialog(ballId, readSendMode(button));
+    });
   });
   root.querySelectorAll<HTMLButtonElement>("[data-detail-id-toggle]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -442,7 +543,7 @@ function showBallDialog(ballId: string): void {
   closeButton?.focus({ preventScroll: true });
 }
 
-function showReceiptDialog(ballId: string): void {
+function showReceiptDialog(ballId: string, sendMode: SendMode = "formal"): void {
   const ball = ledger.balls.find((item) => item.id === ballId);
   if (!ball) {
     return;
@@ -451,7 +552,7 @@ function showReceiptDialog(ballId: string): void {
   closeBallDialog();
   const root = document.createElement("div");
   root.id = BALL_DIALOG_ROOT_ID;
-  root.innerHTML = renderReceiptDialog(ball, getDialogRenderContext());
+  root.innerHTML = renderReceiptDialog(ball, getDialogRenderContext(), sendMode);
   document.body.appendChild(root);
 
   const backdrop = root.querySelector<HTMLElement>("[data-dialog-backdrop]");
@@ -465,26 +566,26 @@ function showReceiptDialog(ballId: string): void {
   root.querySelector<HTMLButtonElement>("[data-dialog-back-to-ball-id]")?.addEventListener("click", () => {
     showBallDialog(ballId);
   });
-  root.querySelector<HTMLButtonElement>("[data-show-ball-qr-id]")?.addEventListener("click", () => {
-    showReceiptQrDialog(ballId);
+  root.querySelector<HTMLButtonElement>("[data-show-ball-qr-id]")?.addEventListener("click", (event) => {
+    showReceiptQrDialog(ballId, readSendMode(event.currentTarget));
   });
-  root.querySelector<HTMLButtonElement>("[data-share-receipt-image-id]")?.addEventListener("click", () => {
-    void shareReceiptImage(ballId);
+  root.querySelector<HTMLButtonElement>("[data-share-receipt-image-id]")?.addEventListener("click", (event) => {
+    void shareReceiptImage(ballId, readSendMode(event.currentTarget));
   });
-  root.querySelector<HTMLButtonElement>("[data-download-receipt-image-id]")?.addEventListener("click", () => {
-    void downloadReceiptImage(ballId);
+  root.querySelector<HTMLButtonElement>("[data-download-receipt-image-id]")?.addEventListener("click", (event) => {
+    void downloadReceiptImage(ballId, readSendMode(event.currentTarget));
   });
-  root.querySelector<HTMLButtonElement>("[data-copy-ball-url-id]")?.addEventListener("click", () => {
-    void copyBallUrl(ballId);
+  root.querySelector<HTMLButtonElement>("[data-copy-ball-url-id]")?.addEventListener("click", (event) => {
+    void copyBallUrl(ballId, readSendMode(event.currentTarget));
   });
-  root.querySelector<HTMLButtonElement>("[data-copy-ball-line-url-id]")?.addEventListener("click", () => {
-    void copyBallLineUrl(ballId);
+  root.querySelector<HTMLButtonElement>("[data-copy-ball-line-url-id]")?.addEventListener("click", (event) => {
+    void copyBallLineUrl(ballId, readSendMode(event.currentTarget));
   });
   installBallDialogEscapeHandler(closeBallDialog);
   closeButton?.focus({ preventScroll: true });
 }
 
-function showReceiptQrDialog(ballId: string): void {
+function showReceiptQrDialog(ballId: string, sendMode: SendMode = "formal"): void {
   ledger = markReceiptCreated(ledger, ballId);
   const ball = ledger.balls.find((item) => item.id === ballId);
   if (!ball) {
@@ -495,7 +596,7 @@ function showReceiptQrDialog(ballId: string): void {
   closeBallDialog();
   const root = document.createElement("div");
   root.id = BALL_DIALOG_ROOT_ID;
-  root.innerHTML = renderReceiptQrDialog(ball, getDialogRenderContext());
+  root.innerHTML = renderReceiptQrDialog(ball, getDialogRenderContext(), sendMode);
   document.body.appendChild(root);
 
   const backdrop = root.querySelector<HTMLElement>("[data-dialog-backdrop]");
@@ -506,11 +607,11 @@ function showReceiptQrDialog(ballId: string): void {
     }
   });
   closeButton?.addEventListener("click", closeBallDialog);
-  root.querySelector<HTMLButtonElement>("[data-dialog-receipt-ball-id]")?.addEventListener("click", () => {
-    showReceiptDialog(ballId);
+  root.querySelector<HTMLButtonElement>("[data-dialog-receipt-ball-id]")?.addEventListener("click", (event) => {
+    showReceiptDialog(ballId, readSendMode(event.currentTarget));
   });
-  root.querySelector<HTMLButtonElement>("[data-copy-ball-url-id]")?.addEventListener("click", () => {
-    void copyBallUrl(ballId);
+  root.querySelector<HTMLButtonElement>("[data-copy-ball-url-id]")?.addEventListener("click", (event) => {
+    void copyBallUrl(ballId, readSendMode(event.currentTarget));
   });
   installBallDialogEscapeHandler(closeBallDialog);
   closeButton?.focus({ preventScroll: true });
@@ -542,7 +643,11 @@ function showBallEditDialog(ballId: string): void {
     event.preventDefault();
     requestSaveBallEditDialog(root, form, ball);
   });
+  bindLifecycleActionEvents(root);
+  bindDeleteBallEvents(root);
+  bindDescendBallEvents(root);
   bindNamePresetEvents(root);
+  bindTimeControlEvents(root);
   installBallDialogEscapeHandler(requestClose);
   root.querySelector<HTMLButtonElement>("[data-dialog-close]")?.focus({ preventScroll: true });
 }
@@ -637,6 +742,7 @@ function showEditSaveModeConfirm(root: HTMLElement, form: HTMLFormElement, reaso
 function hasEditDraftChanged(ball: HappyBall, next: BallDraft): boolean {
   return (
     next.date !== ball.date ||
+    next.time !== ball.time ||
     next.subject.trim() !== ball.subject ||
     next.issuerType !== ball.issuerType ||
     Number(next.count) !== ball.count ||
@@ -685,6 +791,9 @@ function expandVisualBalls(balls: HappyBall[]): VisualBallSource[] {
         saturation: ball.visual.saturation,
         lightness: ball.visual.lightness,
         visualKind: ball.visual.kind,
+        lifecycleStatus: ball.lifecycleStatus,
+        descentBadgeCount: ball.descentBadgeCount ?? 0,
+        isKamiBall: ball.isKamiBall === true,
         echo: shouldShowEmotionEcho(ball) ? ball.emotionEcho?.visual ?? null : null,
         snapshot: physicsSnapshots.get(`${ball.id}_${index}`) ?? null,
         label,
@@ -743,27 +852,35 @@ function bindEvents(): void {
   document.querySelectorAll<HTMLButtonElement>("[data-open-panel]").forEach((button) => {
     button.addEventListener("click", () => {
       const panel = button.dataset.openPanel;
+      if (panel === "none") {
+        activeOverlay = "none";
+        render();
+        return;
+      }
       if (!isActiveOverlay(panel)) {
         return;
       }
       if (panel === "calendar") {
         calendarMonth = displayAnchorDate.slice(0, 7);
+        calendarMode = "month";
+      }
+      if (panel === "create" || panel === "settings") {
+        rememberSubfeatureReturnScreen();
       }
       if (panel === "create") {
         createPromptDismissed = true;
+      }
+      if (panel === "list" && activeOverlay !== "settings") {
+        rememberSubfeatureReturnScreen();
       }
       activeOverlay = panel;
       render();
     });
   });
 
-  document.querySelectorAll<HTMLButtonElement>("[data-display-mode]").forEach((button) => {
+  document.querySelectorAll<HTMLButtonElement>("[data-cycle-display-mode]").forEach((button) => {
     button.addEventListener("click", () => {
-      const mode = readDisplayMode(button.dataset.displayMode);
-      if (!mode) {
-        return;
-      }
-      displayMode = mode;
+      displayMode = nextDisplayMode(displayMode);
       draft = { ...draft, date: displayAnchorDate };
       render();
     });
@@ -775,12 +892,16 @@ function bindEvents(): void {
       if (isBackdrop && event.target !== element) {
         return;
       }
-      activeOverlay = "none";
+      if (activeOverlay === "create" || activeOverlay === "settings" || activeOverlay === "list") {
+        restoreSubfeatureReturnScreen();
+      } else {
+        activeOverlay = "none";
+      }
       render();
     });
   });
 
-  document.querySelector("#label-toggle")?.addEventListener("click", () => {
+  document.querySelector("[data-cycle-ball-label-mode]")?.addEventListener("click", () => {
     updateAppSettings({ ballLabelMode: nextBallLabelMode(appSettings.ballLabelMode) });
     render();
   });
@@ -788,6 +909,27 @@ function bindEvents(): void {
   document.querySelectorAll<HTMLButtonElement>("[data-calendar-month]").forEach((button) => {
     button.addEventListener("click", () => {
       calendarMonth = button.dataset.calendarMonth || calendarMonth;
+      calendarMode = "month";
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>("[data-calendar-shift-day]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const delta = button.dataset.calendarShiftDay === "1" ? 1 : -1;
+      displayAnchorDate = shiftIsoDate(displayAnchorDate, delta);
+      calendarMonth = displayAnchorDate.slice(0, 7);
+      draft = { ...draft, date: displayAnchorDate };
+      calendarMode = "dayList";
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>("[data-open-calendar-day-list]").forEach((button) => {
+    button.addEventListener("click", () => {
+      calendarMonth = displayAnchorDate.slice(0, 7);
+      calendarMode = "dayList";
+      activeOverlay = "calendar";
       render();
     });
   });
@@ -795,13 +937,63 @@ function bindEvents(): void {
   document.querySelectorAll<HTMLButtonElement>("[data-filter-date]").forEach((button) => {
     button.addEventListener("click", () => {
       displayAnchorDate = button.dataset.filterDate ?? displayAnchorDate;
-      displayMode = "day";
       if (displayAnchorDate) {
         draft = { ...draft, date: displayAnchorDate };
+        calendarMonth = displayAnchorDate.slice(0, 7);
       }
+      calendarMode = "dayList";
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>("[data-calendar-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const view = button.dataset.calendarView;
+      if (view === "month" || view === "dayList") {
+        calendarMode = view;
+        render();
+      }
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>("[data-calendar-open-panel]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const panel = button.dataset.calendarOpenPanel;
+      if (panel !== "create" && panel !== "settings" && panel !== "calendar" && panel !== "dayList") {
+        return;
+      }
+      if (panel === "calendar" || panel === "dayList") {
+        calendarMonth = displayAnchorDate.slice(0, 7);
+        calendarMode = panel === "calendar" ? "month" : "dayList";
+        activeOverlay = "calendar";
+        render();
+        return;
+      }
+      if (panel === "create") {
+        rememberSubfeatureReturnScreen();
+        createPromptDismissed = true;
+        draft = { ...draft, date: displayAnchorDate };
+      }
+      if (panel === "settings") {
+        rememberSubfeatureReturnScreen();
+      }
+      activeOverlay = panel;
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>("[data-calendar-cycle-display-mode]").forEach((button) => {
+    button.addEventListener("click", () => {
+      displayMode = nextDisplayMode(displayMode);
+      draft = { ...draft, date: displayAnchorDate };
       activeOverlay = "none";
       render();
     });
+  });
+
+  document.querySelector("[data-calendar-main]")?.addEventListener("click", () => {
+    activeOverlay = "none";
+    render();
   });
 
   bindDisplaySwipeEvents();
@@ -813,9 +1005,8 @@ function bindEvents(): void {
     draft = readDraft(form);
     ledger = addBall(ledger, draft);
     selectedBallId = ledger.balls[0]?.id ?? null;
-    displayAnchorDate = draft.date;
     displayMode = "day";
-    activeOverlay = "none";
+    restoreSubfeatureReturnScreen(draft.date);
     draft = { ...createDefaultDraft(getPrimarySelfName(ledger)), subject: draft.subject, issuerType: draft.issuerType };
     render();
   });
@@ -823,8 +1014,10 @@ function bindEvents(): void {
   form?.addEventListener("input", () => {
     draft = readDraft(form);
   });
+  if (form) {
+    bindTimeControlEvents(form);
+  }
 
-  bindSummaryActionEvents();
   bindSettingsGroupDisclosureEvents();
   bindPendingUrlPacketEvents();
   bindNamePresetEvents();
@@ -876,6 +1069,19 @@ function bindEvents(): void {
     });
   });
 
+  document.querySelectorAll<HTMLButtonElement>("[data-view-ball-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.dataset.viewBallId;
+      if (!id) {
+        return;
+      }
+      selectedBallId = id;
+      updateSelectedState();
+      updateSelectedSummary();
+      showBallDialog(id);
+    });
+  });
+
   document.querySelectorAll<HTMLButtonElement>("[data-edit-ball-id]").forEach((button) => {
     button.addEventListener("click", () => {
       const id = button.dataset.editBallId;
@@ -907,29 +1113,98 @@ function bindEvents(): void {
     });
   });
 
-  document.querySelectorAll<HTMLButtonElement>("[data-delete-ball-id]").forEach((button) => {
+  document.querySelector("[data-clear-ledger-list-date]")?.addEventListener("click", () => {
+    ledgerListDateFilter = null;
+    render();
+  });
+
+  bindLifecycleActionEvents();
+  bindDeleteBallEvents();
+  bindDescendBallEvents();
+}
+
+function bindLifecycleActionEvents(root: ParentNode = document): void {
+  root.querySelectorAll<HTMLButtonElement>("[data-lifecycle-ball-id][data-lifecycle-status]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.dataset.lifecycleBallId;
+      const status = readLifecycleStatus(button.dataset.lifecycleStatus);
+      if (!id || !status) {
+        return;
+      }
+      const target = ledger.balls.find((ball) => ball.id === id);
+      if (!target) {
+        return;
+      }
+      if (status === "offered" && !confirm(`「${target.title}」を供養します。カレンダーとプレイ画面には表示されなくなります。実行しますか？`)) {
+        return;
+      }
+      rememberCalendarDayListScroll(button);
+      ledger = updateBallLifecycleStatus(ledger, id, status);
+      selectedBallId = status === "offered" ? getVisibleBalls()[0]?.id ?? null : id;
+      closeBallDialog();
+      render();
+    });
+  });
+}
+
+function bindDeleteBallEvents(root: ParentNode = document): void {
+  root.querySelectorAll<HTMLButtonElement>("[data-delete-ball-id]").forEach((button) => {
     button.addEventListener("click", () => {
       const id = button.dataset.deleteBallId;
       if (!id) {
         return;
       }
       const target = ledger.balls.find((ball) => ball.id === id);
-      if (!target || !confirm(`「${target.title}」を削除しますか？`)) {
+      if (!target || !confirm(`「${target.title}」をお焚上します。保存データから削除され、バックアップがない限り戻せません。実行しますか？`)) {
         return;
       }
+      rememberCalendarDayListScroll(button);
       ledger = deleteBall(ledger, id);
-      selectedBallId = ledger.balls[0]?.id ?? null;
+      selectedBallId = getVisibleBalls()[0]?.id ?? ledger.balls[0]?.id ?? null;
+      closeBallDialog();
       render();
     });
   });
 }
 
-function bindSummaryActionEvents(): void {
-  document.querySelectorAll<HTMLButtonElement>(".summary-action").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
+function bindDescendBallEvents(root: ParentNode = document): void {
+  root.querySelectorAll<HTMLButtonElement>("[data-descend-ball-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.dataset.descendBallId;
+      const target = ledger.balls.find((ball) => ball.id === id);
+      if (!target) {
+        return;
+      }
+      requestDescendLocation(target);
     });
   });
+}
+
+function rememberCalendarDayListScroll(source: Element): void {
+  const scroller = source.closest<HTMLElement>(".calendar-day-list-body");
+  if (!scroller) {
+    return;
+  }
+  pendingCalendarDayListScrollTop = scroller.scrollTop;
+}
+
+function restorePendingCalendarDayListScroll(): void {
+  if (pendingCalendarDayListScrollTop === null) {
+    return;
+  }
+
+  const scrollTop = pendingCalendarDayListScrollTop;
+  pendingCalendarDayListScrollTop = null;
+  const scroller = document.querySelector<HTMLElement>(".calendar-day-list-body");
+  if (!scroller) {
+    return;
+  }
+
+  const restore = () => {
+    scroller.scrollTop = Math.min(scrollTop, scroller.scrollHeight);
+  };
+  restore();
+  requestAnimationFrame(restore);
 }
 
 function bindSettingsGroupDisclosureEvents(): void {
@@ -1002,15 +1277,16 @@ function applyPendingJsonImport(): void {
   render();
 }
 
-async function shareReceiptImage(ballId: string): Promise<void> {
+async function shareReceiptImage(ballId: string, sendMode: SendMode = "formal"): Promise<void> {
   const prepared = prepareReceiptImageBall(ballId);
   if (!prepared) {
     return;
   }
 
   const { ball } = prepared;
-  const fileName = createReceiptImageFileName(ball);
-  const blob = await createReceiptImageBlob(ball, getReceiptImageContext());
+  const receiptTitle = getReceiptTitle(ball, sendMode);
+  const fileName = createReceiptImageFileName(ball, sendMode);
+  const blob = await createReceiptImageBlob(ball, getReceiptImageContext(), sendMode);
   const file = new File([blob], fileName, { type: "image/png" });
 
   try {
@@ -1019,8 +1295,8 @@ async function shareReceiptImage(ballId: string): Promise<void> {
     }
     await navigator.share({
       files: [file],
-      title: `えもい玉 ${receiptTitleLabels[ball.issuerType]}`,
-      text: `${receiptTitleLabels[ball.issuerType]}です。`,
+      title: `えもい玉 ${receiptTitle}`,
+      text: `${receiptTitle}です。`,
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
@@ -1031,14 +1307,14 @@ async function shareReceiptImage(ballId: string): Promise<void> {
   }
 }
 
-async function downloadReceiptImage(ballId: string): Promise<void> {
+async function downloadReceiptImage(ballId: string, sendMode: SendMode = "formal"): Promise<void> {
   const prepared = prepareReceiptImageBall(ballId);
   if (!prepared) {
     return;
   }
 
-  const blob = await createReceiptImageBlob(prepared.ball, getReceiptImageContext());
-  downloadBlob(blob, createReceiptImageFileName(prepared.ball));
+  const blob = await createReceiptImageBlob(prepared.ball, getReceiptImageContext(), sendMode);
+  downloadBlob(blob, createReceiptImageFileName(prepared.ball, sendMode));
 }
 
 function getReceiptImageContext() {
@@ -1134,7 +1410,7 @@ function bindPendingUrlPacketEvents(): void {
   });
 }
 
-async function copyBallUrl(ballId: string): Promise<void> {
+async function copyBallUrl(ballId: string, sendMode: SendMode = "formal"): Promise<void> {
   ledger = markReceiptCreated(ledger, ballId);
   const ball = ledger.balls.find((item) => item.id === ballId);
   if (!ball) {
@@ -1142,11 +1418,11 @@ async function copyBallUrl(ballId: string): Promise<void> {
   }
   updateReceiptCreatedIndicators(ball);
 
-  const url = createPacketImportUrl(ball, window.location.href);
+  const url = createPacketImportUrl(ball, window.location.href, sendMode);
   await copyTextWithFallback(url, "玉URLをコピーしました。");
 }
 
-async function copyBallLineUrl(ballId: string): Promise<void> {
+async function copyBallLineUrl(ballId: string, sendMode: SendMode = "formal"): Promise<void> {
   ledger = markReceiptCreated(ledger, ballId);
   const ball = ledger.balls.find((item) => item.id === ballId);
   if (!ball) {
@@ -1154,7 +1430,7 @@ async function copyBallLineUrl(ballId: string): Promise<void> {
   }
   updateReceiptCreatedIndicators(ball);
 
-  const url = createLinePacketImportUrl(ball, window.location.href);
+  const url = createLinePacketImportUrl(ball, window.location.href, sendMode);
   await copyTextWithFallback(url, "LINE用の玉URLをコピーしました。");
 }
 
@@ -1165,7 +1441,7 @@ function updateReceiptCreatedIndicators(ball: HappyBall): void {
 
   document.querySelectorAll<HTMLElement>("[data-receipt-status-ball-id]").forEach((element) => {
     if (element.dataset.receiptStatusBallId === ball.id) {
-      element.textContent = "作成済み";
+      element.textContent = "準備済み";
     }
   });
   document.querySelectorAll<HTMLElement>("[data-receipt-thumb-ball-id]").forEach((element) => {
@@ -1322,8 +1598,49 @@ function isActiveOverlay(value: string | undefined): value is ActiveOverlay {
   return value === "create" || value === "list" || value === "settings" || value === "calendar";
 }
 
-function readDisplayMode(value: string | undefined): DisplayMode | null {
-  return value === "day" || value === "week" || value === "month" ? value : null;
+function readLifecycleStatus(value: string | undefined): LifecycleStatus | null {
+  return value === "active" || value === "archived" || value === "memorial" || value === "offered" ? value : null;
+}
+
+function requestDescendLocation(ball: HappyBall): void {
+  if (!navigator.geolocation) {
+    alert("この端末では位置情報を取得できません。");
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const memo = window.prompt("降臨メモ（任意・80文字まで）", "") ?? "";
+      const result = appendDescentToBall(
+        ball,
+        {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracyMeters: position.coords.accuracy,
+        },
+        appSettings.descentMinDistanceMeters,
+        memo,
+      );
+      if (!result.ok) {
+        alert(`まだ近すぎるため、再降臨できません。\n直近の降臨地から約${Math.round(result.distanceFromPreviousMeters)}mです。\n設定距離: ${result.requiredDistanceMeters}m`);
+        return;
+      }
+      ledger = {
+        ...ledger,
+        balls: ledger.balls.map((item) => item.id === ball.id ? result.ball : item),
+        updatedAt: result.ball.updatedAt,
+      };
+      saveLedger(ledger);
+      const latitude = result.record.latitude.toFixed(5);
+      const longitude = result.record.longitude.toFixed(5);
+      alert(`「${ball.title}」に第${result.record.sequence}回の降臨を記録しました。\n現在地: ${latitude}, ${longitude}`);
+      render();
+    },
+    () => {
+      alert("位置情報を取得できませんでした。");
+    },
+    { enableHighAccuracy: false, maximumAge: 60_000, timeout: 8_000 },
+  );
 }
 
 function nextBallLabelMode(mode: BallLabelMode): BallLabelMode {
@@ -1334,6 +1651,16 @@ function nextBallLabelMode(mode: BallLabelMode): BallLabelMode {
     return "title";
   }
   return "none";
+}
+
+function nextDisplayMode(mode: DisplayMode): DisplayMode {
+  if (mode === "day") {
+    return "week";
+  }
+  if (mode === "week") {
+    return "month";
+  }
+  return "day";
 }
 
 async function toggleGravitySensor(): Promise<void> {
@@ -1426,6 +1753,50 @@ function bindNamePresetEvents(root: ParentNode = document): void {
   });
 }
 
+function readSendMode(target: EventTarget | null): SendMode {
+  return target instanceof HTMLElement && target.dataset.sendMode === "casual" ? "casual" : "formal";
+}
+
+function bindTimeControlEvents(root: ParentNode = document): void {
+  root.querySelectorAll<HTMLInputElement>("input[name='timeEnabled']").forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      const form = checkbox.closest("form");
+      const timeInput = form?.querySelector<HTMLInputElement>("input[name='time']");
+      if (!form || !timeInput) {
+        return;
+      }
+
+      timeInput.disabled = !checkbox.checked;
+      if (checkbox.checked && !timeInput.value) {
+        timeInput.value = currentLocalTime();
+      }
+      if (form.id === "ball-form") {
+        draft = readDraft(form);
+      }
+    });
+  });
+  root.querySelectorAll<HTMLButtonElement>("[data-current-time-button]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const form = button.closest("form");
+      const checkbox = form?.querySelector<HTMLInputElement>("input[name='timeEnabled']");
+      const timeInput = form?.querySelector<HTMLInputElement>("input[name='time']");
+      if (!form || !checkbox || !timeInput) {
+        return;
+      }
+
+      checkbox.checked = true;
+      timeInput.disabled = false;
+      timeInput.value = currentLocalTime();
+      checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+      timeInput.dispatchEvent(new Event("input", { bubbles: true }));
+      timeInput.dispatchEvent(new Event("change", { bubbles: true }));
+      if (form.id === "ball-form") {
+        draft = readDraft(form);
+      }
+    });
+  });
+}
+
 function updateAppSettings(patch: Partial<AppSettings>): void {
   appSettings = normalizeAppSettings({ ...appSettings, ...patch });
   saveAppSettings(appSettings);
@@ -1474,8 +1845,10 @@ function randomInteger(min: number, max: number): number {
 
 function readDraft(form: HTMLFormElement): BallDraft {
   const data = new FormData(form);
+  const timeEnabled = data.get("timeEnabled") === "on";
   return {
     date: String(data.get("date") || draft.date),
+    time: timeEnabled ? String(data.get("time") || currentLocalTime()) : undefined,
     subject: String(data.get("subject") || getPrimarySelfName(ledger) || DEFAULT_SAMPLE_NAME),
     issuerType: readUnion(data.get("issuerType"), ["self", "assisted", "proxy"], "self"),
     count: Number(data.get("count") || 1),
@@ -1491,7 +1864,7 @@ function readUnion<const T extends string>(value: FormDataEntryValue | null, all
 }
 
 function shouldShowEmotionEcho(ball: HappyBall): boolean {
-  return Boolean(ball.emotionEcho) && appSettings.emotionEchoStrength !== "off";
+  return ball.lifecycleStatus !== "archived" && Boolean(ball.emotionEcho) && appSettings.emotionEchoStrength !== "off";
 }
 
 function escapeHtml(value: string): string {

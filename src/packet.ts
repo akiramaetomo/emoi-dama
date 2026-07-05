@@ -1,5 +1,6 @@
-import { isKnownVisibility, normalizeVisibilityValue } from "./models.js";
-import type { HappyBall } from "./models";
+import { isKnownVisibility, normalizeBallTime, normalizeVisibilityValue } from "./models.js";
+import type { HappyBall, SendMode } from "./models";
+import { normalizeDescentBadgeCount } from "./descent.js";
 
 export const PACKET_TYPE = "happy-ball-packet";
 
@@ -7,6 +8,7 @@ export interface HappyBallPacket {
   v: 1;
   type: typeof PACKET_TYPE;
   mode: "append";
+  sendMode?: SendMode;
   exportedAt: string;
   items: HappyBall[];
 }
@@ -32,31 +34,39 @@ export type UrlPacketParseResult =
       error: string;
     };
 
-export function createBallPacket(ball: HappyBall, exportedAt = new Date().toISOString()): HappyBallPacket {
-  return {
+export function createBallPacket(
+  ball: HappyBall,
+  exportedAt = new Date().toISOString(),
+  sendMode: SendMode = "formal",
+): HappyBallPacket {
+  const packet: HappyBallPacket = {
     v: 1,
     type: PACKET_TYPE,
     mode: "append",
     exportedAt,
-    items: [ball],
+    items: [sanitizeBallForPacket(ball)],
   };
+  if (sendMode === "casual") {
+    packet.sendMode = sendMode;
+  }
+  return packet;
 }
 
-export function createPacketImportUrl(ball: HappyBall, baseHref: string): string {
+export function createPacketImportUrl(ball: HappyBall, baseHref: string, sendMode: SendMode = "formal"): string {
   const url = new URL(baseHref);
   url.searchParams.delete("import");
   url.searchParams.delete("ball");
   url.searchParams.delete("openExternalBrowser");
-  url.hash = `import=${encodePacket(createBallPacket(ball))}`;
+  url.hash = `import=${encodePacket(createBallPacket(ball, new Date().toISOString(), sendMode))}`;
   return url.toString();
 }
 
-export function createLinePacketImportUrl(ball: HappyBall, baseHref: string): string {
+export function createLinePacketImportUrl(ball: HappyBall, baseHref: string, sendMode: SendMode = "formal"): string {
   const url = new URL(baseHref);
   url.hash = "";
   url.searchParams.delete("ball");
   url.searchParams.set("openExternalBrowser", "1");
-  url.searchParams.set("import", encodePacket(createBallPacket(ball)));
+  url.searchParams.set("import", encodePacket(createBallPacket(ball, new Date().toISOString(), sendMode)));
   return url.toString();
 }
 
@@ -172,11 +182,16 @@ function normalizePacket(value: unknown): { packet: HappyBallPacket; rejectedIte
       v: 1,
       type: PACKET_TYPE,
       mode: "append",
+      sendMode: normalizeSendMode(value.sendMode),
       exportedAt: typeof value.exportedAt === "string" ? value.exportedAt : new Date().toISOString(),
       items,
     },
     rejectedItemCount: value.items.length - items.length,
   };
+}
+
+function normalizeSendMode(value: unknown): SendMode | undefined {
+  return value === "casual" ? "casual" : undefined;
 }
 
 export function normalizePacketBall(value: unknown): HappyBall | null {
@@ -211,6 +226,7 @@ export function normalizePacketBall(value: unknown): HappyBall | null {
   const normalizedBall: HappyBall = {
     id,
     date,
+    time: normalizeBallTime(value.time),
     subject,
     issuerType,
     issuedBy: readString(value.issuedBy) || subject,
@@ -231,6 +247,8 @@ export function normalizePacketBall(value: unknown): HappyBall | null {
       label: Array.from(label).slice(0, 4).join(""),
     },
     lifecycleStatus,
+    descentBadgeCount: normalizeDescentBadgeCount(value.descentBadgeCount),
+    isKamiBall: value.isKamiBall === true || normalizeDescentBadgeCount(value.descentBadgeCount) >= 20,
     createdAt,
     updatedAt,
   };
@@ -249,9 +267,19 @@ export function normalizePacketBall(value: unknown): HappyBall | null {
 }
 
 function toComparableBall(ball: HappyBall): Omit<HappyBall, "receiptCreatedAt"> {
-  const comparable: HappyBall = { ...ball };
+  const comparable: HappyBall = sanitizeBallForPacket(ball);
   delete comparable.receiptCreatedAt;
   return comparable;
+}
+
+function sanitizeBallForPacket(ball: HappyBall): HappyBall {
+  const sanitized: HappyBall = {
+    ...ball,
+    descents: [],
+    descentBadgeCount: normalizeDescentBadgeCount(ball.descentBadgeCount),
+    isKamiBall: ball.isKamiBall === true || normalizeDescentBadgeCount(ball.descentBadgeCount) >= 20,
+  };
+  return sanitized;
 }
 
 function normalizePacketEmotionEcho(value: unknown): HappyBall["emotionEcho"] | undefined {
@@ -273,6 +301,7 @@ function normalizePacketEmotionEcho(value: unknown): HappyBall["emotionEcho"] | 
   return {
     recordedAt: readString(value.recordedAt) || new Date().toISOString(),
     date: readString(value.date) || new Date().toISOString().slice(0, 10),
+    time: normalizeBallTime(value.time),
     subject: readString(value.subject) || "自分",
     issuerType: readUnion(value.issuerType, ["self", "assisted", "proxy"]) ?? "self",
     count: clampCount(readFiniteNumber(value.count) ?? 1),
@@ -313,6 +342,7 @@ function stableStringify(value: unknown): string {
   if (isObject(value)) {
     return `{${Object.keys(value)
       .sort()
+      .filter((key) => value[key] !== undefined)
       .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
       .join(",")}}`;
   }

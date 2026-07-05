@@ -4,6 +4,7 @@ export type LegacyVisibility = Visibility | "hidden";
 export type LifecycleStatus = "active" | "archived" | "memorial" | "offered";
 export type NameRole = "self" | "proxy";
 export type BallVisualKind = "filled" | "ring";
+export type SendMode = "formal" | "casual";
 
 export interface HappyBallVisual {
   hue: number;
@@ -16,6 +17,7 @@ export interface HappyBallVisual {
 export interface HappyBallEmotionSnapshot {
   recordedAt: string;
   date: string;
+  time?: string;
   subject: string;
   issuerType: IssuerType;
   count: number;
@@ -26,9 +28,22 @@ export interface HappyBallEmotionSnapshot {
   visual: HappyBallVisual;
 }
 
+export interface HappyBallDescentRecord {
+  id: string;
+  sequence: number;
+  recordedAt: string;
+  latitude: number;
+  longitude: number;
+  accuracyMeters?: number;
+  distanceFromPreviousMeters?: number;
+  badgeAwarded: boolean;
+  memo: string;
+}
+
 export interface HappyBall {
   id: string;
   date: string;
+  time?: string;
   subject: string;
   issuerType: IssuerType;
   issuedBy: string;
@@ -43,6 +58,9 @@ export interface HappyBall {
   visibility: Visibility;
   visual: HappyBallVisual;
   emotionEcho?: HappyBallEmotionSnapshot;
+  descents?: HappyBallDescentRecord[];
+  descentBadgeCount?: number;
+  isKamiBall?: boolean;
   receiptCreatedAt?: string;
   lifecycleStatus: LifecycleStatus;
   createdAt: string;
@@ -70,6 +88,7 @@ export interface NameBookEntry {
 
 export interface BallDraft {
   date: string;
+  time?: string;
   subject: string;
   issuerType: IssuerType;
   count: number;
@@ -103,4 +122,17 @@ export function normalizeVisibilityValue(value: unknown, fallback: Visibility = 
     return "category";
   }
   return visibilityValues.includes(value as Visibility) ? (value as Visibility) : fallback;
+}
+
+export function normalizeBallTime(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(trimmed) ? trimmed : undefined;
+}
+
+export function formatBallDateTime(date: string, time?: string): string {
+  const normalizedTime = normalizeBallTime(time);
+  return normalizedTime ? `${date} ${normalizedTime}` : date;
 }

@@ -1,6 +1,7 @@
 export type EmotionEchoStrength = "off" | "weak" | "medium" | "strong";
 export type BallLabelMode = "none" | "date" | "title";
 export type BackgroundTexture = "grid" | "paper" | "grain" | "mist" | "random";
+export type StartupScreen = "main" | "calendarMonth" | "calendarDayList";
 
 export interface AppSettings {
   wallRestitution: number;
@@ -23,6 +24,8 @@ export interface AppSettings {
   showMemoField: boolean;
   emotionEchoStrength: EmotionEchoStrength;
   backgroundTexture: BackgroundTexture;
+  startupScreen: StartupScreen;
+  descentMinDistanceMeters: number;
 }
 
 const SETTINGS_KEY = "happyBall.settings.v2";
@@ -48,6 +51,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   showMemoField: false,
   emotionEchoStrength: "weak",
   backgroundTexture: "grid",
+  startupScreen: "calendarMonth",
+  descentMinDistanceMeters: 500,
 };
 
 export function loadAppSettings(): AppSettings {
@@ -86,6 +91,8 @@ export function normalizeAppSettings(value: unknown): AppSettings {
     showMemoField: readBoolean(source.showMemoField, DEFAULT_APP_SETTINGS.showMemoField),
     emotionEchoStrength: readEchoStrength(source.emotionEchoStrength),
     backgroundTexture: readBackgroundTexture(source.backgroundTexture),
+    startupScreen: readStartupScreen(source.startupScreen),
+    descentMinDistanceMeters: clampNumber(source.descentMinDistanceMeters, 10, 100_000, DEFAULT_APP_SETTINGS.descentMinDistanceMeters),
   };
 }
 
@@ -104,7 +111,15 @@ export function looksLikeAppSettings(value: unknown): boolean {
     "showMemoField",
     "emotionEchoStrength",
     "backgroundTexture",
+    "startupScreen",
+    "descentMinDistanceMeters",
   ].some((key) => key in value);
+}
+
+export function readStartupScreen(value: unknown): StartupScreen {
+  return value === "main" || value === "calendarDayList" || value === "calendarMonth"
+    ? value
+    : DEFAULT_APP_SETTINGS.startupScreen;
 }
 
 export function readBackgroundTexture(value: unknown): BackgroundTexture {

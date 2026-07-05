@@ -1,12 +1,13 @@
-import { toneLabels, type CategoryColorPreset, type CategoryTone } from "./categories";
+import { toneLabels, type CategoryColorPreset, type CategoryTone } from "./categories.js";
 import {
+  normalizeBallTime,
   issuerLabels,
   visibilityLabels,
   type BallDraft,
   type HappyBall,
   type NameBookEntry,
   type NameRole,
-} from "./models";
+} from "./models.js";
 
 export interface FormRenderContext {
   categories: CategoryColorPreset[];
@@ -21,44 +22,48 @@ const nameRoleLabels: Record<NameRole, string> = {
 export function renderCreateForm(draft: BallDraft, context: FormRenderContext): string {
   return `
     <form id="ball-form" class="create-form">
-      <div class="form-row two">
-        <label>
-          <span>日付</span>
-          <input name="date" type="date" value="${escapeAttribute(draft.date)}" />
-        </label>
-        <label>
-          <span>玉数</span>
-          <input name="count" type="number" min="1" max="12" value="${draft.count}" />
-        </label>
-      </div>
-
-      <label>
-        <span>だれの玉？</span>
-        ${renderNamePresetSelect(draft.subject, context)}
-        <input name="subject" type="text" value="${escapeAttribute(draft.subject)}" />
-        <small class="form-hint">登録名選択または自由に入力</small>
+      <label class="create-inline-field">
+        <span>日時</span>
+        <input name="date" type="date" value="${escapeAttribute(draft.date)}" />
       </label>
 
-      <label>
+      ${renderCreateTimeField(draft.time)}
+
+      <label class="create-inline-field">
+        <span>玉数</span>
+        <input name="count" type="number" min="1" max="12" value="${draft.count}" />
+      </label>
+
+      <label class="create-inline-field">
+        <span>だれの玉</span>
+        ${renderNamePresetSelect(draft.subject, context)}
+      </label>
+
+      <label class="create-inline-field">
+        <span>自由入力</span>
+        <input name="subject" type="text" value="${escapeAttribute(draft.subject)}" />
+      </label>
+
+      <label class="create-inline-field">
         <span>作り方</span>
         <select name="issuerType">
           ${renderOptions(issuerLabels, draft.issuerType)}
         </select>
       </label>
 
-      <label>
+      <label class="create-inline-field">
+        <span>見せる範囲</span>
+        <select name="visibility">
+          ${renderOptions(visibilityLabels, draft.visibility)}
+        </select>
+      </label>
+
+      <div class="create-title-divider" aria-hidden="true"></div>
+
+      <label class="create-inline-field">
         <span>タイトル</span>
         <input name="title" type="text" maxlength="48" value="${escapeAttribute(draft.title)}" placeholder="小さなえもいゴト" />
       </label>
-
-      <div class="form-row two">
-        <label>
-          <span>見せる範囲</span>
-          <select name="visibility">
-            ${renderOptions(visibilityLabels, draft.visibility)}
-          </select>
-        </label>
-      </div>
 
       ${renderCategoryPalette(draft.category, context)}
 
@@ -76,8 +81,8 @@ export function renderCreateForm(draft: BallDraft, context: FormRenderContext): 
 
 export function renderBallEditDialog(ball: HappyBall, context: FormRenderContext): string {
   return `
-    <div class="ball-dialog-backdrop" data-dialog-backdrop>
-      <section class="ball-dialog" role="dialog" aria-modal="true" aria-labelledby="ball-edit-title">
+    <div class="ball-dialog-backdrop ball-edit-dialog-backdrop" data-dialog-backdrop>
+      <section class="ball-dialog ball-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="ball-edit-title">
         <button class="dialog-close" type="button" data-dialog-close aria-label="閉じる">&times;</button>
         <div class="dialog-title-block">
           <div class="edit-dialog-title-row">
@@ -85,42 +90,47 @@ export function renderBallEditDialog(ball: HappyBall, context: FormRenderContext
           </div>
         </div>
         <form id="ball-edit-form" class="edit-form" data-editing-ball-id="${escapeAttribute(ball.id)}">
-          <div class="edit-inline-grid two">
-            <label class="inline-field">
-              <span>日付</span>
-              <input name="date" type="date" value="${escapeAttribute(ball.date)}" />
-            </label>
-            <label class="inline-field">
-              <span>玉数</span>
-              <input name="count" type="number" min="1" max="12" value="${ball.count}" />
-            </label>
-          </div>
-
-          <label class="inline-field">
-            <span>だれの玉？</span>
-            <div class="inline-field-stack">
-              ${renderNamePresetSelect(ball.subject, context)}
-              <input name="subject" type="text" value="${escapeAttribute(ball.subject)}" placeholder="自由に入力" />
-            </div>
+          <label class="edit-inline-field">
+            <span>日時</span>
+            <input name="date" type="date" value="${escapeAttribute(ball.date)}" />
           </label>
 
-          <label class="inline-field">
+          ${renderTimeField(ball.time, "edit-timestamp-field edit-inline-field timestamp-field-wide")}
+
+          <label class="edit-inline-field">
+            <span>玉数</span>
+            <input name="count" type="number" min="1" max="12" value="${ball.count}" />
+          </label>
+
+          <label class="edit-inline-field">
+            <span>だれの玉</span>
+            ${renderNamePresetSelect(ball.subject, context)}
+          </label>
+
+          <label class="edit-inline-field">
+            <span>自由入力</span>
+            <input name="subject" type="text" value="${escapeAttribute(ball.subject)}" />
+          </label>
+
+          <label class="edit-inline-field">
             <span>作り方</span>
             <select name="issuerType">
               ${renderOptions(issuerLabels, ball.issuerType)}
             </select>
           </label>
 
-          <label class="inline-field">
-            <span>タイトル</span>
-            <input name="title" type="text" maxlength="48" value="${escapeAttribute(ball.title)}" />
-          </label>
-
-          <label class="inline-field">
+          <label class="edit-inline-field">
             <span>見せる範囲</span>
             <select name="visibility">
               ${renderOptions(visibilityLabels, ball.visibility)}
             </select>
+          </label>
+
+          <div class="edit-title-divider" aria-hidden="true"></div>
+
+          <label class="edit-inline-field">
+            <span>タイトル</span>
+            <input name="title" type="text" maxlength="48" value="${escapeAttribute(ball.title)}" />
           </label>
 
           <details class="edit-category-fold">
@@ -136,6 +146,13 @@ export function renderBallEditDialog(ball: HappyBall, context: FormRenderContext
             <textarea name="note" rows="4" maxlength="180">${escapeHtml(ball.note)}</textarea>
           </label>
 
+          <div class="edit-lifecycle-actions" aria-label="玉のしまい方">
+            ${renderArchiveToggleButton(ball)}
+            <button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-status="offered">供養</button>
+            <button class="delete-ball" type="button" data-delete-ball-id="${escapeAttribute(ball.id)}">お焚上</button>
+            <button class="descend-ball" type="button" data-descend-ball-id="${escapeAttribute(ball.id)}">降臨</button>
+          </div>
+
           <div class="dialog-actions">
             <button class="primary-action" type="submit">保存</button>
             <button class="ghost-action" type="button" data-dialog-close>キャンセル</button>
@@ -144,6 +161,52 @@ export function renderBallEditDialog(ball: HappyBall, context: FormRenderContext
       </section>
     </div>
   `;
+}
+
+function renderCreateTimeField(time: string | undefined): string {
+  const normalizedTime = normalizeBallTime(time);
+  const checked = normalizedTime ? " checked" : "";
+  const disabled = normalizedTime ? "" : " disabled";
+
+  return `
+    <div class="timestamp-field create-timestamp-field create-inline-field">
+      <span>時刻記録</span>
+      <div class="timestamp-control">
+        <label class="timestamp-toggle" aria-label="時刻を記録">
+          <input type="checkbox" name="timeEnabled"${checked} />
+        </label>
+        <button class="timestamp-now-button" type="button" data-current-time-button>現在時刻</button>
+        <input name="time" type="time" value="${escapeAttribute(normalizedTime ?? "")}"${disabled} />
+      </div>
+    </div>
+  `;
+}
+
+function renderTimeField(time: string | undefined, className = ""): string {
+  const normalizedTime = normalizeBallTime(time);
+  const checked = normalizedTime ? " checked" : "";
+  const disabled = normalizedTime ? "" : " disabled";
+  const fieldClass = className ? ` timestamp-field ${className}` : " timestamp-field";
+
+  return `
+    <div class="${fieldClass.trim()}">
+      <span>時刻記録</span>
+      <div class="timestamp-control">
+        <label class="timestamp-toggle" aria-label="時刻を記録">
+          <input type="checkbox" name="timeEnabled"${checked} />
+        </label>
+        <button class="timestamp-now-button" type="button" data-current-time-button>現在時刻</button>
+        <input name="time" type="time" value="${escapeAttribute(normalizedTime ?? "")}"${disabled} />
+      </div>
+    </div>
+  `;
+}
+
+function renderArchiveToggleButton(ball: HappyBall): string {
+  if (ball.lifecycleStatus === "archived") {
+    return `<button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-status="active" aria-label="通常表示に戻す">戻す</button>`;
+  }
+  return `<button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-status="archived" aria-label="玉をしまう">しまう</button>`;
 }
 
 export function renderOptions<T extends string>(labels: Record<T, string>, selected: T): string {

@@ -11,6 +11,9 @@ export interface VisualBallSource {
   saturation: number;
   lightness: number;
   visualKind: "filled" | "ring";
+  lifecycleStatus: "active" | "archived" | "memorial" | "offered";
+  descentBadgeCount: number;
+  isKamiBall: boolean;
   echo: { hue: number; saturation: number; lightness: number } | null;
   snapshot: PhysicsBallSnapshot | null;
   label: string;
@@ -235,7 +238,7 @@ export class RapierStage {
       const element = document.createElement("button");
       element.type = "button";
       element.tabIndex = -1;
-      element.className = `physics-ball ${source.labelClass} ${source.visualKind === "ring" ? "is-ring-ball" : "is-filled-ball"}${source.echo ? ` has-echo echo-${this.settings.emotionEchoStrength}` : ""}`;
+      element.className = `physics-ball ${source.labelClass} lifecycle-${source.lifecycleStatus} ${source.visualKind === "ring" ? "is-ring-ball" : "is-filled-ball"}${source.echo ? ` has-echo echo-${this.settings.emotionEchoStrength}` : ""}${source.descentBadgeCount > 0 ? " has-descent-badges" : ""}${source.isKamiBall ? " is-kami-ball" : ""}`;
       element.dataset.visualBallId = source.id;
       element.style.width = `${radius * 2}px`;
       element.style.height = `${radius * 2}px`;
@@ -254,6 +257,7 @@ export class RapierStage {
           <span class="ball-shade"></span>
           <span class="ball-highlight"></span>
         </span>
+        ${renderDescentBadges(source.descentBadgeCount)}
         <span class="ball-label">${escapeHtml(source.label)}</span>
       `;
       this.field.appendChild(element);
@@ -582,6 +586,18 @@ export class RapierStage {
     }
     return best;
   }
+}
+
+function renderDescentBadges(count: number): string {
+  const safeCount = Math.max(0, Math.min(20, Math.floor(count)));
+  if (safeCount === 0) {
+    return "";
+  }
+  return `
+    <span class="descent-badge-ring" aria-hidden="true">
+      ${Array.from({ length: safeCount }, (_, index) => `<span class="descent-star-badge" style="--descent-star-index: ${index}; --descent-star-total: ${safeCount};"></span>`).join("")}
+    </span>
+  `;
 }
 
 function escapeHtml(value: string): string {

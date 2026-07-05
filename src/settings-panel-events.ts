@@ -1,6 +1,6 @@
 import type { CategoryColorPreset } from "./categories";
 import type { NameBookEntry } from "./models";
-import { readBackgroundTexture, readEchoStrength, type AppSettings } from "./settings";
+import { readBackgroundTexture, readEchoStrength, readStartupScreen, type AppSettings } from "./settings";
 import { formatSettingValue } from "./settings-renderers";
 
 interface SettingsPanelEventHandlers {
@@ -30,6 +30,7 @@ const numberSettings: { id: string; prop: keyof AppSettings }[] = [
   { id: "setting-volume", prop: "masterVolume" },
   { id: "setting-pitch", prop: "frequencyHz" },
   { id: "setting-duration", prop: "durationMs" },
+  { id: "setting-descent-distance", prop: "descentMinDistanceMeters" },
 ];
 
 export function bindSettingsPanelEvents(context: SettingsPanelEventContext): void {
@@ -64,6 +65,11 @@ function bindTuningEvents(root: ParentNode, handlers: SettingsPanelEventHandlers
   const backgroundTexture = root.querySelector<HTMLSelectElement>("#setting-background-texture");
   backgroundTexture?.addEventListener("change", () => {
     handlers.updateAppSettings({ backgroundTexture: readBackgroundTexture(backgroundTexture.value) });
+  });
+
+  const startupScreen = root.querySelector<HTMLSelectElement>("#setting-startup-screen");
+  startupScreen?.addEventListener("change", () => {
+    handlers.updateAppSettings({ startupScreen: readStartupScreen(startupScreen.value) });
   });
 
   for (const setting of numberSettings) {

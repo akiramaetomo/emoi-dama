@@ -23,7 +23,7 @@ export function createQrSvg(text: string): string {
     .join("");
 
   return [
-    `<svg class="receipt-qr-code" viewBox="0 0 ${viewSize} ${viewSize}" role="img" aria-label="お預け状を開くQRコード" xmlns="http://www.w3.org/2000/svg">`,
+    `<svg class="receipt-qr-code" viewBox="0 0 ${viewSize} ${viewSize}" role="img" aria-label="送付紙面を開くQRコード" xmlns="http://www.w3.org/2000/svg">`,
     `<rect width="${viewSize}" height="${viewSize}" fill="#fffdf4"/>`,
     `<path d="${path}" fill="#17241f"/>`,
     "</svg>",

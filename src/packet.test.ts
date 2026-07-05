@@ -12,6 +12,7 @@ import {
 const sampleBall: HappyBall = {
   id: "ball_20260626_self_ab12",
   date: "2026-06-26",
+  time: "18:42",
   subject: "自分",
   issuerType: "self",
   issuedBy: "自分",
@@ -40,6 +41,7 @@ const importUrl = createPacketImportUrl(sampleBall, "https://example.test/happy-
 const parsed = parsePacketHash(new URL(importUrl).hash);
 assertOk(parsed, "generated import URL should parse");
 assertEqual(parsed.packet.items[0].title, sampleBall.title, "packet should preserve Japanese title text");
+assertEqual(parsed.packet.items[0].time, sampleBall.time, "packet should preserve ball timestamp text");
 assertEqual(parsed.packet.items[0].visual.label, "夕方の空", "packet should preserve Japanese visual label text");
 assertEqual(parsed.packet.items[0].visual.kind, "filled", "packet should preserve visual kind");
 assert(new URL(importUrl).hash.startsWith("#import="), "standard import URL should use a fragment payload");
@@ -54,9 +56,41 @@ assertEqual(lineUrl.hash, "", "LINE import URL should avoid fragment payload");
 const parsedLineQuery = parsePacketQuery(lineUrl.search);
 assertOk(parsedLineQuery, "LINE query import URL should parse");
 assertEqual(parsedLineQuery.packet.items[0].title, sampleBall.title, "query import should preserve Japanese title text");
+assertEqual(parsedLineQuery.packet.sendMode, undefined, "default LINE import URL should not require a send mode field");
+
+const casualImportUrl = createPacketImportUrl(sampleBall, "https://example.test/happy-ball/", "casual");
+const parsedCasual = parsePacketHash(new URL(casualImportUrl).hash);
+assertOk(parsedCasual, "casual import URL should parse");
+assertEqual(parsedCasual.packet.sendMode, "casual", "casual import URL should preserve send mode");
+
+const casualLineImportUrl = createLinePacketImportUrl(sampleBall, "https://example.test/happy-ball/", "casual");
+const parsedCasualLine = parsePacketQuery(new URL(casualLineImportUrl).search);
+assertOk(parsedCasualLine, "casual LINE query import URL should parse");
+assertEqual(parsedCasualLine.packet.sendMode, "casual", "casual LINE URL should preserve send mode");
 
 const issuerVisibilityPacket = createBallPacket({ ...sampleBall, visibility: "issuer" });
 assertEqual(issuerVisibilityPacket.items[0].visibility, "issuer", "packet should preserve issuer-level visibility");
+
+const descentPacket = createBallPacket({
+  ...sampleBall,
+  descents: [
+    {
+      id: "descent_1",
+      sequence: 1,
+      recordedAt: "2026-06-26T11:00:00.000Z",
+      latitude: 35.681236,
+      longitude: 139.767125,
+      accuracyMeters: 12,
+      badgeAwarded: true,
+      memo: "駅前で降臨",
+    },
+  ],
+  descentBadgeCount: 1,
+  isKamiBall: false,
+});
+assertEqual(descentPacket.items[0].descents?.length, 0, "packet should omit exact GPS descent records");
+assertEqual(descentPacket.items[0].descentBadgeCount, 1, "packet may preserve non-location descent badge count");
+assertEqual(descentPacket.items[0].isKamiBall, false, "packet may preserve non-location kami state");
 
 const legacyHiddenPacket = createBallPacket({ ...sampleBall, visibility: "hidden" as unknown as HappyBall["visibility"] });
 const legacyHiddenUrl = createPacketImportUrl(legacyHiddenPacket.items[0], "https://example.test/happy-ball/");
@@ -83,6 +117,16 @@ assertEqual(reviewWithReceiptOnlyDifference.duplicates.length, 1, "receipt creat
 const changedBall = { ...sampleBall, title: "内容が違う同じID" };
 const reviewWithConflict = reviewPacketImport(createBallPacket(changedBall), [sampleBall]);
 assertEqual(reviewWithConflict.conflicts.length, 1, "same ID with different content should be conflict");
+
+const changedTimeBall = { ...sampleBall, time: "19:03" };
+const reviewWithTimeConflict = reviewPacketImport(createBallPacket(changedTimeBall), [sampleBall]);
+assertEqual(reviewWithTimeConflict.conflicts.length, 1, "same ID with different timestamp should be conflict");
+
+const noTimePacket = createBallPacket({ ...sampleBall, time: undefined });
+const noTimeUrl = createPacketImportUrl(noTimePacket.items[0], "https://example.test/happy-ball/");
+const parsedNoTime = parsePacketHash(new URL(noTimeUrl).hash);
+assertOk(parsedNoTime, "packet without timestamp should parse");
+assertEqual(parsedNoTime.packet.items[0].time, undefined, "packet without timestamp should remain timestamp-free");
 
 const parsedBad = parsePacketHash("#import=not_base64url");
 assert(parsedBad?.ok === false, "invalid payload should return a parse error");

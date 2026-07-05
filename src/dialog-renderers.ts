@@ -1,8 +1,9 @@
-import { visibilityLabels, type HappyBall, type IssuerType } from "./models";
-import { createPacketImportUrl } from "./packet";
-import { createQrSvg } from "./qr-code";
+import { formatBallDateTime, visibilityLabels, type HappyBall, type IssuerType, type SendMode } from "./models.js";
+import { createGoogleMapsUrl } from "./descent.js";
+import { createPacketImportUrl } from "./packet.js";
+import { createQrSvg } from "./qr-code.js";
 import type { EmotionEchoStrength } from "./settings";
-import { canShowMemoText, getMemoSurfaceMode, type MemoSurfaceMode } from "./visibility";
+import { canShowMemoText, getMemoSurfaceMode, type MemoSurfaceMode } from "./visibility.js";
 
 export interface DialogRenderContext {
   currentUrl: string;
@@ -16,13 +17,18 @@ export const receiptTitleLabels: Record<IssuerType, string> = {
   proxy: "預かり証",
 };
 
+export const sendModeLabels: Record<SendMode, string> = {
+  casual: "お配り",
+  formal: "お預け",
+};
+
+export const casualReceiptTitle = "お配り";
+
 export function renderBallDialog(ball: HappyBall, context: DialogRenderContext): string {
   const keepers = ball.keepers.length > 0 ? ball.keepers.join(", ") : "未設定";
   const approvedBy = ball.approvedBy || "なし";
-  const receiptTitle = receiptTitleLabels[ball.issuerType];
   const issueLabel = formatIssueLabel(ball);
   const issuerCardHelper = formatIssuerCardHelper(ball);
-  const receiptCreated = Boolean(ball.receiptCreatedAt);
   const showIssuer = canShowIssuer(ball);
 
   return `
@@ -32,16 +38,17 @@ export function renderBallDialog(ball: HappyBall, context: DialogRenderContext):
         <button class="primary-action detail-edit-top" type="button" data-dialog-edit-ball-id="${escapeAttribute(ball.id)}">編集</button>
         <p class="detail-screen-name">玉の中身</p>
         <div class="dialog-head">
-          <div class="dialog-ball ${renderVisualKindClass(ball.visual)} ${renderEchoClass(ball, context)}" style="${renderBallVisualStyle(ball, context)} --ball-rotation: 0.34rad;" aria-hidden="true">
+          <div class="dialog-ball ${renderLifecycleClass(ball)} ${renderVisualKindClass(ball.visual)} ${renderEchoClass(ball, context)}" style="${renderBallVisualStyle(ball, context)} --ball-rotation: 0.34rad;" aria-hidden="true">
             <span class="ball-body">
               <span class="ball-core"></span>
               <span class="ball-shade"></span>
               <span class="ball-highlight"></span>
             </span>
+            ${ball.lifecycleStatus === "archived" ? `<span class="archived-ball-tag">しまい中</span>` : ""}
             <span class="ball-label">${escapeHtml(createVisibilitySafeTitleLabel(ball))}</span>
           </div>
           <div class="dialog-title-block">
-            <span>${escapeHtml(ball.date)}</span>
+            <span>${escapeHtml(formatBallDateTime(ball.date, ball.time))}</span>
             <h2 id="ball-dialog-title">${escapeHtml(createVisibilitySafeSummaryLabel(ball))}</h2>
           </div>
         </div>
@@ -66,17 +73,16 @@ export function renderBallDialog(ball: HappyBall, context: DialogRenderContext):
           </article>
           <article class="detail-info-card detail-receipt-card">
             <div>
-              <span>${escapeHtml(receiptTitle)}</span>
-              <strong data-receipt-status-ball-id="${escapeAttribute(ball.id)}">${receiptCreated ? "作成済み" : "未作成"}</strong>
+              <span>送る</span>
             </div>
-            <span class="receipt-thumb" data-receipt-thumb-ball-id="${escapeAttribute(ball.id)}"${receiptCreated ? "" : " hidden"} aria-hidden="true">
-              <span></span>
-              <span></span>
-              <span></span>
-            </span>
-            <button class="ghost-action detail-card-action" type="button" data-dialog-receipt-ball-id="${escapeAttribute(ball.id)}">見る</button>
+            <div class="send-card-actions">
+              <button class="ghost-action detail-card-action" type="button" data-dialog-receipt-ball-id="${escapeAttribute(ball.id)}" data-send-mode="casual">${escapeHtml(sendModeLabels.casual)}</button>
+              <button class="ghost-action detail-card-action" type="button" data-dialog-receipt-ball-id="${escapeAttribute(ball.id)}" data-send-mode="formal">${escapeHtml(sendModeLabels.formal)}</button>
+            </div>
           </article>
+          ${renderDescentSummaryCard(ball)}
         </div>
+        ${renderDescentHistory(ball)}
         <div class="detail-folds">
           <details class="detail-fold">
             <summary>見せる範囲・ID</summary>
@@ -90,7 +96,7 @@ export function renderBallDialog(ball: HappyBall, context: DialogRenderContext):
             <p class="detail-fold-note">入力者、承認、預かりは台帳の正式情報です。今は作成時の情報から自動で入ります。</p>
             <dl class="dialog-meta compact">
               ${renderDialogMetaRow("対象", ball.subject)}
-              ${renderDialogMetaRow("日付", ball.date)}
+              ${renderDialogMetaRow("日付", formatBallDateTime(ball.date, ball.time))}
               ${renderDialogMetaRow("作り方", issueLabel)}
               ${renderDialogMetaRow("玉数", `${ball.count}玉`)}
               ${renderDialogMetaRow("預かり", keepers)}
@@ -107,28 +113,100 @@ export function renderBallDialog(ball: HappyBall, context: DialogRenderContext):
   `;
 }
 
-export function renderReceiptDialog(ball: HappyBall, context: DialogRenderContext): string {
+function renderDescentSummaryCard(ball: HappyBall): string {
+  const descents = ball.descents ?? [];
+  const badgeCount = ball.descentBadgeCount ?? 0;
+  if (descents.length === 0 && badgeCount === 0 && !ball.isKamiBall) {
+    return "";
+  }
+  return `
+    <article class="detail-info-card detail-descent-card">
+      <div>
+        <span>降臨</span>
+      </div>
+      <strong>${ball.isKamiBall ? "神玉" : `${badgeCount}星`}</strong>
+      <small>${descents.length}回の降臨</small>
+    </article>
+  `;
+}
+
+function renderDescentHistory(ball: HappyBall): string {
+  const descents = ball.descents ?? [];
+  if (descents.length === 0) {
+    return "";
+  }
+  return `
+    <section class="detail-descent-history" aria-label="降臨情報">
+      <div class="detail-descent-history-head">
+        <span>降臨情報</span>
+        <strong>${ball.isKamiBall ? "神玉" : `${ball.descentBadgeCount ?? 0}星`}</strong>
+      </div>
+      <div class="detail-descent-list">
+        ${descents.map((record) => `
+          <article class="detail-descent-item">
+            <div>
+              <strong>第${record.sequence}回</strong>
+              <span>${escapeHtml(formatDescentDateTime(record.recordedAt))}</span>
+            </div>
+            ${record.memo ? `<p>${escapeHtml(record.memo)}</p>` : ""}
+            <dl>
+              <div><dt>座標</dt><dd>${escapeHtml(formatCoordinates(record.latitude, record.longitude))}</dd></div>
+              <div><dt>精度</dt><dd>${escapeHtml(formatMeters(record.accuracyMeters))}</dd></div>
+              <div><dt>前回距離</dt><dd>${escapeHtml(formatMeters(record.distanceFromPreviousMeters))}</dd></div>
+            </dl>
+            <a class="ghost-action detail-map-link" href="${escapeAttribute(createGoogleMapsUrl(record))}" target="_blank" rel="noopener noreferrer">Google Maps</a>
+          </article>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function formatDescentDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatCoordinates(latitude: number, longitude: number): string {
+  return `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+}
+
+function formatMeters(value: number | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value)}m` : "ー";
+}
+
+export function renderReceiptDialog(ball: HappyBall, context: DialogRenderContext, sendMode: SendMode = "formal"): string {
   return `
     <div class="ball-dialog-backdrop" data-dialog-backdrop>
       <section class="ball-dialog receipt-dialog" role="dialog" aria-modal="true" aria-labelledby="receipt-dialog-title">
         <button class="dialog-close" type="button" data-dialog-close aria-label="閉じる">&times;</button>
         <div class="dialog-actions receipt-dialog-actions">
           <button class="ghost-action" type="button" data-dialog-back-to-ball-id="${escapeAttribute(ball.id)}">詳細へ戻る</button>
-          <button class="ghost-action" type="button" data-show-ball-qr-id="${escapeAttribute(ball.id)}">QR表示</button>
-          <button class="ghost-action" type="button" data-share-receipt-image-id="${escapeAttribute(ball.id)}">画像で送る</button>
-          <button class="ghost-action" type="button" data-download-receipt-image-id="${escapeAttribute(ball.id)}">画像保存</button>
-          <button class="ghost-action" type="button" data-copy-ball-url-id="${escapeAttribute(ball.id)}">URLコピー</button>
-          <button class="ghost-action" type="button" data-copy-ball-line-url-id="${escapeAttribute(ball.id)}">LINE用URL</button>
+          <button class="ghost-action" type="button" data-show-ball-qr-id="${escapeAttribute(ball.id)}" data-send-mode="${sendMode}">QR表示</button>
+          <button class="ghost-action" type="button" data-share-receipt-image-id="${escapeAttribute(ball.id)}" data-send-mode="${sendMode}">画像で送る</button>
+          <button class="ghost-action" type="button" data-download-receipt-image-id="${escapeAttribute(ball.id)}" data-send-mode="${sendMode}">画像保存</button>
+          <button class="ghost-action" type="button" data-copy-ball-url-id="${escapeAttribute(ball.id)}" data-send-mode="${sendMode}">URLコピー</button>
+          <button class="ghost-action" type="button" data-copy-ball-line-url-id="${escapeAttribute(ball.id)}" data-send-mode="${sendMode}">LINE用URL</button>
         </div>
-        ${renderReceiptPaper(ball, { idPrefix: "receipt-dialog", showUrl: true }, context)}
+        ${renderReceiptPaper(ball, { idPrefix: "receipt-dialog", showUrl: true, sendMode }, context)}
       </section>
     </div>
   `;
 }
 
-export function renderReceiptQrDialog(ball: HappyBall, context: DialogRenderContext): string {
-  const receiptTitle = receiptTitleLabels[ball.issuerType];
-  const packetUrl = createPacketImportUrl(ball, context.currentUrl);
+export function renderReceiptQrDialog(ball: HappyBall, context: DialogRenderContext, sendMode: SendMode = "formal"): string {
+  const receiptTitle = getReceiptTitle(ball, sendMode);
+  const packetUrl = createPacketImportUrl(ball, context.currentUrl, sendMode);
+  const qrHeading = sendMode === "casual" ? "QRで配る" : "QRで預ける";
   let qrSvg: string;
   try {
     qrSvg = createQrSvg(packetUrl);
@@ -146,13 +224,13 @@ export function renderReceiptQrDialog(ball: HappyBall, context: DialogRenderCont
       <section class="ball-dialog receipt-qr-dialog" role="dialog" aria-modal="true" aria-labelledby="receipt-qr-dialog-title">
         <button class="dialog-close" type="button" data-dialog-close aria-label="閉じる">&times;</button>
         <div class="dialog-actions receipt-dialog-actions">
-          <button class="ghost-action" type="button" data-dialog-receipt-ball-id="${escapeAttribute(ball.id)}">${escapeHtml(receiptTitle)}へ戻る</button>
-          <button class="ghost-action" type="button" data-copy-ball-url-id="${escapeAttribute(ball.id)}">URLコピー</button>
+          <button class="ghost-action" type="button" data-dialog-receipt-ball-id="${escapeAttribute(ball.id)}" data-send-mode="${sendMode}">${escapeHtml(receiptTitle)}へ戻る</button>
+          <button class="ghost-action" type="button" data-copy-ball-url-id="${escapeAttribute(ball.id)}" data-send-mode="${sendMode}">URLコピー</button>
         </div>
         <div class="receipt-qr-panel">
           <div class="receipt-qr-heading">
             <span>えもい玉 ${escapeHtml(receiptTitle)}</span>
-            <h2 id="receipt-qr-dialog-title">QRで預ける</h2>
+            <h2 id="receipt-qr-dialog-title">${escapeHtml(qrHeading)}</h2>
           </div>
           <div class="receipt-qr-frame">${qrSvg}</div>
           <p class="receipt-qr-note">相手のスマホで読み取ると、届いた${escapeHtml(receiptTitle)}が開きます。</p>
@@ -164,22 +242,20 @@ export function renderReceiptQrDialog(ball: HappyBall, context: DialogRenderCont
 
 export function renderReceiptPaper(
   ball: HappyBall,
-  options: { idPrefix: string; showUrl: boolean },
+  options: { idPrefix: string; showUrl: boolean; sendMode?: SendMode },
   context: DialogRenderContext,
 ): string {
-  const keepers = ball.keepers.length > 0 ? ball.keepers.join(", ") : "未設定";
-  const packetUrl = options.showUrl ? createPacketImportUrl(ball, context.currentUrl) : "";
-  const receiptTitle = receiptTitleLabels[ball.issuerType];
-  const receiptStamp = ball.issuerType === "proxy" ? "預" : "託";
-  const keeperLabel = ball.issuerType === "proxy" ? "預かり者" : "預け先";
-  const showIssuer = canShowIssuer(ball);
-  const showTitle = canShowTitle(ball);
+  const sendMode = options.sendMode ?? "formal";
+  const packetUrl = options.showUrl ? createPacketImportUrl(ball, context.currentUrl, sendMode) : "";
+  const receiptTitle = getReceiptTitle(ball, sendMode);
+  const receiptStamp = sendMode === "casual" ? "配" : ball.issuerType === "proxy" ? "預" : "託";
+  const eyebrow = sendMode === "casual" ? "Emoi Dama Cover Note" : "emoi dama app";
 
   return `
     <article class="receipt-paper" aria-label="えもい玉 ${escapeAttribute(receiptTitle)}">
       <div class="receipt-stamp" aria-hidden="true">${escapeHtml(receiptStamp)}</div>
       <div class="receipt-head">
-        <span>emoi dama app</span>
+        <span>${escapeHtml(eyebrow)}</span>
         <h2 id="${escapeAttribute(options.idPrefix)}-title">
           <span>えもい玉</span>
           <span>${escapeHtml(receiptTitle)}</span>
@@ -195,16 +271,14 @@ export function renderReceiptPaper(
           <span class="ball-label">${escapeHtml(createVisibilitySafeTitleLabel(ball))}</span>
         </div>
         <div>
-          <span>${escapeHtml(ball.date)}</span>
-          <strong>${escapeHtml(createVisibilitySafeSummaryLabel(ball))}</strong>
+          <span>${escapeHtml(formatBallDateTime(ball.date, ball.time))}</span>
+          <strong>${escapeHtml(createReceiptHeroLabel(ball, sendMode))}</strong>
         </div>
       </div>
       <dl class="receipt-info">
-        ${showIssuer ? renderReceiptRow("発行者", ball.issuedBy) : ""}
-        ${showIssuer ? renderReceiptRow(keeperLabel, keepers) : ""}
-        ${showTitle ? renderReceiptRow("タイトル", ball.title, "wide") : ""}
+        ${renderReceiptRowsForMode(ball, sendMode)}
         ${renderReceiptFeelingRow(ball)}
-        ${renderReceiptMemoRow(ball, context)}
+        ${sendMode === "formal" ? renderReceiptMemoRow(ball, context) : ""}
       </dl>
       ${options.showUrl ? `
         <div class="receipt-url">
@@ -214,6 +288,17 @@ export function renderReceiptPaper(
       ` : ""}
     </article>
   `;
+}
+
+export function getReceiptTitle(ball: HappyBall, sendMode: SendMode = "formal"): string {
+  return sendMode === "casual" ? casualReceiptTitle : receiptTitleLabels[ball.issuerType];
+}
+
+function createReceiptHeroLabel(ball: HappyBall, sendMode: SendMode): string {
+  if (sendMode === "casual") {
+    return ball.title || ball.visual.label || ball.category || "玉";
+  }
+  return createVisibilitySafeSummaryLabel(ball);
 }
 
 export function createVisibilitySafeSummaryLabel(ball: HappyBall): string {
@@ -293,23 +378,22 @@ function renderPrivateMemoSurface(mode: Extract<MemoSurfaceMode, "private-obscur
 
 function renderDetailCategory(ball: HappyBall): string {
   return `
-    <span class="detail-info-value detail-category-value">
-      <span class="mini-ball detail-info-ball ${renderVisualKindClass(ball.visual)}" style="${renderVisualStyle(ball.visual)}" aria-hidden="true"></span>
-      <strong>${escapeHtml(ball.category)}</strong>
-    </span>
+    <span class="mini-ball detail-info-ball ${renderVisualKindClass(ball.visual)}" style="${renderVisualStyle(ball.visual)}" aria-hidden="true"></span>
+    <strong class="detail-feeling-text">${escapeHtml(ball.category)}</strong>
   `;
 }
 
 function renderDetailEcho(ball: HappyBall): string {
   if (!ball.emotionEcho) {
-    return `<span class="detail-info-value"><strong>ー</strong></span>`;
+    return `
+      <span class="detail-info-ball-placeholder" aria-hidden="true"></span>
+      <strong class="detail-feeling-text">ー</strong>
+    `;
   }
 
   return `
-    <span class="detail-info-value detail-echo-value">
-      <span class="mini-ball detail-info-ball ${renderVisualKindClass(ball.emotionEcho.visual)}" style="${renderVisualStyle(ball.emotionEcho.visual)}" aria-hidden="true"></span>
-      <strong>${escapeHtml(ball.emotionEcho.category)}</strong>
-    </span>
+    <span class="mini-ball detail-info-ball ${renderVisualKindClass(ball.emotionEcho.visual)}" style="${renderVisualStyle(ball.emotionEcho.visual)}" aria-hidden="true"></span>
+    <strong class="detail-feeling-text">${escapeHtml(ball.emotionEcho.category)}</strong>
   `;
 }
 
@@ -353,6 +437,14 @@ function renderReceiptFeelingRow(ball: HappyBall): string {
       <dd>${escapeHtml(ball.category)}／${escapeHtml(echo)}</dd>
     </div>
   `;
+}
+
+function renderReceiptRowsForMode(ball: HappyBall, sendMode: SendMode): string {
+  if (sendMode === "casual") {
+    return renderReceiptRow("発行者", ball.issuedBy);
+  }
+
+  return canShowIssuer(ball) ? renderReceiptRow("発行者", ball.issuedBy) : "";
 }
 
 function renderReceiptMemoRow(ball: HappyBall, context: DialogRenderContext): string {
@@ -427,12 +519,16 @@ function renderVisualKindClass(visual: { kind?: string }): string {
   return visual.kind === "ring" ? "is-ring-ball" : "is-filled-ball";
 }
 
+function renderLifecycleClass(ball: HappyBall): string {
+  return `lifecycle-${ball.lifecycleStatus}`;
+}
+
 function renderEchoClass(ball: HappyBall, context: DialogRenderContext): string {
   return shouldShowEmotionEcho(ball, context) ? `has-echo echo-${context.emotionEchoStrength}` : "";
 }
 
 function shouldShowEmotionEcho(ball: HappyBall, context: DialogRenderContext): boolean {
-  return Boolean(ball.emotionEcho) && context.emotionEchoStrength !== "off";
+  return ball.lifecycleStatus !== "archived" && Boolean(ball.emotionEcho) && context.emotionEchoStrength !== "off";
 }
 
 function escapeHtml(value: string): string {
