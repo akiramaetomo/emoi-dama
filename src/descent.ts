@@ -24,19 +24,20 @@ export type DescentApplyResult =
 
 export function appendDescentToBall(
   ball: HappyBall,
-  position: DescentPositionInput,
+  position: DescentPositionInput | null,
   minDistanceMeters: number,
   memo = "",
   recordedAt = new Date().toISOString(),
 ): DescentApplyResult {
   const descents = normalizeDescentRecords(ball.descents);
-  const previous = descents[descents.length - 1];
-  const distanceFromPreviousMeters = previous
-    ? distanceMeters(previous.latitude, previous.longitude, position.latitude, position.longitude)
+  const previous = findLatestPositionedDescent(descents);
+  const normalizedPosition = position ? normalizeDescentPosition(position) : null;
+  const distanceFromPreviousMeters = previous && normalizedPosition
+    ? distanceMeters(previous.latitude, previous.longitude, normalizedPosition.latitude, normalizedPosition.longitude)
     : undefined;
   const requiredDistanceMeters = normalizeDescentMinDistance(minDistanceMeters);
 
-  if (distanceFromPreviousMeters !== undefined && distanceFromPreviousMeters < requiredDistanceMeters) {
+  if (normalizedPosition && distanceFromPreviousMeters !== undefined && distanceFromPreviousMeters < requiredDistanceMeters) {
     return {
       ok: false,
       reason: "too-close",
@@ -53,13 +54,15 @@ export function appendDescentToBall(
     id: createDescentId(ball.id, sequence, recordedAt),
     sequence,
     recordedAt,
-    latitude: clampLatitude(position.latitude),
-    longitude: clampLongitude(position.longitude),
-    accuracyMeters: normalizeOptionalPositiveNumber(position.accuracyMeters),
     distanceFromPreviousMeters: normalizeOptionalPositiveNumber(distanceFromPreviousMeters),
     badgeAwarded,
     memo: normalizeDescentMemo(memo),
   };
+  if (normalizedPosition) {
+    record.latitude = normalizedPosition.latitude;
+    record.longitude = normalizedPosition.longitude;
+    record.accuracyMeters = normalizedPosition.accuracyMeters;
+  }
 
   return {
     ok: true,
@@ -74,6 +77,66 @@ export function appendDescentToBall(
   };
 }
 
+export type DescentPositionUpdateResult =
+  | {
+      ok: true;
+      ball: HappyBall;
+      record: HappyBallDescentRecord;
+    }
+  | {
+      ok: false;
+      reason: "not-found";
+    };
+
+export function updateDescentRecordPosition(
+  ball: HappyBall,
+  descentId: string,
+  position: DescentPositionInput | null,
+  recordedAt = new Date().toISOString(),
+): DescentPositionUpdateResult {
+  const descents = normalizeDescentRecords(ball.descents);
+  const targetIndex = descents.findIndex((record) => record.id === descentId);
+  if (targetIndex < 0) {
+    return { ok: false, reason: "not-found" };
+  }
+
+  const normalizedPosition = position ? normalizeDescentPosition(position) : null;
+  const previous = findLatestPositionedDescent(descents.slice(0, targetIndex));
+  const distanceFromPreviousMeters = previous && normalizedPosition
+    ? distanceMeters(previous.latitude, previous.longitude, normalizedPosition.latitude, normalizedPosition.longitude)
+    : undefined;
+  const nextRecord: HappyBallDescentRecord = {
+    ...descents[targetIndex],
+    latitude: normalizedPosition?.latitude,
+    longitude: normalizedPosition?.longitude,
+    accuracyMeters: normalizedPosition?.accuracyMeters,
+    distanceFromPreviousMeters: normalizeOptionalPositiveNumber(distanceFromPreviousMeters),
+  };
+  const nextDescents = descents.map((record, index) => index === targetIndex ? nextRecord : record);
+  const nextBall = applyDescentRecordsToBall(ball, nextDescents, recordedAt);
+  return {
+    ok: true,
+    ball: nextBall,
+    record: nextDescents[targetIndex],
+  };
+}
+
+export function applyDescentRecordsToBall(
+  ball: HappyBall,
+  records: unknown,
+  recordedAt = new Date().toISOString(),
+): HappyBall {
+  const descents = recalculateDescentDistances(normalizeDescentRecords(records));
+  const descentBadgeCount = normalizeDescentBadgeCount(descents.filter((record) => record.badgeAwarded).length);
+  return {
+    ...ball,
+    descents,
+    descentBadgeCount,
+    isKamiBall: descentBadgeCount >= DESCENT_BADGE_MAX,
+    updatedAt: recordedAt,
+  };
+}
+
 export function normalizeDescentRecords(value: unknown): HappyBallDescentRecord[] {
   if (!Array.isArray(value)) {
     return [];
@@ -84,28 +147,27 @@ export function normalizeDescentRecords(value: unknown): HappyBallDescentRecord[
     if (!isPlainObject(item)) {
       continue;
     }
-    const latitude = readFiniteNumber(item.latitude);
-    const longitude = readFiniteNumber(item.longitude);
-    if (latitude === null || longitude === null) {
-      continue;
-    }
+    const position = readDescentPosition(item);
     const sequence = normalizeSequence(item.sequence, records.length + 1);
     const recordedAt = typeof item.recordedAt === "string" && item.recordedAt.trim()
       ? item.recordedAt.trim()
       : new Date().toISOString();
-    records.push({
+    const record: HappyBallDescentRecord = {
       id: typeof item.id === "string" && item.id.trim()
         ? item.id.trim()
         : createDescentId("legacy", sequence, recordedAt),
       sequence,
       recordedAt,
-      latitude: clampLatitude(latitude),
-      longitude: clampLongitude(longitude),
-      accuracyMeters: normalizeOptionalPositiveNumber(item.accuracyMeters),
       distanceFromPreviousMeters: normalizeOptionalPositiveNumber(item.distanceFromPreviousMeters),
       badgeAwarded: item.badgeAwarded !== false,
       memo: normalizeDescentMemo(item.memo),
-    });
+    };
+    if (position) {
+      record.latitude = position.latitude;
+      record.longitude = position.longitude;
+      record.accuracyMeters = position.accuracyMeters;
+    }
+    records.push(record);
   }
 
   return records.map((record, index) => ({
@@ -143,7 +205,17 @@ export function distanceMeters(
   return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+export function hasDescentPosition(record: Pick<HappyBallDescentRecord, "latitude" | "longitude">): record is Pick<HappyBallDescentRecord, "latitude" | "longitude"> & { latitude: number; longitude: number } {
+  return typeof record.latitude === "number"
+    && Number.isFinite(record.latitude)
+    && typeof record.longitude === "number"
+    && Number.isFinite(record.longitude);
+}
+
 export function createGoogleMapsUrl(record: Pick<HappyBallDescentRecord, "latitude" | "longitude">): string {
+  if (!hasDescentPosition(record)) {
+    throw new Error("Cannot create a Google Maps URL without descent coordinates.");
+  }
   const query = `${record.latitude},${record.longitude}`;
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 }
@@ -155,6 +227,63 @@ function createDescentId(ballId: string, sequence: number, recordedAt: string): 
 
 function normalizeDescentMemo(value: unknown): string {
   return typeof value === "string" ? Array.from(value.trim()).slice(0, 80).join("") : "";
+}
+
+function findLatestPositionedDescent(records: HappyBallDescentRecord[]): (HappyBallDescentRecord & { latitude: number; longitude: number }) | null {
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    const record = records[index];
+    if (hasDescentPosition(record)) {
+      return record;
+    }
+  }
+  return null;
+}
+
+function normalizeDescentPosition(position: DescentPositionInput): DescentPositionInput | null {
+  const latitude = readFiniteNumber(position.latitude);
+  const longitude = readFiniteNumber(position.longitude);
+  if (latitude === null || longitude === null) {
+    return null;
+  }
+  return {
+    latitude: clampLatitude(latitude),
+    longitude: clampLongitude(longitude),
+    accuracyMeters: normalizeOptionalPositiveNumber(position.accuracyMeters),
+  };
+}
+
+function readDescentPosition(value: Record<string, unknown>): DescentPositionInput | null {
+  const latitude = readFiniteNumber(value.latitude);
+  const longitude = readFiniteNumber(value.longitude);
+  if (latitude === null || longitude === null) {
+    return null;
+  }
+  return {
+    latitude: clampLatitude(latitude),
+    longitude: clampLongitude(longitude),
+    accuracyMeters: normalizeOptionalPositiveNumber(value.accuracyMeters),
+  };
+}
+
+function recalculateDescentDistances(records: HappyBallDescentRecord[]): HappyBallDescentRecord[] {
+  let previousPositioned: (HappyBallDescentRecord & { latitude: number; longitude: number }) | null = null;
+  return records.map((record) => {
+    if (!hasDescentPosition(record)) {
+      return {
+        ...record,
+        distanceFromPreviousMeters: undefined,
+      };
+    }
+    const distanceFromPreviousMeters = previousPositioned
+      ? distanceMeters(previousPositioned.latitude, previousPositioned.longitude, record.latitude, record.longitude)
+      : undefined;
+    const next = {
+      ...record,
+      distanceFromPreviousMeters: normalizeOptionalPositiveNumber(distanceFromPreviousMeters),
+    };
+    previousPositioned = next;
+    return next;
+  });
 }
 
 function normalizeSequence(value: unknown, fallback: number): number {

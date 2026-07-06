@@ -99,7 +99,10 @@ function renderCalendarDayListItem(ball: HappyBall, context: CalendarRenderConte
   const selectedClass = ball.id === context.selectedBallId ? " is-selected" : "";
   return `
     <article class="calendar-day-ball-item lifecycle-${ball.lifecycleStatus}${selectedClass}">
-      <span class="mini-ball calendar-day-ball-visual lifecycle-${ball.lifecycleStatus} ${renderVisualKindClass(ball.visual)} ${renderEchoClass(ball, context.emotionEchoStrength)}" style="${renderBallVisualStyle(ball, context.emotionEchoStrength)}" aria-hidden="true"></span>
+      <span class="calendar-day-ball-visual-wrap">
+        ${renderCompactDescentBadge(ball)}
+        <span class="mini-ball calendar-day-ball-visual lifecycle-${ball.lifecycleStatus} ${renderVisualKindClass(ball.visual)} ${renderEchoClass(ball, context.emotionEchoStrength)}" style="${renderBallVisualStyle(ball, context.emotionEchoStrength)}" aria-hidden="true"></span>
+      </span>
       <div class="calendar-day-ball-main">
         <div class="calendar-day-ball-title-row">
           <strong>${escapeHtml(ball.title)}</strong>
@@ -116,6 +119,14 @@ function renderCalendarDayListItem(ball: HappyBall, context: CalendarRenderConte
       </div>
     </article>
   `;
+}
+
+function renderCompactDescentBadge(ball: HappyBall): string {
+  const count = ball.descentBadgeCount ?? 0;
+  if (count <= 0) {
+    return "";
+  }
+  return `<span class="compact-descent-badge calendar-day-descent-badge" aria-label="降臨 ${count}星">✦${count}</span>`;
 }
 
 function renderCalendarLifecycleActions(ball: HappyBall): string {

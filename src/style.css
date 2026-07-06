@@ -588,7 +588,7 @@ h2 {
 
 .descent-badge-ring {
   position: absolute;
-  inset: -18%;
+  inset: -42%;
   z-index: 3;
   border-radius: 50%;
   pointer-events: none;
@@ -598,20 +598,21 @@ h2 {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: clamp(11px, 18%, 18px);
-  height: clamp(11px, 18%, 18px);
+  width: clamp(10px, 16%, 17px);
+  height: clamp(10px, 16%, 17px);
+  opacity: 0.68;
   transform:
     translate(-50%, -50%)
     rotate(calc((360deg / var(--descent-star-total)) * var(--descent-star-index)))
-    translateY(-66%)
+    translateY(-104%)
     rotate(calc(-1 * (360deg / var(--descent-star-total)) * var(--descent-star-index)));
   clip-path: polygon(50% 0, 60% 38%, 100% 50%, 60% 62%, 50% 100%, 40% 62%, 0 50%, 40% 38%);
   background:
     radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.95), transparent 32%),
-    linear-gradient(145deg, #fff2a8, #f0c06f 58%, #71d2b1);
+    linear-gradient(145deg, #fff59d, #ffc84f 54%, #2ee6b6);
   box-shadow:
-    0 0 8px rgba(240, 192, 111, 0.72),
-    0 0 14px rgba(80, 177, 150, 0.32);
+    0 0 7px rgba(255, 214, 95, 0.54),
+    0 0 13px rgba(46, 230, 182, 0.28);
 }
 
 .physics-ball.is-kami-ball .descent-star-badge {
@@ -619,8 +620,28 @@ h2 {
     radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 1), transparent 32%),
     linear-gradient(145deg, #fff7c7, #ffd46f 44%, #9cf0d0 100%);
   box-shadow:
-    0 0 10px rgba(255, 238, 170, 0.92),
-    0 0 20px rgba(80, 177, 150, 0.52);
+    0 0 8px rgba(255, 238, 170, 0.58),
+    0 0 16px rgba(80, 177, 150, 0.34);
+}
+
+.compact-descent-badge {
+  display: inline-grid;
+  min-width: 2.4em;
+  min-height: 1.4em;
+  place-items: center;
+  padding: 1px 6px;
+  border: 1px solid rgba(255, 216, 112, 0.52);
+  border-radius: 999px;
+  background: rgba(44, 52, 43, 0.88);
+  box-shadow:
+    0 0 8px rgba(255, 214, 95, 0.34),
+    inset 0 0 8px rgba(46, 230, 182, 0.16);
+  color: #ffe27d;
+  font-size: 0.72rem;
+  font-weight: 950;
+  line-height: 1;
+  pointer-events: none;
+  white-space: nowrap;
 }
 
 .ball-body,
@@ -1153,7 +1174,7 @@ h2 {
 
 .calendar-day-ball-item {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) auto;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   padding: 8px;
@@ -1191,6 +1212,21 @@ h2 {
 .calendar-day-ball-item.lifecycle-offered {
   border-color: rgba(184, 216, 206, 0.16);
   background: rgba(22, 22, 24, 0.58);
+}
+
+.calendar-day-ball-visual-wrap {
+  position: relative;
+  display: grid;
+  min-height: 44px;
+  place-items: end center;
+}
+
+.calendar-day-descent-badge {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 2;
+  transform: translateX(-50%);
 }
 
 .mini-ball.calendar-day-ball-visual {
@@ -1930,11 +1966,6 @@ h2 {
   white-space: nowrap;
 }
 
-.detail-descent-card strong {
-  color: var(--color-accent);
-  font-size: 1.1rem;
-}
-
 .detail-descent-history {
   display: grid;
   gap: 10px;
@@ -1945,14 +1976,16 @@ h2 {
   display: flex;
   gap: 10px;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   color: rgba(255, 246, 218, 0.78);
   font-size: 0.9rem;
   font-weight: 800;
 }
 
-.detail-descent-history-head strong {
-  color: var(--color-accent);
+.descent-section-label {
+  color: #b8d8ce;
+  font-size: var(--readable-xs);
+  font-weight: 900;
 }
 
 .detail-descent-list {
@@ -2004,7 +2037,32 @@ h2 {
 
 .detail-map-link {
   justify-self: start;
+  font-size: 0.74rem;
   text-decoration: none;
+}
+
+.detail-descent-more,
+.edit-descent-more {
+  display: grid;
+  gap: 8px;
+}
+
+.detail-descent-more > summary,
+.edit-descent-more > summary {
+  cursor: pointer;
+  color: #f6dfb1;
+  font-size: var(--readable-xs);
+  font-weight: 900;
+}
+
+.dialog-ball .compact-descent-badge {
+  position: absolute;
+  top: -10px;
+  left: -8px;
+  z-index: 5;
+  min-width: 2.7em;
+  min-height: 1.55em;
+  font-size: 0.84rem;
 }
 
 .detail-info-value {
@@ -2189,11 +2247,71 @@ h2 {
 .edit-lifecycle-actions {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  padding: 10px;
+  gap: 6px;
+  padding: 8px;
   border: 1px solid rgba(184, 216, 206, 0.18);
   border-radius: var(--radius-panel);
   background: rgba(13, 21, 19, 0.34);
+}
+
+.edit-lifecycle-actions .lifecycle-ball,
+.edit-lifecycle-actions .delete-ball,
+.edit-lifecycle-actions .descend-ball {
+  min-height: 36px;
+  padding: 0 7px;
+  font-size: var(--readable-xs);
+  white-space: nowrap;
+}
+
+.edit-descent-history {
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid rgba(246, 223, 177, 0.18);
+  border-radius: 8px;
+  background: rgba(8, 17, 15, 0.36);
+}
+
+.edit-descent-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.edit-descent-item {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid rgba(255, 246, 218, 0.12);
+  border-radius: 8px;
+  background: rgba(5, 11, 10, 0.3);
+}
+
+.edit-descent-item-head,
+.edit-descent-gps-row,
+.edit-descent-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.edit-descent-item-head {
+  justify-content: space-between;
+  color: rgba(255, 246, 218, 0.74);
+  font-size: var(--readable-xs);
+  font-weight: 850;
+}
+
+.edit-descent-gps-row {
+  color: rgba(255, 246, 218, 0.78);
+  font-size: var(--readable-xs);
+  font-weight: 800;
+}
+
+.edit-descent-actions .ghost-action:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 .import-dialog {
@@ -3559,6 +3677,7 @@ textarea:focus {
 }
 
 .ledger-select {
+  position: relative;
   display: grid;
   gap: 3px;
   min-width: 0;
@@ -3567,6 +3686,12 @@ textarea:focus {
   background: transparent;
   color: #fff4de;
   text-align: left;
+}
+
+.ledger-descent-badge {
+  position: absolute;
+  top: -9px;
+  left: 12px;
 }
 
 .ledger-select span,

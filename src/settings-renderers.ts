@@ -237,9 +237,10 @@ export function renderLedgerList(
           (ball) => `
             <article class="ledger-item lifecycle-${ball.lifecycleStatus} ${ball.id === selectedBallId ? "is-selected" : ""}">
               <button class="ledger-select" type="button" data-select-ball-id="${escapeAttribute(ball.id)}">
+                ${renderCompactDescentBadge(ball)}
                 <span>${escapeHtml(ball.date)} / ${escapeHtml(ball.subject)}</span>
                 <strong>${escapeHtml(ball.title)}</strong>
-                <small>${escapeHtml(issuerLabels[ball.issuerType])} / ${escapeHtml(ball.category)} / ${ball.count}玉 / ${escapeHtml(lifecycleLabels[ball.lifecycleStatus])}</small>
+                <small>${escapeHtml(issuerLabels[ball.issuerType])} / ${escapeHtml(ball.category)} / ${ball.count}玉 / ${escapeHtml(lifecycleLabels[ball.lifecycleStatus])}${renderLedgerDescentText(ball)}</small>
               </button>
               <div class="ledger-actions">
                 <button class="share-ball" type="button" data-copy-ball-url-id="${escapeAttribute(ball.id)}" aria-label="${escapeAttribute(ball.title)}のURLをコピー">URL</button>
@@ -256,6 +257,23 @@ export function renderLedgerList(
         .join("")}
     </div>
   `;
+}
+
+function renderLedgerDescentText(ball: HappyBall): string {
+  const count = ball.descents?.length ?? 0;
+  const badges = ball.descentBadgeCount ?? 0;
+  if (count === 0 && badges === 0) {
+    return "";
+  }
+  return count > 0 ? ` / 降臨${count}回` : ` / ${badges}星`;
+}
+
+function renderCompactDescentBadge(ball: HappyBall): string {
+  const count = ball.descentBadgeCount ?? 0;
+  if (count <= 0) {
+    return "";
+  }
+  return `<span class="compact-descent-badge ledger-descent-badge" aria-label="降臨 ${count}星">✦${count}</span>`;
 }
 
 function renderArchiveToggleButton(ball: HappyBall): string {

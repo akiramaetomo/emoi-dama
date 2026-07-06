@@ -94,11 +94,46 @@ const descentDetailHtml = renderBallDialog({
   isKamiBall: false,
 }, context);
 assertIncludes(descentDetailHtml, "降臨情報", "detail should show descent history");
-assertIncludes(descentDetailHtml, "第1回", "detail should show descent sequence");
+assertIncludes(descentDetailHtml, "descent-section-label", "detail should style descent label separately");
+assertNotIncludes(descentDetailHtml, "detail-descent-card", "detail should not render the redundant descent summary card");
+assertNotIncludes(descentDetailHtml, "降臨情報 1回", "detail descent heading should not show descent count");
+assertIncludes(descentDetailHtml, "No.1", "detail should show descent sequence as number label");
+assertNotIncludes(descentDetailHtml, "第1回", "detail should not use the old descent sequence label");
 assertIncludes(descentDetailHtml, "駅前で降臨", "detail should show descent memo");
 assertIncludes(descentDetailHtml, "35.68124, 139.7671", "detail should show descent coordinates");
 assertIncludes(descentDetailHtml, "Google Maps", "detail should link to Google Maps");
 assertIncludes(descentDetailHtml, "https://www.google.com/maps/search/?api=1", "detail should generate a Google Maps URL");
+
+const foldedDescentDetailHtml = renderBallDialog({
+  ...sampleBall,
+  descents: [
+    {
+      id: "descent_1",
+      sequence: 1,
+      recordedAt: "2026-07-05T01:18:00.000Z",
+      badgeAwarded: true,
+      memo: "地下でメモだけ",
+    },
+    {
+      id: "descent_2",
+      sequence: 2,
+      recordedAt: "2026-07-05T02:18:00.000Z",
+      latitude: 35.681236,
+      longitude: 139.767125,
+      accuracyMeters: 12,
+      badgeAwarded: true,
+      memo: "駅前で再降臨",
+    },
+  ],
+  descentBadgeCount: 2,
+  isKamiBall: false,
+}, context);
+assertNotIncludes(foldedDescentDetailHtml, "降臨 2回", "detail should not show total descent count in a summary card");
+assertIncludes(foldedDescentDetailHtml, "✦2", "detail ball should show compact descent badge");
+assertIncludes(foldedDescentDetailHtml, "No.2", "latest descent should use number label");
+assertIncludes(foldedDescentDetailHtml, "ほかの降臨を見る（1回）", "multiple descents should fold older records");
+assertIncludes(foldedDescentDetailHtml, "位置未取得", "GPS-less descent should render as missing location");
+assertIncludes(foldedDescentDetailHtml, "駅前で再降臨", "latest descent should remain directly visible");
 
 const casualPaper = renderReceiptPaper(sampleBall, { idPrefix: "test-casual", showUrl: true, sendMode: "casual" }, context);
 assertIncludes(casualPaper, "Emoi Dama Cover Note", "casual paper should use the casual English heading");

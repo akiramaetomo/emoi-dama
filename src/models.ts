@@ -32,8 +32,8 @@ export interface HappyBallDescentRecord {
   id: string;
   sequence: number;
   recordedAt: string;
-  latitude: number;
-  longitude: number;
+  latitude?: number;
+  longitude?: number;
   accuracyMeters?: number;
   distanceFromPreviousMeters?: number;
   badgeAwarded: boolean;

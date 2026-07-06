@@ -428,15 +428,20 @@ function normalizeBall(ball: Partial<HappyBall>, visualIndex = 0): HappyBall {
     updatedAt: normalizeText(ball.updatedAt, now),
   };
 
+  const descents = normalizeDescentRecords(ball.descents);
+  const descentBadgeCount = normalizeDescentBadgeCount(
+    ball.descentBadgeCount ?? descents.filter((record) => record.badgeAwarded).length,
+  );
+
   return {
     ...normalizedBall,
     keepers: normalizeStringArray(ball.keepers),
     viewers: normalizeStringArray(ball.viewers),
     visual: normalizeVisual(normalizedBall, visualIndex),
     emotionEcho: normalizeEmotionEcho(ball.emotionEcho),
-    descents: normalizeDescentRecords(ball.descents),
-    descentBadgeCount: normalizeDescentBadgeCount(ball.descentBadgeCount),
-    isKamiBall: readBoolean(ball.isKamiBall, false) || normalizeDescentBadgeCount(ball.descentBadgeCount) >= 20,
+    descents,
+    descentBadgeCount,
+    isKamiBall: readBoolean(ball.isKamiBall, false) || descentBadgeCount >= 20,
     receiptCreatedAt: normalizeOptionalIsoText(ball.receiptCreatedAt),
   };
 }

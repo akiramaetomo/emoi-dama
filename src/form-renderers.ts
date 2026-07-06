@@ -1,4 +1,5 @@
 import { toneLabels, type CategoryColorPreset, type CategoryTone } from "./categories.js";
+import { createGoogleMapsUrl, hasDescentPosition } from "./descent.js";
 import {
   normalizeBallTime,
   issuerLabels,
@@ -146,6 +147,8 @@ export function renderBallEditDialog(ball: HappyBall, context: FormRenderContext
             <textarea name="note" rows="4" maxlength="180">${escapeHtml(ball.note)}</textarea>
           </label>
 
+          ${renderEditableDescentHistory(ball)}
+
           <div class="edit-lifecycle-actions" aria-label="玉のしまい方">
             ${renderArchiveToggleButton(ball)}
             <button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-status="offered">供養</button>
@@ -207,6 +210,84 @@ function renderArchiveToggleButton(ball: HappyBall): string {
     return `<button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-status="active" aria-label="通常表示に戻す">戻す</button>`;
   }
   return `<button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-status="archived" aria-label="玉をしまう">しまう</button>`;
+}
+
+function renderEditableDescentHistory(ball: HappyBall): string {
+  const descents = ball.descents ?? [];
+  const badgeCount = ball.descentBadgeCount ?? 0;
+  if (descents.length === 0 && badgeCount === 0 && !ball.isKamiBall) {
+    return "";
+  }
+  const primary = descents[descents.length - 1];
+  const folded = descents.slice(0, -1).reverse();
+  return `
+    <section class="edit-descent-history" aria-label="降臨情報">
+      <div class="edit-descent-head">
+        <span class="descent-section-label">降臨情報</span>
+      </div>
+      ${primary ? renderEditableDescentItem(primary) : ""}
+      ${folded.length > 0 ? `
+        <details class="edit-descent-more">
+          <summary>ほかの降臨を見る（${folded.length}回）</summary>
+          ${folded.map(renderEditableDescentItem).join("")}
+        </details>
+      ` : ""}
+    </section>
+  `;
+}
+
+function renderEditableDescentItem(record: NonNullable<HappyBall["descents"]>[number]): string {
+  const hasPosition = hasDescentPosition(record);
+  const latitude = hasPosition ? String(record.latitude) : "";
+  const longitude = hasPosition ? String(record.longitude) : "";
+  const accuracy = typeof record.accuracyMeters === "number" ? String(record.accuracyMeters) : "";
+  const distance = typeof record.distanceFromPreviousMeters === "number" ? String(record.distanceFromPreviousMeters) : "";
+  return `
+    <article class="edit-descent-item" data-descent-edit-item data-descent-id="${escapeAttribute(record.id)}">
+      <input type="hidden" data-descent-field="id" value="${escapeAttribute(record.id)}" />
+      <input type="hidden" data-descent-field="sequence" value="${record.sequence}" />
+      <input type="hidden" data-descent-field="recordedAt" value="${escapeAttribute(record.recordedAt)}" />
+      <input type="hidden" data-descent-field="badgeAwarded" value="${record.badgeAwarded ? "true" : "false"}" />
+      <input type="hidden" data-descent-field="latitude" value="${escapeAttribute(latitude)}" />
+      <input type="hidden" data-descent-field="longitude" value="${escapeAttribute(longitude)}" />
+      <input type="hidden" data-descent-field="accuracyMeters" value="${escapeAttribute(accuracy)}" />
+      <input type="hidden" data-descent-field="distanceFromPreviousMeters" value="${escapeAttribute(distance)}" />
+      <div class="edit-descent-item-head">
+        <strong>No.${record.sequence}</strong>
+        <span>${escapeHtml(formatDescentDateTime(record.recordedAt))}</span>
+      </div>
+      <label class="inline-field textarea-field edit-descent-memo">
+        <span>降臨メモ</span>
+        <textarea data-descent-field="memo" rows="2" maxlength="80">${escapeHtml(record.memo)}</textarea>
+      </label>
+      <div class="edit-descent-gps-row">
+        <span data-descent-gps-status>${hasPosition ? escapeHtml(formatCoordinates(record.latitude, record.longitude)) : "位置未取得"}</span>
+        ${hasPosition ? `<a class="ghost-action detail-map-link" data-descent-map-link href="${escapeAttribute(createGoogleMapsUrl(record))}" target="_blank" rel="noopener noreferrer">Google Maps</a>` : `<span data-descent-map-link></span>`}
+      </div>
+      <div class="edit-descent-actions">
+        <button class="ghost-action" type="button" data-descent-gps-record-id="${escapeAttribute(record.id)}">${hasPosition ? "GPS再取得" : "GPS取得"}</button>
+        <button class="ghost-action" type="button" data-descent-clear-gps-record-id="${escapeAttribute(record.id)}"${hasPosition ? "" : " disabled"}>GPS削除</button>
+      </div>
+    </article>
+  `;
+}
+
+function formatDescentDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatCoordinates(latitude: number, longitude: number): string {
+  return `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
 }
 
 export function renderOptions<T extends string>(labels: Record<T, string>, selected: T): string {

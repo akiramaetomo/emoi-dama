@@ -17,7 +17,13 @@ import {
   reviewJsonImportFile,
 } from "./json-transfer-actions";
 import { DeviceGravityController, requestDeviceGravityPermission } from "./device-gravity";
-import { appendDescentToBall } from "./descent";
+import {
+  appendDescentToBall,
+  applyDescentRecordsToBall,
+  createGoogleMapsUrl,
+  hasDescentPosition,
+  type DescentPositionInput,
+} from "./descent";
 import { getDisplayDateRange, shiftDisplayAnchor, type DisplayMode } from "./display-period";
 import {
   createVisibilitySafeSummaryLabel,
@@ -40,7 +46,7 @@ import {
   renderSnoozedUrlPacketReminder,
 } from "./import-dialog-renderers";
 import { renderManualCopyDialog } from "./manual-copy-renderers";
-import { visibilityValues, type BallDraft, type HappyBall, type LifecycleStatus, type NameBookEntry, type SendMode } from "./models";
+import { visibilityValues, type BallDraft, type HappyBall, type HappyBallDescentRecord, type LifecycleStatus, type NameBookEntry, type SendMode } from "./models";
 import {
   createLinePacketImportUrl,
   createPacketImportUrl,
@@ -120,6 +126,7 @@ let createPromptDismissed = false;
 let randomTextureVariables: Record<string, string> | null = null;
 let ledgerListDateFilter: string | null = null;
 let pendingCalendarDayListScrollTop: number | null = null;
+const pendingDescentBallIds = new Set<string>();
 
 const BALL_DIALOG_ROOT_ID = "ball-dialog-root";
 const RANDOM_TEXTURE_PROPERTY_NAMES = [
@@ -654,6 +661,7 @@ function showBallEditDialog(ballId: string): void {
   bindDescendBallEvents(root);
   bindNamePresetEvents(root);
   bindTimeControlEvents(root);
+  bindEditDescentEvents(root);
   installBallDialogEscapeHandler(requestClose);
   root.querySelector<HTMLButtonElement>("[data-dialog-close]")?.focus({ preventScroll: true });
 }
@@ -682,6 +690,16 @@ function saveBallEditForm(form: HTMLFormElement | null, saveMode: BallSaveMode):
     return;
   }
   ledger = updateBall(ledger, editingId, readDraft(form), saveMode);
+  const editedBall = ledger.balls.find((ball) => ball.id === editingId);
+  if (editedBall) {
+    const updatedBall = applyDescentRecordsToBall(editedBall, readEditedDescentRecords(form));
+    ledger = {
+      ...ledger,
+      balls: ledger.balls.map((ball) => ball.id === editingId ? updatedBall : ball),
+      updatedAt: updatedBall.updatedAt,
+    };
+    saveLedger(ledger);
+  }
   selectedBallId = editingId;
   render();
   showBallDialog(editingId);
@@ -691,7 +709,7 @@ function requestSaveBallEditDialog(root: HTMLElement, form: HTMLFormElement | nu
   if (!form) {
     return;
   }
-  if (!hasEditDraftChanged(originalBall, readDraft(form))) {
+  if (!hasEditFormChanged(originalBall, form)) {
     closeBallDialog();
     showBallDialog(originalBall.id);
     return;
@@ -701,7 +719,7 @@ function requestSaveBallEditDialog(root: HTMLElement, form: HTMLFormElement | nu
 }
 
 function requestCloseBallEditDialog(root: HTMLElement, form: HTMLFormElement | null, originalBall: HappyBall): void {
-  if (!form || !hasEditDraftChanged(originalBall, readDraft(form))) {
+  if (!form || !hasEditFormChanged(originalBall, form)) {
     closeBallDialog();
     return;
   }
@@ -757,6 +775,14 @@ function hasEditDraftChanged(ball: HappyBall, next: BallDraft): boolean {
     next.note.trim() !== ball.note ||
     next.visibility !== ball.visibility
   );
+}
+
+function hasEditFormChanged(ball: HappyBall, form: HTMLFormElement): boolean {
+  return hasEditDraftChanged(ball, readDraft(form)) || haveDescentRecordsChanged(ball.descents ?? [], readEditedDescentRecords(form));
+}
+
+function haveDescentRecordsChanged(previous: NonNullable<HappyBall["descents"]>, next: NonNullable<HappyBall["descents"]>): boolean {
+  return JSON.stringify(previous) !== JSON.stringify(next);
 }
 
 function mountRapierStage(balls: HappyBall[]): void {
@@ -1182,9 +1208,110 @@ function bindDescendBallEvents(root: ParentNode = document): void {
       if (!target) {
         return;
       }
-      requestDescendLocation(target);
+      void requestDescendLocation(target, button);
     });
   });
+}
+
+function bindEditDescentEvents(root: ParentNode = document): void {
+  root.querySelectorAll<HTMLButtonElement>("[data-descent-gps-record-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const item = button.closest<HTMLElement>("[data-descent-edit-item]");
+      if (!item) {
+        return;
+      }
+      void updateEditDescentGps(item, button);
+    });
+  });
+
+  root.querySelectorAll<HTMLButtonElement>("[data-descent-clear-gps-record-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const item = button.closest<HTMLElement>("[data-descent-edit-item]");
+      if (!item) {
+        return;
+      }
+      writeDescentField(item, "latitude", "");
+      writeDescentField(item, "longitude", "");
+      writeDescentField(item, "accuracyMeters", "");
+      writeDescentField(item, "distanceFromPreviousMeters", "");
+      updateEditDescentGpsUi(item, null);
+    });
+  });
+}
+
+async function updateEditDescentGps(item: HTMLElement, button: HTMLButtonElement): Promise<void> {
+  if (!navigator.geolocation) {
+    alert(createGeolocationUnavailableMessage());
+    return;
+  }
+  setButtonBusy(button, true, "位置確認中...");
+  try {
+    const position = await readCurrentPosition();
+    const input = {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+      accuracyMeters: position.coords.accuracy,
+    };
+    writeDescentField(item, "latitude", String(input.latitude));
+    writeDescentField(item, "longitude", String(input.longitude));
+    writeDescentField(item, "accuracyMeters", String(input.accuracyMeters));
+    writeDescentField(item, "distanceFromPreviousMeters", "");
+    updateEditDescentGpsUi(item, input);
+  } catch (error) {
+    alert(`位置情報を取得できませんでした。時間をおいて、同じ降臨カードからもう一度GPS取得を試せます。\n${formatGeolocationError(error)}`);
+  } finally {
+    setButtonBusy(button, false);
+  }
+}
+
+function updateEditDescentGpsUi(item: HTMLElement, position: DescentPositionInput | null): void {
+  const status = item.querySelector<HTMLElement>("[data-descent-gps-status]");
+  const mapSlot = item.querySelector<HTMLElement>("[data-descent-map-link]");
+  const clearButton = item.querySelector<HTMLButtonElement>("[data-descent-clear-gps-record-id]");
+  const gpsButton = item.querySelector<HTMLButtonElement>("[data-descent-gps-record-id]");
+  if (position) {
+    const mapRecord = { latitude: position.latitude, longitude: position.longitude };
+    if (status) {
+      status.textContent = formatCoordinatesForUi(position.latitude, position.longitude);
+    }
+    if (mapSlot) {
+      const href = createGoogleMapsUrl(mapRecord);
+      mapSlot.outerHTML = `<a class="ghost-action detail-map-link" data-descent-map-link href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">Google Maps</a>`;
+    }
+    if (clearButton) {
+      clearButton.disabled = false;
+    }
+    if (gpsButton) {
+      gpsButton.textContent = "GPS再取得";
+    }
+    return;
+  }
+  if (status) {
+    status.textContent = "位置未取得";
+  }
+  if (mapSlot) {
+    mapSlot.outerHTML = `<span data-descent-map-link></span>`;
+  }
+  if (clearButton) {
+    clearButton.disabled = true;
+  }
+  if (gpsButton) {
+    gpsButton.textContent = "GPS取得";
+  }
+}
+
+function setButtonBusy(button: HTMLButtonElement, busy: boolean, busyText = "処理中..."): void {
+  if (busy) {
+    button.dataset.idleText = button.textContent ?? "";
+    button.textContent = busyText;
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    return;
+  }
+  button.textContent = button.dataset.idleText || button.textContent || "";
+  button.disabled = false;
+  button.removeAttribute("aria-busy");
+  delete button.dataset.idleText;
 }
 
 function rememberCalendarDayListScroll(source: Element): void {
@@ -1609,45 +1736,158 @@ function readLifecycleStatus(value: string | undefined): LifecycleStatus | null 
   return value === "active" || value === "archived" || value === "memorial" || value === "offered" ? value : null;
 }
 
-function requestDescendLocation(ball: HappyBall): void {
-  if (!navigator.geolocation) {
-    alert("この端末では位置情報を取得できません。");
+async function requestDescendLocation(ball: HappyBall, sourceButton?: HTMLButtonElement): Promise<void> {
+  if (pendingDescentBallIds.has(ball.id)) {
     return;
   }
 
-  navigator.geolocation.getCurrentPosition(
-    (position) => {
-      const memo = window.prompt("降臨メモ（任意・80文字まで）", "") ?? "";
-      const result = appendDescentToBall(
-        ball,
-        {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracyMeters: position.coords.accuracy,
-        },
-        appSettings.descentMinDistanceMeters,
-        memo,
-      );
-      if (!result.ok) {
-        alert(`まだ近すぎるため、再降臨できません。\n直近の降臨地から約${Math.round(result.distanceFromPreviousMeters)}mです。\n設定距離: ${result.requiredDistanceMeters}m`);
-        return;
+  const memo = window.prompt("降臨メモ（任意・80文字まで）", "") ?? "";
+  pendingDescentBallIds.add(ball.id);
+  updateDescentButtonsBusy(ball.id, true, sourceButton);
+  try {
+    const position = await readCurrentPosition();
+    const result = appendDescentToBall(
+      ball,
+      {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracyMeters: position.coords.accuracy,
+      },
+      appSettings.descentMinDistanceMeters,
+      memo,
+    );
+    if (!result.ok) {
+      alert(`まだ近すぎるため、再降臨できません。\n直近の降臨地から約${Math.round(result.distanceFromPreviousMeters)}mです。\n設定距離: ${result.requiredDistanceMeters}m`);
+      return;
+    }
+    saveDescentResult(ball, result.ball);
+    const locationText = hasDescentPosition(result.record)
+      ? `現在地: ${formatCoordinatesForUi(result.record.latitude, result.record.longitude)}`
+      : "現在地: 位置未取得";
+    alert(`「${ball.title}」に第${result.record.sequence}回の降臨を記録しました。\n${locationText}`);
+    render();
+  } catch (error) {
+    const errorDetail = formatGeolocationError(error);
+    const detailText = errorDetail ? `\n${errorDetail}` : "";
+    if (!confirm(`位置情報を取得できませんでした。${detailText}\nGPSなしの仮降臨として、メモと星を残しますか？`)) {
+      return;
+    }
+    const result = appendDescentToBall(ball, null, appSettings.descentMinDistanceMeters, memo);
+    if (!result.ok) {
+      return;
+    }
+    saveDescentResult(ball, result.ball);
+    alert(`「${ball.title}」に第${result.record.sequence}回の仮降臨を記録しました。\n位置は後で編集画面から取得できます。`);
+    render();
+  } finally {
+    pendingDescentBallIds.delete(ball.id);
+    updateDescentButtonsBusy(ball.id, false, sourceButton);
+  }
+}
+
+function saveDescentResult(previousBall: HappyBall, nextBall: HappyBall): void {
+  const latestBall = ledger.balls.find((item) => item.id === previousBall.id) ?? previousBall;
+  const mergedBall = {
+    ...latestBall,
+    descents: nextBall.descents,
+    descentBadgeCount: nextBall.descentBadgeCount,
+    isKamiBall: nextBall.isKamiBall,
+    updatedAt: nextBall.updatedAt,
+  };
+  ledger = {
+    ...ledger,
+    balls: ledger.balls.map((item) => item.id === previousBall.id ? mergedBall : item),
+    updatedAt: mergedBall.updatedAt,
+  };
+  saveLedger(ledger);
+}
+
+function updateDescentButtonsBusy(ballId: string, busy: boolean, sourceButton?: HTMLButtonElement): void {
+  document.querySelectorAll<HTMLButtonElement>("[data-descend-ball-id]").forEach((button) => {
+    if (button.dataset.descendBallId !== ballId) {
+      return;
+    }
+    if (busy) {
+      button.dataset.idleText = button.textContent ?? "";
+      button.textContent = button === sourceButton ? "位置確認中..." : "降臨中...";
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+      return;
+    }
+    button.textContent = button.dataset.idleText || "降臨";
+    button.disabled = false;
+    button.removeAttribute("aria-busy");
+    delete button.dataset.idleText;
+  });
+}
+
+async function readCurrentPosition(): Promise<GeolocationPosition> {
+  const attempts: PositionOptions[] = [
+    { enableHighAccuracy: false, maximumAge: 24 * 60 * 60 * 1000, timeout: 2_000 },
+    { enableHighAccuracy: false, maximumAge: 120_000, timeout: 12_000 },
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 20_000 },
+  ];
+  let lastError: unknown = null;
+
+  for (const options of attempts) {
+    try {
+      return await readCurrentPositionOnce(options);
+    } catch (error) {
+      lastError = error;
+      if (isGeolocationPermissionDenied(error)) {
+        throw error;
       }
-      ledger = {
-        ...ledger,
-        balls: ledger.balls.map((item) => item.id === ball.id ? result.ball : item),
-        updatedAt: result.ball.updatedAt,
-      };
-      saveLedger(ledger);
-      const latitude = result.record.latitude.toFixed(5);
-      const longitude = result.record.longitude.toFixed(5);
-      alert(`「${ball.title}」に第${result.record.sequence}回の降臨を記録しました。\n現在地: ${latitude}, ${longitude}`);
-      render();
-    },
-    () => {
-      alert("位置情報を取得できませんでした。");
-    },
-    { enableHighAccuracy: false, maximumAge: 60_000, timeout: 8_000 },
-  );
+    }
+  }
+
+  throw lastError ?? new Error("Geolocation failed.");
+}
+
+function readCurrentPositionOnce(options: PositionOptions): Promise<GeolocationPosition> {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("Geolocation is unavailable."));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(resolve, reject, options);
+  });
+}
+
+function isGeolocationPermissionDenied(error: unknown): boolean {
+  return readGeolocationErrorCode(error) === 1;
+}
+
+function formatGeolocationError(error: unknown): string {
+  const code = readGeolocationErrorCode(error);
+  if (code === 1) {
+    return "ブラウザで位置情報が許可されていません。許可設定を確認してください。";
+  }
+  if (code === 2) {
+    return "端末が現在位置を返せませんでした。屋外や窓際など、電波を拾いやすい場所で再取得できます。";
+  }
+  if (code === 3) {
+    return "位置確認が時間切れになりました。少し待ってから再取得できます。";
+  }
+  return "";
+}
+
+function readGeolocationErrorCode(error: unknown): number | null {
+  if (typeof error !== "object" || error === null || !("code" in error)) {
+    return null;
+  }
+  const code = (error as { code: unknown }).code;
+  return typeof code === "number" && Number.isFinite(code) ? code : null;
+}
+
+function createGeolocationUnavailableMessage(): string {
+  const contextHint = window.isSecureContext
+    ? ""
+    : "\nHTTPSまたはlocalhostのURLで開くと取得できる場合があります。";
+  return `この端末またはブラウザでは位置情報を取得できません。${contextHint}`;
+}
+
+function formatCoordinatesForUi(latitude: number, longitude: number): string {
+  return `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
 }
 
 function nextBallLabelMode(mode: BallLabelMode): BallLabelMode {
@@ -1864,6 +2104,52 @@ function readDraft(form: HTMLFormElement): BallDraft {
     note: String(data.get("note") || ""),
     visibility: readUnion(data.get("visibility"), visibilityValues, "open"),
   };
+}
+
+function readEditedDescentRecords(form: HTMLFormElement): HappyBallDescentRecord[] {
+  return Array.from(form.querySelectorAll<HTMLElement>("[data-descent-edit-item]")).map((item, index) => {
+    const record: HappyBallDescentRecord = {
+      id: readDescentField(item, "id") || `edited_descent_${index + 1}`,
+      sequence: readPositiveInteger(readDescentField(item, "sequence"), index + 1),
+      recordedAt: readDescentField(item, "recordedAt") || new Date().toISOString(),
+      badgeAwarded: readDescentField(item, "badgeAwarded") !== "false",
+      memo: readDescentField(item, "memo"),
+    };
+    const latitude = readOptionalNumber(readDescentField(item, "latitude"));
+    const longitude = readOptionalNumber(readDescentField(item, "longitude"));
+    if (latitude !== undefined && longitude !== undefined) {
+      record.latitude = latitude;
+      record.longitude = longitude;
+      record.accuracyMeters = readOptionalNumber(readDescentField(item, "accuracyMeters"));
+      record.distanceFromPreviousMeters = readOptionalNumber(readDescentField(item, "distanceFromPreviousMeters"));
+    }
+    return record;
+  });
+}
+
+function readDescentField(root: HTMLElement, field: string): string {
+  const input = root.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[data-descent-field="${field}"]`);
+  return input?.value ?? "";
+}
+
+function writeDescentField(root: HTMLElement, field: string, value: string): void {
+  const input = root.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[data-descent-field="${field}"]`);
+  if (input) {
+    input.value = value;
+  }
+}
+
+function readPositiveInteger(value: string, fallback: number): number {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(1, Math.floor(number)) : fallback;
+}
+
+function readOptionalNumber(value: string): number | undefined {
+  if (!value.trim()) {
+    return undefined;
+  }
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
 }
 
 function readUnion<const T extends string>(value: FormDataEntryValue | null, allowed: readonly T[], fallback: T): T {

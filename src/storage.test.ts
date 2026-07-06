@@ -219,19 +219,22 @@ const descentRecovery = normalizeStoredLedger({
           id: "bad",
           latitude: "north",
           longitude: 139,
+          memo: "位置なしで残す",
         },
       ],
-      descentBadgeCount: 21,
+      descentBadgeCount: undefined,
       isKamiBall: false,
     },
   ],
 });
 const descentBall = descentRecovery.ledger.balls[0];
-assertEqual(descentBall?.descents?.length, 1, "stored descent records should be normalized");
+assertEqual(descentBall?.descents?.length, 2, "stored GPS-less descent records should be preserved");
 assertEqual(descentBall?.descents?.[0]?.sequence, 1, "stored descent sequences should be rebuilt in order");
 assertEqual(descentBall?.descents?.[0]?.memo, "駅前で降臨", "stored descent memo should be preserved");
-assertEqual(descentBall?.descentBadgeCount, 20, "stored descent badge count should clamp to max");
-assertEqual(descentBall?.isKamiBall, true, "max descent badges should normalize to kami ball");
+assertEqual(descentBall?.descents?.[1]?.memo, "位置なしで残す", "stored GPS-less descent memo should be preserved");
+assertEqual(descentBall?.descents?.[1]?.latitude, undefined, "stored GPS-less descent should not invent latitude");
+assertEqual(descentBall?.descentBadgeCount, 2, "missing stored badge count should derive from descent records");
+assertEqual(descentBall?.isKamiBall, false, "two descent badges should not normalize to kami ball");
 
 const sakisakiDraft = {
   ...editedDraft,

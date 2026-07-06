@@ -112,8 +112,57 @@ const noTimeEditHtml = renderBallEditDialog({ ...sampleBall, time: undefined }, 
 assert(noTimeEditHtml.includes('name="time" type="time" value="" disabled'), "edit form should still show a disabled time input when ball has no time");
 assert(!noTimeEditHtml.includes('name="timeEnabled" checked'), "edit form should leave timestamp recording off when ball has no time");
 
+const descentEditHtml = renderBallEditDialog({
+  ...sampleBall,
+  descents: [
+    {
+      id: "descent_1",
+      sequence: 1,
+      recordedAt: "2026-07-05T10:00:00.000Z",
+      badgeAwarded: true,
+      memo: "地下でメモだけ",
+    },
+    {
+      id: "descent_2",
+      sequence: 2,
+      recordedAt: "2026-07-05T11:00:00.000Z",
+      latitude: 35.681236,
+      longitude: 139.767125,
+      accuracyMeters: 12,
+      badgeAwarded: true,
+      memo: "駅前で再降臨",
+    },
+  ],
+  descentBadgeCount: 2,
+  isKamiBall: false,
+}, context);
+assert(descentEditHtml.includes("descent-section-label"), "edit form should style descent label separately");
+assert(!descentEditHtml.includes("降臨 2回"), "edit form should not show descent count in the heading");
+const editDescentHeadHtml = sliceBetween(descentEditHtml, 'class="edit-descent-head"', "</div>");
+assert(editDescentHeadHtml.includes("降臨情報"), "edit form heading should show descent label");
+assert(!editDescentHeadHtml.includes("2星"), "edit form heading should not show star count");
+assert(!editDescentHeadHtml.includes("✦2"), "edit form heading should not show compact star badge");
+assert(descentEditHtml.includes("No.2"), "edit form should show descent sequence as number label");
+assert(!descentEditHtml.includes("第2回"), "edit form should not use the old descent sequence label");
+assert(descentEditHtml.includes("ほかの降臨を見る（1回）"), "edit form should fold older descents after the direct latest item");
+assert(descentEditHtml.includes("降臨メモ"), "edit form should expose descent memo fields");
+assert(descentEditHtml.includes("地下でメモだけ"), "edit form should preserve GPS-less descent memo");
+assert(descentEditHtml.includes("位置未取得"), "edit form should show missing GPS state");
+assert(descentEditHtml.includes('data-descent-gps-record-id="descent_1"'), "edit form should render GPS acquisition controls");
+assert(descentEditHtml.includes('data-descent-clear-gps-record-id="descent_2"'), "edit form should render GPS deletion controls for positioned records");
+assert(descentEditHtml.includes("Google Maps"), "edit form should show map links for positioned records");
+
 function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+function sliceBetween(value: string, startNeedle: string, endNeedle: string): string {
+  const start = value.indexOf(startNeedle);
+  if (start < 0) {
+    return "";
+  }
+  const end = value.indexOf(endNeedle, start);
+  return end < 0 ? value.slice(start) : value.slice(start, end);
 }

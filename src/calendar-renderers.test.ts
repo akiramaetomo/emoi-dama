@@ -146,7 +146,23 @@ assert(countOccurrences(sixteenBallMonthHtml, '<span class="calendar-overflow">1
 
 const dayListHtml = renderCalendarOverlay({
   balls: [],
-  dayListBalls: [sampleBall, archivedBall, offeredBall],
+  dayListBalls: [
+    {
+      ...sampleBall,
+      descents: [
+        {
+          id: "descent_1",
+          sequence: 1,
+          recordedAt: "2026-07-03T10:30:00.000Z",
+          badgeAwarded: true,
+          memo: "駅前で降臨",
+        },
+      ],
+      descentBadgeCount: 1,
+    },
+    archivedBall,
+    offeredBall,
+  ],
   calendarMonth: "2026-07",
   calendarMode: "dayList",
   displayMode: "week",
@@ -163,6 +179,8 @@ assert(!dayListHtml.includes('data-calendar-view="month"'), "day list view shoul
 assert(!dayListHtml.includes('data-close-panel'), "day list view should not render a top close action");
 assert(!dayListHtml.includes("この日の玉"), "day list view should not render the redundant day heading");
 assert(dayListHtml.includes("calendar-day-ball-visual"), "day list view should render compact ball visuals");
+assert(dayListHtml.includes("calendar-day-descent-badge"), "day list view should render descent badges above compact ball visuals");
+assert(dayListHtml.includes("✦1"), "day list view should show descent star count");
 assert(dayListHtml.includes("今日のえもい玉"), "day list view should show selected-day balls");
 assert(dayListHtml.includes("2026-07-03 09:35"), "day list view should show ball timestamps when recorded");
 assert(dayListHtml.includes("しまった玉"), "day list view should show archived balls");

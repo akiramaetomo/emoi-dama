@@ -1,4 +1,11 @@
-import { appendDescentToBall, createGoogleMapsUrl, DESCENT_BADGE_MAX, distanceMeters } from "./descent.js";
+import {
+  appendDescentToBall,
+  createGoogleMapsUrl,
+  DESCENT_BADGE_MAX,
+  distanceMeters,
+  hasDescentPosition,
+  updateDescentRecordPosition,
+} from "./descent.js";
 import type { HappyBall } from "./models.js";
 
 const sampleBall: HappyBall = {
@@ -70,6 +77,34 @@ if (first.ok) {
   }
 }
 
+const gpsless = appendDescentToBall(
+  sampleBall,
+  null,
+  500,
+  "地下鉄でメモだけ残す",
+  "2026-07-06T13:00:00.000Z",
+);
+assert(gpsless.ok, "GPS-less provisional descent should succeed");
+if (gpsless.ok) {
+  assertEqual(gpsless.record.memo, "地下鉄でメモだけ残す", "GPS-less descent should preserve memo");
+  assertEqual(hasDescentPosition(gpsless.record), false, "GPS-less descent should not have coordinates");
+  assertEqual(gpsless.ball.descentBadgeCount, 1, "GPS-less descent should still add one badge");
+
+  const backfilled = updateDescentRecordPosition(
+    gpsless.ball,
+    gpsless.record.id,
+    { latitude: 35.681236, longitude: 139.767125, accuracyMeters: 24 },
+    "2026-07-06T13:05:00.000Z",
+  );
+  assert(backfilled.ok, "GPS-less descent should accept a later GPS backfill");
+  if (backfilled.ok) {
+    assertEqual(backfilled.record.sequence, 1, "GPS backfill should keep the same sequence");
+    assertEqual(backfilled.ball.descents?.length, 1, "GPS backfill should not add another descent record");
+    assertEqual(backfilled.ball.descentBadgeCount, 1, "GPS backfill should not add another badge");
+    assertEqual(hasDescentPosition(backfilled.record), true, "GPS backfill should add coordinates");
+  }
+}
+
 let maxBall: HappyBall = { ...sampleBall, descentBadgeCount: DESCENT_BADGE_MAX - 1 };
 for (let index = 0; index < 3; index += 1) {
   const result = appendDescentToBall(
@@ -94,6 +129,27 @@ assert(
   createGoogleMapsUrl({ latitude: 35.681236, longitude: 139.767125 }).includes("query=35.681236%2C139.767125"),
   "Google Maps URL should include the coordinate query",
 );
+
+let gpslessBetweenPositioned = first.ok ? first.ball : sampleBall;
+const provisionalBetween = appendDescentToBall(
+  gpslessBetweenPositioned,
+  null,
+  500,
+  "位置なしの途中回",
+  "2026-07-06T10:30:00.000Z",
+);
+assert(provisionalBetween.ok, "GPS-less descent between positioned descents should succeed");
+if (provisionalBetween.ok) {
+  gpslessBetweenPositioned = provisionalBetween.ball;
+  const nearbyAfterGpsless = appendDescentToBall(
+    gpslessBetweenPositioned,
+    { latitude: 35.6815, longitude: 139.7673, accuracyMeters: 10 },
+    500,
+    "",
+    "2026-07-06T10:35:00.000Z",
+  );
+  assert(!nearbyAfterGpsless.ok, "distance check should still use latest positioned descent after GPS-less records");
+}
 
 function assert(condition: boolean, message: string): asserts condition {
   if (!condition) {
