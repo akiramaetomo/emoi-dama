@@ -64,7 +64,7 @@ import {
   renderToolsPanel,
   type ToolsPanelRenderContext,
 } from "./settings-renderers";
-import { capturePrimaryScreen, createMainPrimaryScreen, type PrimaryScreenState } from "./screen-navigation";
+import { capturePrimaryScreen, createMainPrimaryScreen, shouldMountPlayStage, type PrimaryScreenState } from "./screen-navigation";
 import { createStartupScreenState } from "./startup-state";
 import {
   addBall,
@@ -79,6 +79,7 @@ import {
   loadLedger,
   markReceiptCreated,
   MAX_NAME_BOOK_ENTRIES,
+  refreshCreateDraftForOpen,
   resetNameBook,
   saveLedger,
   todayIsoDate,
@@ -284,7 +285,9 @@ function render(): void {
 
   applyBallFieldTextureSetting();
   bindEvents();
-  mountRapierStage(visibleBalls);
+  if (shouldMountPlayStage({ activeOverlay, hasPendingDialog: Boolean(pendingUrlPacket || pendingJsonImport) })) {
+    mountRapierStage(visibleBalls);
+  }
   restorePendingCalendarDayListScroll();
 }
 
@@ -429,7 +432,6 @@ function renderActiveOverlay(): string {
   }
 
   if (activeOverlay === "create") {
-    draft = { ...draft, date: displayAnchorDate };
     return renderPanelOverlay("玉を置く", renderCreateForm(draft, getFormRenderContext()), "create");
   }
 
@@ -444,6 +446,10 @@ function renderActiveOverlay(): string {
   }
 
   return renderPanelOverlay("設定とデータ", renderToolsPanel(getToolsPanelRenderContext()), "settings");
+}
+
+function prepareCreateDraftForOpen(): void {
+  draft = refreshCreateDraftForOpen(draft, displayAnchorDate);
 }
 
 function getCalendarBalls(): HappyBall[] {
@@ -869,6 +875,7 @@ function bindEvents(): void {
       }
       if (panel === "create") {
         createPromptDismissed = true;
+        prepareCreateDraftForOpen();
       }
       if (panel === "list" && activeOverlay !== "settings") {
         rememberSubfeatureReturnScreen();
@@ -972,7 +979,7 @@ function bindEvents(): void {
       if (panel === "create") {
         rememberSubfeatureReturnScreen();
         createPromptDismissed = true;
-        draft = { ...draft, date: displayAnchorDate };
+        prepareCreateDraftForOpen();
       }
       if (panel === "settings") {
         rememberSubfeatureReturnScreen();

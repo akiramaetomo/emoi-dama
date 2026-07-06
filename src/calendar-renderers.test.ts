@@ -101,7 +101,10 @@ const sevenBallMonthHtml = renderCalendarOverlay({
   emotionEchoStrength: "medium",
 });
 
-assert(sevenBallMonthHtml.includes('aria-label="2026-07-07 7玉"'), "calendar cells should keep the real marker total in the aria label");
+assert(
+  /aria-label="2026-07-07(?: 本日)? 7玉"/.test(sevenBallMonthHtml),
+  "calendar cells should keep the real marker total in the aria label",
+);
 assert(sevenBallMonthHtml.includes("calendar-marker-desktop"), "calendar cells should render desktop marker variants");
 assert(sevenBallMonthHtml.includes("calendar-marker-mobile"), "calendar cells should render mobile marker variants");
 assert(sevenBallMonthHtml.includes('<span class="calendar-overflow">7</span>'), "mobile markers should aggregate after six balls");

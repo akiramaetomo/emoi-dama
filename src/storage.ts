@@ -43,6 +43,14 @@ export function createDefaultDraft(subject = DEFAULT_SAMPLE_NAME): BallDraft {
   };
 }
 
+export function refreshCreateDraftForOpen(draft: BallDraft, date: string, now = new Date()): BallDraft {
+  return {
+    ...draft,
+    date,
+    time: draft.time === undefined ? undefined : currentLocalTime(now),
+  };
+}
+
 export function loadLedger(): HappyBallLedger {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (!stored) {

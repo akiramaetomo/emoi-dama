@@ -1,4 +1,4 @@
-import { capturePrimaryScreen } from "./screen-navigation.js";
+import { capturePrimaryScreen, shouldMountPlayStage } from "./screen-navigation.js";
 
 const main = capturePrimaryScreen({
   activePrimarySurface: "main",
@@ -29,6 +29,11 @@ const calendarDayList = capturePrimaryScreen({
 
 assert(calendarDayList.kind === "calendarDayList", "day list should capture as a primary screen");
 assert(calendarDayList.selectedDate === "2026-07-04", "day-list capture should retain the selected day");
+
+assert(shouldMountPlayStage({ activeOverlay: "none" }), "play physics should mount on the visible play screen");
+assert(!shouldMountPlayStage({ activeOverlay: "calendar" }), "play physics should not mount behind the calendar overlay");
+assert(!shouldMountPlayStage({ activeOverlay: "create" }), "play physics should not mount behind the create overlay");
+assert(!shouldMountPlayStage({ activeOverlay: "none", hasPendingDialog: true }), "play physics should not mount behind pending modal dialogs");
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {

@@ -1,5 +1,5 @@
 import type { HappyBall, HappyBallLedger } from "./models";
-import { clearBallData, createDefaultDraft, DEFAULT_SAMPLE_NAME, normalizeStoredLedger, resetNameBook, updateBall, updateBallLifecycleStatus } from "./storage.js";
+import { clearBallData, createDefaultDraft, DEFAULT_SAMPLE_NAME, normalizeStoredLedger, refreshCreateDraftForOpen, resetNameBook, updateBall, updateBallLifecycleStatus } from "./storage.js";
 
 Object.defineProperty(globalThis, "localStorage", {
   value: {
@@ -111,6 +111,21 @@ assertEqual(emptyRecovery.rejectedBallCount, 0, "invalid ledger envelope should 
 const defaultDraft = createDefaultDraft();
 assertEqual(defaultDraft.visibility, "open", "new ball drafts should default to memo-visible sharing");
 assert(typeof defaultDraft.time === "string", "new ball drafts should default to timestamp recording");
+
+const refreshedCreateDraft = refreshCreateDraftForOpen(
+  { ...defaultDraft, date: "2026-07-01", time: "08:15" },
+  "2026-07-07",
+  new Date(2026, 6, 7, 21, 34),
+);
+assertEqual(refreshedCreateDraft.date, "2026-07-07", "opening the create screen should refresh the draft date");
+assertEqual(refreshedCreateDraft.time, "21:34", "opening the create screen should refresh an enabled draft timestamp");
+
+const refreshedCreateDraftWithoutTime = refreshCreateDraftForOpen(
+  { ...defaultDraft, date: "2026-07-01", time: undefined },
+  "2026-07-07",
+  new Date(2026, 6, 7, 21, 34),
+);
+assertEqual(refreshedCreateDraftWithoutTime.time, undefined, "opening the create screen should keep timestamp recording off");
 
 const clearedBallData = clearBallData(sampleLedger);
 assertEqual(clearedBallData.balls.length, 0, "clearing ball data should remove saved balls");
