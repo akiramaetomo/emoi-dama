@@ -21,6 +21,8 @@
     "src/dialog-renderers.test.ts",
     "src/json-transfer.ts",
     "src/json-transfer.test.ts",
+    "src/location.ts",
+    "src/location.test.ts",
     "src/packet.ts",
     "src/packet.test.ts",
     "src/qr-code.ts",
@@ -38,6 +40,8 @@
     "src/models.ts",
     "src/storage.ts",
     "src/storage.test.ts",
+    "src/viewport-height.ts",
+    "src/viewport-height.test.ts",
     "src/visibility.ts",
     "src/visibility.test.ts"
   ]

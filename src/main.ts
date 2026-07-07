@@ -24,7 +24,7 @@ import {
   hasDescentPosition,
   type DescentPositionInput,
 } from "./descent";
-import { getDisplayDateRange, shiftDisplayAnchor, type DisplayMode } from "./display-period";
+import { getDisplayDateRange, getDisplayModeIconDotCount, moveDisplayAnchorToCalendarMonth, shiftDisplayAnchor, type DisplayMode } from "./display-period";
 import {
   createVisibilitySafeSummaryLabel,
   createVisibilitySafeTitleLabel,
@@ -40,6 +40,7 @@ import {
   type FormRenderContext,
 } from "./form-renderers";
 import { TinyImpactAudio } from "./impact-audio";
+import { isGeolocationUnavailableError, isStaleGeolocationPositionError, readReliableCurrentPosition } from "./location";
 import {
   renderPendingJsonImportDialog,
   renderPendingUrlPacketDialog,
@@ -72,6 +73,7 @@ import {
 } from "./settings-renderers";
 import { capturePrimaryScreen, createMainPrimaryScreen, shouldMountPlayStage, type PrimaryScreenState } from "./screen-navigation";
 import { createStartupScreenState } from "./startup-state";
+import { resolveAppViewportHeights } from "./viewport-height";
 import {
   addBall,
   clearBallData,
@@ -96,7 +98,6 @@ import {
 } from "./storage";
 
 const appRoot = getAppRoot();
-const MIN_APP_VIEWPORT_HEIGHT = 320;
 
 let ledger = loadLedger();
 let appSettings: AppSettings = loadAppSettings();
@@ -198,15 +199,18 @@ function queueAppViewportHeightSync(): void {
 }
 
 function syncAppViewportHeight(): void {
-  const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-  if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) {
+  const heights = resolveAppViewportHeights({
+    innerHeight: window.innerHeight,
+    visualViewportHeight: window.visualViewport?.height,
+    visualViewportOffsetTop: window.visualViewport?.offsetTop,
+  });
+  if (!heights) {
     return;
   }
 
-  document.documentElement.style.setProperty(
-    "--app-viewport-height",
-    `${Math.max(MIN_APP_VIEWPORT_HEIGHT, Math.round(viewportHeight))}px`,
-  );
+  document.documentElement.style.setProperty("--app-viewport-height", `${heights.stableHeight}px`);
+  document.documentElement.style.setProperty("--app-visible-height", `${heights.visibleHeight}px`);
+  document.documentElement.style.setProperty("--app-visible-offset-top", `${heights.visibleOffsetTop}px`);
 }
 
 async function boot(): Promise<void> {
@@ -238,6 +242,22 @@ function installAudioLifecycleHandlers(): void {
   });
 }
 
+function bindEditKeyboardFocusAssist(): void {
+  const dialog = document.querySelector<HTMLElement>(".ball-edit-dialog");
+  const form = document.querySelector<HTMLFormElement>("#ball-edit-form");
+  if (!dialog || !form) {
+    return;
+  }
+
+  form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea").forEach((field) => {
+    field.addEventListener("focus", () => {
+      window.setTimeout(() => {
+        field.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+      }, 180);
+    });
+  });
+}
+
 function render(): void {
   openSettingsGroups = activeOverlay === "settings" ? readOpenSettingsGroups() : [];
   if (physicsStage) {
@@ -258,12 +278,14 @@ function render(): void {
       <section class="stage ${appSettings.ballLabelMode !== "none" ? "show-ball-labels" : ""} label-mode-${appSettings.ballLabelMode}" aria-label="えもい玉">
         <div class="stage-topline">
           <div>
+            <p class="screen-kicker play-screen-kicker">Emotion Play</p>
             <h1 id="stage-title">${escapeHtml(selectedBall ? createVisibilitySafeSummaryLabel(selectedBall) : "今日のえもい玉は？")}</h1>
             <p class="stage-filter">${escapeHtml(renderDisplayRangeLabel())}</p>
           </div>
         </div>
         <div id="ball-field" class="ball-field texture-${appSettings.backgroundTexture}" aria-label="触って転がせるえもい玉"></div>
         <div class="world-control-dock">
+          <p class="control-state-label play-display-state-label">${renderDisplayModeName(displayMode)}表示</p>
           ${createPromptDismissed ? "" : `<p class="world-action-prompt">＋で玉を置きましょう</p>`}
           <div class="world-actions" aria-label="操作">
             <button class="dock-symbol-button dock-create-button" type="button" data-open-panel="create" aria-label="玉を作る">＋</button>
@@ -278,7 +300,7 @@ function render(): void {
                 <span class="day-list-screen-icon" aria-hidden="true"></span>
               </button>
             </span>
-            <button type="button" data-cycle-display-mode aria-label="${escapeHtml(renderDisplayModeCycleAriaLabel())}">${renderDisplayModeCycleButtonText()}</button>
+            <button class="display-mode-next-button" type="button" data-cycle-display-mode aria-label="${escapeHtml(renderDisplayModeCycleAriaLabel())}">${renderDisplayModeCycleIcon(nextDisplayMode(displayMode))}</button>
             <button class="dock-symbol-button dock-settings-button" type="button" data-open-panel="settings" aria-label="設定">⚙</button>
           </div>
         </div>
@@ -360,21 +382,12 @@ function renderDisplayRangeLabel(): string {
   return `${displayAnchorDate.slice(0, 7)} の月`;
 }
 
-function renderDisplayModeCycleButtonText(): string {
-  if (displayMode === "day") {
-    return "日";
-  }
-  if (displayMode === "week") {
-    return "週";
-  }
-  return "月";
-}
-
 function renderCalendarScreenIcon(): string {
   return `
     <span class="calendar-screen-icon" aria-hidden="true">
       <svg viewBox="0 0 32 28" focusable="false">
-        <rect class="calendar-icon-frame" x="2" y="2.5" width="28" height="24" rx="2.25"></rect>
+        <rect class="calendar-icon-frame" x="2" y="2.5" width="28" height="24" rx="0.8"></rect>
+        <line class="calendar-icon-bar" x1="12.75" y1="8" x2="19.25" y2="8"></line>
         <circle class="calendar-icon-dot" cx="8.5" cy="13" r="1.45"></circle>
         <circle class="calendar-icon-dot" cx="13.5" cy="13" r="1.45"></circle>
         <circle class="calendar-icon-dot" cx="18.5" cy="13" r="1.45"></circle>
@@ -393,7 +406,7 @@ function renderCalendarScreenIcon(): string {
 }
 
 function renderDisplayModeCycleAriaLabel(): string {
-  return `表示期間: ${renderDisplayModeCycleButtonText()}。押すと${renderDisplayModeName(nextDisplayMode(displayMode))}に切り替え`;
+  return `表示期間: ${renderDisplayModeName(displayMode)}。押すと${renderNextDisplayModeName(displayMode)}に切り替え`;
 }
 
 function renderDisplayModeName(mode: DisplayMode): string {
@@ -404,6 +417,18 @@ function renderDisplayModeName(mode: DisplayMode): string {
     return "週";
   }
   return "月";
+}
+
+function renderNextDisplayModeName(mode: DisplayMode): string {
+  return renderDisplayModeName(nextDisplayMode(mode));
+}
+
+function renderDisplayModeCycleIcon(mode: DisplayMode): string {
+  return `
+    <span class="display-mode-icon display-mode-icon-${mode}" aria-hidden="true">
+      ${Array.from({ length: getDisplayModeIconDotCount(mode) }, () => "<i></i>").join("")}
+    </span>
+  `;
 }
 
 function renderBallLabelModeCycleAriaLabel(): string {
@@ -435,6 +460,7 @@ function renderActiveOverlay(): string {
       selectedDate: displayAnchorDate,
       selectedBallId,
       emotionEchoStrength: appSettings.emotionEchoStrength,
+      calendarMarkerMode: appSettings.calendarMarkerMode,
     });
   }
 
@@ -941,7 +967,10 @@ function bindEvents(): void {
 
   document.querySelectorAll<HTMLButtonElement>("[data-calendar-month]").forEach((button) => {
     button.addEventListener("click", () => {
-      calendarMonth = button.dataset.calendarMonth || calendarMonth;
+      const nextCalendarMonth = button.dataset.calendarMonth || calendarMonth;
+      calendarMonth = nextCalendarMonth;
+      displayAnchorDate = moveDisplayAnchorToCalendarMonth(displayAnchorDate, nextCalendarMonth);
+      draft = { ...draft, date: displayAnchorDate };
       calendarMode = "month";
       render();
     });
@@ -1024,6 +1053,11 @@ function bindEvents(): void {
     });
   });
 
+  document.querySelector("[data-calendar-cycle-marker-mode]")?.addEventListener("click", () => {
+    updateAppSettings({ calendarMarkerMode: nextCalendarMarkerMode(appSettings.calendarMarkerMode) });
+    render();
+  });
+
   document.querySelector("[data-calendar-main]")?.addEventListener("click", () => {
     activeOverlay = "none";
     render();
@@ -1050,6 +1084,8 @@ function bindEvents(): void {
   if (form) {
     bindTimeControlEvents(form);
   }
+
+  bindEditKeyboardFocusAssist();
 
   bindSettingsGroupDisclosureEvents();
   bindPendingUrlPacketEvents();
@@ -1757,7 +1793,10 @@ async function requestDescendLocation(ball: HappyBall, sourceButton?: HTMLButton
       memo,
     );
     if (!result.ok) {
-      alert(`まだ近すぎるため、再降臨できません。\n直近の降臨地から約${Math.round(result.distanceFromPreviousMeters)}mです。\n設定距離: ${result.requiredDistanceMeters}m`);
+      const keepGpsless = confirm(`現在位置が前回地点から十分に離れたと確認できませんでした。\n直近の降臨地から約${Math.round(result.distanceFromPreviousMeters)}mです。\n設定距離: ${result.requiredDistanceMeters}m\nGPSなしの仮降臨として、メモと星を残しますか？`);
+      if (keepGpsless) {
+        saveGpslessDescent(ball, memo);
+      }
       return;
     }
     saveDescentResult(ball, result.ball);
@@ -1772,17 +1811,21 @@ async function requestDescendLocation(ball: HappyBall, sourceButton?: HTMLButton
     if (!confirm(`位置情報を取得できませんでした。${detailText}\nGPSなしの仮降臨として、メモと星を残しますか？`)) {
       return;
     }
-    const result = appendDescentToBall(ball, null, appSettings.descentMinDistanceMeters, memo);
-    if (!result.ok) {
-      return;
-    }
-    saveDescentResult(ball, result.ball);
-    alert(`「${ball.title}」に第${result.record.sequence}回の仮降臨を記録しました。\n位置は後で編集画面から取得できます。`);
-    render();
+    saveGpslessDescent(ball, memo);
   } finally {
     pendingDescentBallIds.delete(ball.id);
     updateDescentButtonsBusy(ball.id, false, sourceButton);
   }
+}
+
+function saveGpslessDescent(ball: HappyBall, memo: string): void {
+  const result = appendDescentToBall(ball, null, appSettings.descentMinDistanceMeters, memo);
+  if (!result.ok) {
+    return;
+  }
+  saveDescentResult(ball, result.ball);
+  alert(`「${ball.title}」に第${result.record.sequence}回の仮降臨を記録しました。\n位置は後で編集画面から取得できます。`);
+  render();
 }
 
 function saveDescentResult(previousBall: HappyBall, nextBall: HappyBall): void {
@@ -1822,42 +1865,16 @@ function updateDescentButtonsBusy(ballId: string, busy: boolean, sourceButton?: 
 }
 
 async function readCurrentPosition(): Promise<GeolocationPosition> {
-  const attempts: PositionOptions[] = [
-    { enableHighAccuracy: false, maximumAge: 24 * 60 * 60 * 1000, timeout: 2_000 },
-    { enableHighAccuracy: false, maximumAge: 120_000, timeout: 12_000 },
-    { enableHighAccuracy: true, maximumAge: 0, timeout: 20_000 },
-  ];
-  let lastError: unknown = null;
-
-  for (const options of attempts) {
-    try {
-      return await readCurrentPositionOnce(options);
-    } catch (error) {
-      lastError = error;
-      if (isGeolocationPermissionDenied(error)) {
-        throw error;
-      }
-    }
-  }
-
-  throw lastError ?? new Error("Geolocation failed.");
-}
-
-function readCurrentPositionOnce(options: PositionOptions): Promise<GeolocationPosition> {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error("Geolocation is unavailable."));
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(resolve, reject, options);
-  });
-}
-
-function isGeolocationPermissionDenied(error: unknown): boolean {
-  return readGeolocationErrorCode(error) === 1;
+  return readReliableCurrentPosition(navigator.geolocation);
 }
 
 function formatGeolocationError(error: unknown): string {
+  if (isGeolocationUnavailableError(error)) {
+    return createGeolocationUnavailableMessage();
+  }
+  if (isStaleGeolocationPositionError(error)) {
+    return "取得した位置情報が古いため採用しませんでした。少し待ってから再取得できます。";
+  }
   const code = readGeolocationErrorCode(error);
   if (code === 1) {
     return "ブラウザで位置情報が許可されていません。許可設定を確認してください。";
@@ -1908,6 +1925,10 @@ function nextDisplayMode(mode: DisplayMode): DisplayMode {
     return "month";
   }
   return "day";
+}
+
+function nextCalendarMarkerMode(mode: AppSettings["calendarMarkerMode"]): AppSettings["calendarMarkerMode"] {
+  return mode === "spread" ? "meter" : "spread";
 }
 
 async function toggleGravitySensor(): Promise<void> {

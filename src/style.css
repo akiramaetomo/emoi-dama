@@ -29,6 +29,8 @@
   --z-calendar: 19;
   --z-dialog: 20;
   --app-viewport-height: 100vh;
+  --app-visible-height: 100vh;
+  --app-visible-offset-top: 0px;
   color: #f5ead8;
   background: var(--color-app-bg);
   font-family:
@@ -47,6 +49,7 @@
 @supports (height: 100dvh) {
   :root {
     --app-viewport-height: 100dvh;
+    --app-visible-height: 100dvh;
   }
 }
 
@@ -56,6 +59,8 @@
 
 html {
   min-height: var(--app-viewport-height);
+  overflow: hidden;
+  overscroll-behavior: none;
   background: var(--color-app-bg);
 }
 
@@ -63,6 +68,8 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: var(--app-viewport-height);
+  overflow: hidden;
+  overscroll-behavior: none;
   font-size: 1.15rem;
 }
 
@@ -146,6 +153,30 @@ button {
   display: grid;
   justify-items: center;
   width: min(760px, 100%);
+}
+
+.screen-kicker {
+  margin: 0;
+  color: rgba(246, 223, 177, 0.72);
+  font-family: "Georgia", "Times New Roman", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", serif;
+  font-size: clamp(1.14rem, 3vw, 1.38rem);
+  font-weight: 700;
+  letter-spacing: 0.075em;
+  line-height: 1.1;
+  text-align: center;
+  text-transform: uppercase;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.28);
+}
+
+.play-screen-kicker {
+  margin-bottom: 5px;
+}
+
+.screen-heading-block {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  min-width: 0;
 }
 
 h1,
@@ -313,6 +344,19 @@ h2 {
   transform: translateX(-50%);
 }
 
+.control-state-label {
+  margin: 0;
+  padding: 3px 12px;
+  border: 1px solid rgba(240, 192, 111, 0.24);
+  border-radius: 999px;
+  background: rgba(9, 15, 13, 0.48);
+  color: rgba(246, 223, 177, 0.86);
+  font-size: clamp(0.92rem, 2.4vw, 1.04rem);
+  font-weight: 900;
+  line-height: 1.35;
+  pointer-events: auto;
+}
+
 .world-action-prompt {
   margin: 0;
   color: rgba(246, 223, 177, 0.72);
@@ -390,8 +434,122 @@ h2 {
 }
 
 .world-actions .primary-screen-control-group button {
-  width: clamp(38px, 11vw, 54px);
-  height: clamp(38px, 11vw, 54px);
+  width: clamp(38px, 10vw, 46px);
+  height: clamp(38px, 10vw, 46px);
+  padding: 5px;
+}
+
+.display-mode-next-button {
+  width: clamp(42px, 11vw, 48px);
+  padding: 5px;
+  letter-spacing: 0;
+}
+
+.display-mode-icon {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  gap: 2px;
+  place-content: center;
+}
+
+.display-mode-icon i {
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 2px;
+  background: currentColor;
+  box-shadow: inset -1px -1px 1px rgba(28, 42, 37, 0.2);
+}
+
+.display-mode-icon-day {
+  grid-template-columns: 12px;
+}
+
+.display-mode-icon-day i {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.display-mode-icon-week {
+  grid-template-columns: repeat(5, 5px);
+}
+
+.display-mode-icon-week i {
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+}
+
+.display-mode-icon-month {
+  grid-template-columns: repeat(5, 4px);
+  gap: 2px;
+}
+
+.display-mode-icon-month i {
+  width: 4px;
+  height: 4px;
+  border-radius: 1px;
+}
+
+.world-actions button.calendar-marker-mode-button {
+  width: clamp(44px, 11vw, 50px);
+  padding: 4px;
+  border-radius: 999px;
+}
+
+.marker-mode-icon {
+  display: grid;
+  align-content: center;
+  justify-content: center;
+  width: 34px;
+  height: 28px;
+  gap: 2px;
+}
+
+.marker-mode-icon i {
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #f0c06f;
+  box-shadow: inset -1px -1px 2px rgba(28, 42, 37, 0.22);
+}
+
+.marker-mode-row {
+  display: flex;
+  gap: 2px;
+}
+
+.marker-mode-row-red i {
+  background: #e66f65;
+}
+
+.marker-mode-row-blue i {
+  background: #6fa8e6;
+}
+
+.marker-mode-row-yellow i {
+  background: #f0c06f;
+}
+
+.marker-mode-icon-spread {
+  grid-template-columns: repeat(4, 5px);
+  grid-auto-rows: 5px;
+  gap: 2px;
+}
+
+.marker-mode-icon-spread i:nth-child(3n + 1) {
+  background: #e66f65;
+}
+
+.marker-mode-icon-spread i:nth-child(3n + 2) {
+  background: #6fa8e6;
+}
+
+.marker-mode-icon-spread i:nth-child(3n) {
+  background: #f0c06f;
 }
 
 .calendar-main-ball-button.is-label-on .calendar-main-ball-icon {
@@ -1000,7 +1158,7 @@ h2 {
   align-content: start;
   gap: 18px;
   width: min(430px, 100%);
-  max-height: calc(var(--app-viewport-height) - 36px);
+  max-height: calc(var(--app-visible-height) - 36px);
   overflow: auto;
   padding: 20px;
   border: 1px solid rgba(244, 215, 160, 0.2);
@@ -1016,7 +1174,7 @@ h2 {
 
 .floating-panel-list {
   grid-template-rows: auto minmax(0, 1fr);
-  height: calc(var(--app-viewport-height) - 36px);
+  height: calc(var(--app-visible-height) - 36px);
 }
 
 .floating-panel-list .ledger-list {
@@ -1217,8 +1375,10 @@ h2 {
 .calendar-day-ball-visual-wrap {
   position: relative;
   display: grid;
-  min-height: 44px;
-  place-items: end center;
+  min-height: 54px;
+  place-items: center;
+  align-content: center;
+  gap: 4px;
 }
 
 .calendar-day-descent-badge {
@@ -1269,6 +1429,10 @@ h2 {
   color: #b8d8ce;
   font-size: var(--readable-xs);
   font-weight: 800;
+}
+
+.calendar-day-count-under-icon {
+  margin-top: -1px;
 }
 
 .calendar-day-ball-time {
@@ -1421,6 +1585,36 @@ h2 {
   display: none;
 }
 
+.calendar-meter-marker-set {
+  width: min(100%, 110px);
+}
+
+.calendar-meter-list {
+  align-content: start;
+  gap: 3px;
+}
+
+.calendar-meter-row {
+  display: flex;
+  align-items: center;
+  min-height: 16px;
+  gap: 3px;
+}
+
+.calendar-meter-count,
+.calendar-meter-overflow {
+  color: #f6dfb1;
+  font-size: 0.76rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.calendar-meter-overflow {
+  justify-self: start;
+  padding-top: 1px;
+  color: #9cf3ef;
+}
+
 .mini-ball {
   display: block;
   width: 16px;
@@ -1519,6 +1713,7 @@ h2 {
   left: 10px;
   z-index: 2;
   display: grid;
+  gap: 5px;
   justify-items: center;
   padding-top: 0;
   pointer-events: none;
@@ -1567,6 +1762,12 @@ h2 {
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.calendar-icon-bar {
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
 }
 
 .calendar-icon-dot {
@@ -1619,7 +1820,7 @@ h2 {
   display: grid;
   gap: 16px;
   width: min(520px, 100%);
-  max-height: calc(var(--app-viewport-height) - 36px);
+  max-height: calc(var(--app-visible-height) - 36px);
   overflow: auto;
   padding: 20px;
   border: 1px solid rgba(244, 215, 160, 0.22);
@@ -1704,11 +1905,34 @@ h2 {
   padding-right: calc(var(--close-control-size) + 10px);
 }
 
+.dialog-ball-stack {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+
 .dialog-ball {
   position: relative;
   width: 82px;
   height: 82px;
   border-radius: 50%;
+}
+
+.ball-count-under-icon {
+  display: block;
+  color: rgba(246, 223, 177, 0.92);
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.38);
+  white-space: nowrap;
+}
+
+.detail-ball-count-under-icon {
+  min-height: 1rem;
+  margin-top: -1px;
+  font-size: 1rem;
 }
 
 .dialog-ball.lifecycle-archived {
@@ -2037,8 +2261,15 @@ h2 {
 
 .detail-map-link {
   justify-self: start;
-  font-size: 0.74rem;
+  min-height: 38px;
+  padding: 8px 12px;
+  border-color: rgba(126, 224, 207, 0.58);
+  background: rgba(16, 82, 77, 0.42);
+  color: #d8fff5;
+  font-size: var(--readable-xs);
+  font-weight: 900;
   text-decoration: none;
+  box-shadow: 0 0 0 1px rgba(246, 223, 177, 0.08);
 }
 
 .detail-descent-more,
@@ -2473,7 +2704,7 @@ h2 {
 
 .receipt-dialog {
   width: min(620px, 100%);
-  max-height: calc(var(--app-viewport-height) - 24px);
+  max-height: calc(var(--app-visible-height) - 24px);
   overscroll-behavior: contain;
   padding-top: 72px;
   background:
@@ -3679,7 +3910,10 @@ textarea:focus {
 .ledger-select {
   position: relative;
   display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
   gap: 3px;
+  column-gap: 10px;
+  align-items: center;
   min-width: 0;
   padding: 10px 12px;
   border: 0;
@@ -3688,13 +3922,34 @@ textarea:focus {
   text-align: left;
 }
 
-.ledger-descent-badge {
-  position: absolute;
-  top: -9px;
-  left: 12px;
+.ledger-ball-visual-wrap {
+  position: relative;
+  display: grid;
+  min-height: 52px;
+  justify-items: center;
+  align-content: center;
+  gap: 4px;
 }
 
-.ledger-select span,
+.ledger-ball-visual {
+  width: 32px;
+  height: 32px;
+}
+
+.ledger-descent-badge {
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.ledger-text-block {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ledger-text-block > span,
 .ledger-select small {
   overflow: hidden;
   color: #b8d8ce;
@@ -3705,7 +3960,11 @@ textarea:focus {
 }
 
 .ledger-select strong {
+  display: block;
+  min-width: 0;
   overflow: hidden;
+  color: #fff4de;
+  font-weight: 900;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3822,7 +4081,7 @@ pre {
   .floating-panel-settings {
     width: 100vw;
     max-width: none;
-    max-height: var(--app-viewport-height);
+    max-height: var(--app-visible-height);
     border-radius: 0;
   }
 
@@ -3846,6 +4105,15 @@ pre {
   .mini-ball {
     width: 14px;
     height: 14px;
+  }
+
+  .calendar-meter-marker-set {
+    width: min(100%, 86px);
+  }
+
+  .calendar-meter-row {
+    min-height: 14px;
+    gap: 2px;
   }
 }
 
@@ -4122,12 +4390,12 @@ pre {
 
   .floating-panel {
     width: min(100vw, 720px);
-    max-height: var(--app-viewport-height);
+    max-height: var(--app-visible-height);
     border-radius: 0;
   }
 
   .floating-panel-list {
-    height: var(--app-viewport-height);
+    height: var(--app-visible-height);
   }
 
   .calendar-overlay {
@@ -4140,13 +4408,17 @@ pre {
   }
 
   .ball-edit-dialog-backdrop {
+    top: var(--app-visible-offset-top);
+    bottom: auto;
+    height: var(--app-visible-height);
     place-items: stretch;
     padding: 0;
   }
 
   .ball-edit-dialog {
     width: 100vw;
-    max-height: var(--app-viewport-height);
+    height: var(--app-visible-height);
+    max-height: var(--app-visible-height);
     border-radius: 0;
   }
 
@@ -4234,6 +4506,24 @@ pre {
   .mini-ball {
     width: 12px;
     height: 12px;
+  }
+
+  .calendar-meter-marker-set {
+    width: min(100%, 54px);
+  }
+
+  .calendar-meter-list {
+    gap: 2px;
+  }
+
+  .calendar-meter-row {
+    min-height: 12px;
+    gap: 2px;
+  }
+
+  .calendar-meter-count,
+  .calendar-meter-overflow {
+    font-size: 0.7rem;
   }
 
   .calendar-marker-desktop {

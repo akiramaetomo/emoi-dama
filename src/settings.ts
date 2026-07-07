@@ -2,6 +2,7 @@ export type EmotionEchoStrength = "off" | "weak" | "medium" | "strong";
 export type BallLabelMode = "none" | "date" | "title";
 export type BackgroundTexture = "grid" | "paper" | "grain" | "mist" | "random";
 export type StartupScreen = "main" | "calendarMonth" | "calendarDayList";
+export type CalendarMarkerMode = "spread" | "meter";
 
 export interface AppSettings {
   wallRestitution: number;
@@ -25,6 +26,7 @@ export interface AppSettings {
   emotionEchoStrength: EmotionEchoStrength;
   backgroundTexture: BackgroundTexture;
   startupScreen: StartupScreen;
+  calendarMarkerMode: CalendarMarkerMode;
   descentMinDistanceMeters: number;
 }
 
@@ -52,6 +54,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   emotionEchoStrength: "weak",
   backgroundTexture: "grid",
   startupScreen: "calendarMonth",
+  calendarMarkerMode: "spread",
   descentMinDistanceMeters: 500,
 };
 
@@ -92,6 +95,7 @@ export function normalizeAppSettings(value: unknown): AppSettings {
     emotionEchoStrength: readEchoStrength(source.emotionEchoStrength),
     backgroundTexture: readBackgroundTexture(source.backgroundTexture),
     startupScreen: readStartupScreen(source.startupScreen),
+    calendarMarkerMode: readCalendarMarkerMode(source.calendarMarkerMode),
     descentMinDistanceMeters: clampNumber(source.descentMinDistanceMeters, 10, 100_000, DEFAULT_APP_SETTINGS.descentMinDistanceMeters),
   };
 }
@@ -112,8 +116,15 @@ export function looksLikeAppSettings(value: unknown): boolean {
     "emotionEchoStrength",
     "backgroundTexture",
     "startupScreen",
+    "calendarMarkerMode",
     "descentMinDistanceMeters",
   ].some((key) => key in value);
+}
+
+export function readCalendarMarkerMode(value: unknown): CalendarMarkerMode {
+  return value === "meter" || value === "spread"
+    ? value
+    : DEFAULT_APP_SETTINGS.calendarMarkerMode;
 }
 
 export function readStartupScreen(value: unknown): StartupScreen {

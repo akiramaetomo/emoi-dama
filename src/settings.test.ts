@@ -18,6 +18,7 @@ const normalized = normalizeAppSettings({
   emotionEchoStrength: "strong",
   backgroundTexture: "random",
   startupScreen: "calendarDayList",
+  calendarMarkerMode: "meter",
   descentMinDistanceMeters: 1200,
 });
 assertEqual(normalized.wallRestitution, 1, "wall restitution should clamp to the maximum");
@@ -33,6 +34,7 @@ assertEqual(normalized.showMemoField, true, "memo field boolean should be preser
 assertEqual(normalized.emotionEchoStrength, "strong", "valid echo strength should be preserved");
 assertEqual(normalized.backgroundTexture, "random", "valid background texture should be preserved");
 assertEqual(normalized.startupScreen, "calendarDayList", "valid startup screen should be preserved");
+assertEqual(normalized.calendarMarkerMode, "meter", "valid calendar marker mode should be preserved");
 assertEqual(normalized.descentMinDistanceMeters, 1200, "valid descent distance should be preserved");
 
 const booleanFallback = normalizeAppSettings({
@@ -42,6 +44,7 @@ const booleanFallback = normalizeAppSettings({
   showMemoField: null,
   backgroundTexture: "stripe",
   startupScreen: "month",
+  calendarMarkerMode: "bars",
   descentMinDistanceMeters: -1,
 });
 assertEqual(booleanFallback.soundEnabled, DEFAULT_APP_SETTINGS.soundEnabled, "string false should not become a truthy setting");
@@ -59,6 +62,11 @@ assertEqual(
   "invalid startup screen should fall back to defaults",
 );
 assertEqual(
+  booleanFallback.calendarMarkerMode,
+  DEFAULT_APP_SETTINGS.calendarMarkerMode,
+  "invalid calendar marker mode should fall back to defaults",
+);
+assertEqual(
   booleanFallback.descentMinDistanceMeters,
   10,
   "descent distance should clamp to the minimum",
@@ -74,10 +82,12 @@ assertEqual(defaults.wallRestitution, DEFAULT_APP_SETTINGS.wallRestitution, "non
 assertEqual(defaults.emotionEchoStrength, DEFAULT_APP_SETTINGS.emotionEchoStrength, "invalid echo strength should use default");
 assertEqual(defaults.backgroundTexture, DEFAULT_APP_SETTINGS.backgroundTexture, "missing texture should use default");
 assertEqual(defaults.startupScreen, "calendarMonth", "missing startup screen should default to calendar month");
+assertEqual(defaults.calendarMarkerMode, "spread", "missing calendar marker mode should default to spread");
 assertEqual(defaults.descentMinDistanceMeters, 500, "missing descent distance should default to 500m");
 
 assert(looksLikeAppSettings({ soundEnabled: false }), "settings-like objects should be recognized");
 assert(looksLikeAppSettings({ startupScreen: "main" }), "startup screen setting should be recognized");
+assert(looksLikeAppSettings({ calendarMarkerMode: "meter" }), "calendar marker mode setting should be recognized");
 assert(looksLikeAppSettings({ descentMinDistanceMeters: 500 }), "descent distance setting should be recognized");
 assert(!looksLikeAppSettings({ ledger: [] }), "unrelated objects should not be recognized as settings");
 assert(!looksLikeAppSettings(null), "null should not be recognized as settings");

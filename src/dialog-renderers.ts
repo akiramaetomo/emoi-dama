@@ -38,15 +38,18 @@ export function renderBallDialog(ball: HappyBall, context: DialogRenderContext):
         <button class="primary-action detail-edit-top" type="button" data-dialog-edit-ball-id="${escapeAttribute(ball.id)}">編集</button>
         <p class="detail-screen-name">玉の中身</p>
         <div class="dialog-head">
-          <div class="dialog-ball ${renderLifecycleClass(ball)} ${renderVisualKindClass(ball.visual)} ${renderEchoClass(ball, context)}" style="${renderBallVisualStyle(ball, context)} --ball-rotation: 0.34rad;" aria-hidden="true">
-            <span class="ball-body">
-              <span class="ball-core"></span>
-              <span class="ball-shade"></span>
-              <span class="ball-highlight"></span>
-            </span>
-            ${ball.lifecycleStatus === "archived" ? `<span class="archived-ball-tag">しまい中</span>` : ""}
-            <span class="ball-label">${escapeHtml(createVisibilitySafeTitleLabel(ball))}</span>
-            ${renderCompactDescentBadge(ball)}
+          <div class="dialog-ball-stack">
+            <div class="dialog-ball ${renderLifecycleClass(ball)} ${renderVisualKindClass(ball.visual)} ${renderEchoClass(ball, context)}" style="${renderBallVisualStyle(ball, context)} --ball-rotation: 0.34rad;" aria-hidden="true">
+              <span class="ball-body">
+                <span class="ball-core"></span>
+                <span class="ball-shade"></span>
+                <span class="ball-highlight"></span>
+              </span>
+              ${ball.lifecycleStatus === "archived" ? `<span class="archived-ball-tag">しまい中</span>` : ""}
+              <span class="ball-label">${escapeHtml(createVisibilitySafeTitleLabel(ball))}</span>
+              ${renderCompactDescentBadge(ball)}
+            </div>
+            ${renderBallCountUnderIcon(ball, "detail-ball-count-under-icon")}
           </div>
           <div class="dialog-title-block">
             <span>${escapeHtml(formatBallDateTime(ball.date, ball.time))}</span>
@@ -195,6 +198,13 @@ function renderCompactDescentBadge(ball: HappyBall): string {
     return "";
   }
   return `<span class="compact-descent-badge" aria-label="降臨 ${count}星">✦${count}</span>`;
+}
+
+function renderBallCountUnderIcon(ball: HappyBall, className: string): string {
+  if (ball.count <= 1) {
+    return "";
+  }
+  return `<span class="ball-count-under-icon ${className}" aria-label="玉数 ${ball.count}玉">${ball.count}玉</span>`;
 }
 
 export function renderReceiptDialog(ball: HappyBall, context: DialogRenderContext, sendMode: SendMode = "formal"): string {

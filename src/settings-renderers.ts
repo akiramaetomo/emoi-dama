@@ -237,10 +237,16 @@ export function renderLedgerList(
           (ball) => `
             <article class="ledger-item lifecycle-${ball.lifecycleStatus} ${ball.id === selectedBallId ? "is-selected" : ""}">
               <button class="ledger-select" type="button" data-select-ball-id="${escapeAttribute(ball.id)}">
-                ${renderCompactDescentBadge(ball)}
-                <span>${escapeHtml(ball.date)} / ${escapeHtml(ball.subject)}</span>
-                <strong>${escapeHtml(ball.title)}</strong>
-                <small>${escapeHtml(issuerLabels[ball.issuerType])} / ${escapeHtml(ball.category)} / ${ball.count}玉 / ${escapeHtml(lifecycleLabels[ball.lifecycleStatus])}${renderLedgerDescentText(ball)}</small>
+                <span class="ledger-ball-visual-wrap">
+                  ${renderCompactDescentBadge(ball)}
+                  <span class="mini-ball ledger-ball-visual lifecycle-${ball.lifecycleStatus} ${renderVisualKindClass(ball.visual)}" style="${renderVisualStyle(ball.visual)}" aria-hidden="true"></span>
+                  ${renderBallCountUnderIcon(ball, "ledger-count-under-icon")}
+                </span>
+                <span class="ledger-text-block">
+                  <span>${escapeHtml(ball.date)} / ${escapeHtml(ball.subject)}</span>
+                  <strong>${escapeHtml(ball.title)}</strong>
+                  <small>${escapeHtml(issuerLabels[ball.issuerType])} / ${escapeHtml(ball.category)} / ${escapeHtml(lifecycleLabels[ball.lifecycleStatus])}${renderLedgerDescentText(ball)}</small>
+                </span>
               </button>
               <div class="ledger-actions">
                 <button class="share-ball" type="button" data-copy-ball-url-id="${escapeAttribute(ball.id)}" aria-label="${escapeAttribute(ball.title)}のURLをコピー">URL</button>
@@ -274,6 +280,13 @@ function renderCompactDescentBadge(ball: HappyBall): string {
     return "";
   }
   return `<span class="compact-descent-badge ledger-descent-badge" aria-label="降臨 ${count}星">✦${count}</span>`;
+}
+
+function renderBallCountUnderIcon(ball: HappyBall, className: string): string {
+  if (ball.count <= 1) {
+    return "";
+  }
+  return `<span class="ball-count-under-icon ${className}" aria-label="玉数 ${ball.count}玉">${ball.count}玉</span>`;
 }
 
 function renderArchiveToggleButton(ball: HappyBall): string {

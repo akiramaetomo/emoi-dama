@@ -75,6 +75,14 @@ assertIncludes(detailHtml, "余韻", "detail feeling card should label echo");
 assertIncludes(detailHtml, "お土産", "detail feeling card should show category value");
 assertIncludes(detailHtml, "軽やか", "detail feeling card should show echo value");
 assertIncludes(detailHtml, "mini-ball detail-info-ball", "detail feeling card should show mini ball markers");
+const feelingCardStart = detailHtml.indexOf('detail-feeling-card');
+const feelingCardEnd = detailHtml.indexOf('</article>', feelingCardStart);
+const feelingCardHtml = detailHtml.slice(feelingCardStart, feelingCardEnd);
+assertNotIncludes(feelingCardHtml, "玉数", "detail feeling card should not show ball count as an info row");
+assertNotIncludes(detailHtml, "detail-ball-count-under-icon", "single-ball detail should not show a count under the ball icon");
+const multiBallDetailHtml = renderBallDialog({ ...sampleBall, count: 4 }, context);
+assertIncludes(multiBallDetailHtml, "detail-ball-count-under-icon", "multi-ball detail should show a count under the ball icon");
+assertIncludes(multiBallDetailHtml, "4玉", "multi-ball detail should show the count under the ball icon");
 
 const descentDetailHtml = renderBallDialog({
   ...sampleBall,

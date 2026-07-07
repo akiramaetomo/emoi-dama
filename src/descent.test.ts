@@ -62,6 +62,19 @@ if (first.ok) {
     assert(tooClose.distanceFromPreviousMeters < 500, "blocked descent should report nearby distance");
   }
 
+  const gpslessAfterTooClose = appendDescentToBall(
+    first.ball,
+    null,
+    500,
+    "移動確認できないので仮降臨",
+    "2026-07-06T10:06:00.000Z",
+  );
+  assert(gpslessAfterTooClose.ok, "GPS-less descent should still be available after a too-close GPS attempt");
+  if (gpslessAfterTooClose.ok) {
+    assertEqual(gpslessAfterTooClose.record.sequence, 2, "GPS-less fallback should become the next descent");
+    assertEqual(hasDescentPosition(gpslessAfterTooClose.record), false, "GPS-less fallback should not store the too-close coordinate");
+  }
+
   const far = appendDescentToBall(
     first.ball,
     { latitude: 35.710063, longitude: 139.8107, accuracyMeters: 18 },

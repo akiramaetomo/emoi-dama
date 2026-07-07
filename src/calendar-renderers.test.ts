@@ -73,6 +73,7 @@ const monthHtml = renderCalendarOverlay({
   selectedDate: "2026-07-03",
   selectedBallId: sampleBall.id,
   emotionEchoStrength: "medium",
+  calendarMarkerMode: "spread",
 });
 
 assert(monthHtml.includes('data-filter-date="2026-07-03"'), "month view should render tappable day cells");
@@ -83,9 +84,16 @@ assert(monthHtml.includes('data-calendar-open-panel="calendar"'), "calendar tool
 assert(monthHtml.includes('data-calendar-open-panel="dayList"'), "calendar toolbar should render the day-list action");
 assert(monthHtml.includes("primary-screen-control-group"), "calendar toolbar should group the three primary screen actions");
 assert(monthHtml.includes("calendar-screen-icon"), "calendar toolbar should render the calendar icon");
+assert(monthHtml.includes("calendar-icon-bar"), "calendar toolbar should render the calendar icon bar");
+assert(monthHtml.includes('x1="12.75" y1="8" x2="19.25" y2="8"'), "calendar icon bar should be short and near the top");
 assert(monthHtml.includes("day-list-screen-icon"), "calendar toolbar should render the day-list icon");
-assert(monthHtml.includes("data-calendar-cycle-display-mode"), "calendar toolbar should render a single period cycle action");
-assert(monthHtml.includes("表示期間: 日。押すとメイン画面で週を表示"), "calendar toolbar should describe the next period mode");
+assert(monthHtml.includes('<p class="screen-kicker">Calendar</p>'), "month view should show the Calendar screen name above the month");
+assert(!monthHtml.includes("primary-screen-label"), "calendar toolbar should not put screen names inside buttons");
+assert(!monthHtml.includes("data-calendar-cycle-display-mode"), "calendar toolbar should not render the period cycle action");
+assert(monthHtml.includes("data-calendar-cycle-marker-mode"), "calendar toolbar should render the calendar marker mode action");
+assert(monthHtml.includes("通常表示"), "calendar month view should show the current marker mode above the controls");
+assert(monthHtml.includes("玉表示: 通常。押すとメーターに切り替え"), "calendar marker mode action should describe the next marker mode");
+assert(monthHtml.includes("marker-mode-icon-meter"), "spread mode should offer the meter icon as the next marker mode");
 assert(!monthHtml.includes("data-calendar-display-mode"), "calendar toolbar should not render the old three-button period group");
 assert(monthHtml.includes('data-calendar-open-panel="settings"'), "calendar toolbar should render settings");
 assert(!monthHtml.includes("data-close-panel"), "month view should not render a top close action");
@@ -99,6 +107,7 @@ const sevenBallMonthHtml = renderCalendarOverlay({
   selectedDate: "2026-07-07",
   selectedBallId: null,
   emotionEchoStrength: "medium",
+  calendarMarkerMode: "spread",
 });
 
 assert(
@@ -118,6 +127,7 @@ const fifteenBallMonthHtml = renderCalendarOverlay({
   selectedDate: "2026-07-05",
   selectedBallId: null,
   emotionEchoStrength: "medium",
+  calendarMarkerMode: "spread",
 });
 
 assert(
@@ -135,6 +145,7 @@ const sixteenBallMonthHtml = renderCalendarOverlay({
   selectedDate: "2026-07-06",
   selectedBallId: null,
   emotionEchoStrength: "medium",
+  calendarMarkerMode: "spread",
 });
 
 assert(
@@ -144,11 +155,49 @@ assert(
 assert(!sixteenBallMonthHtml.includes("mini-ball lifecycle-active"), "desktop markers should aggregate after fifteen balls");
 assert(countOccurrences(sixteenBallMonthHtml, '<span class="calendar-overflow">16</span>') === 2, "desktop and mobile markers should both aggregate sixteen balls");
 
+const meterMonthHtml = renderCalendarOverlay({
+  balls: [
+    { ...sampleBall, id: "ball_20260708_late_hidden", date: "2026-07-08", count: 2, createdAt: "2026-07-08T13:00:00.000Z" },
+    { ...sampleBall, id: "ball_20260708_second", date: "2026-07-08", count: 6, createdAt: "2026-07-08T10:00:00.000Z" },
+    { ...sampleBall, id: "ball_20260708_first", date: "2026-07-08", count: 4, createdAt: "2026-07-08T09:00:00.000Z" },
+    { ...sampleBall, id: "ball_20260708_third", date: "2026-07-08", count: 3, createdAt: "2026-07-08T11:00:00.000Z" },
+  ],
+  dayListBalls: [],
+  calendarMonth: "2026-07",
+  calendarMode: "month",
+  displayMode: "day",
+  selectedDate: "2026-07-08",
+  selectedBallId: null,
+  emotionEchoStrength: "medium",
+  calendarMarkerMode: "meter",
+});
+
+assert(meterMonthHtml.includes("calendar-meter-marker-set"), "meter mode should render meter marker sets");
+assert(meterMonthHtml.includes("玉表示: メーター。押すと通常に切り替え"), "meter mode action should describe switching back");
+assert(meterMonthHtml.includes("marker-mode-icon-spread"), "meter mode should offer the spread icon as the next marker mode");
+assert(
+  /aria-label="2026-07-08(?: 本日)? 15玉"/.test(meterMonthHtml),
+  "meter mode calendar cells should keep the real total in the aria label",
+);
+assert(
+  meterMonthHtml.indexOf('data-calendar-meter-ball-id="ball_20260708_first"')
+    < meterMonthHtml.indexOf('data-calendar-meter-ball-id="ball_20260708_second"')
+    && meterMonthHtml.indexOf('data-calendar-meter-ball-id="ball_20260708_second"')
+    < meterMonthHtml.indexOf('data-calendar-meter-ball-id="ball_20260708_third"'),
+  "meter rows should use created-at order, not input order",
+);
+assert(!meterMonthHtml.includes('data-calendar-meter-ball-id="ball_20260708_late_hidden"'), "meter mode should hide the fourth record row");
+assert(countOccurrences(meterMonthHtml, 'data-calendar-meter-ball-id="ball_20260708_first"') === 2, "desktop and mobile meter variants should both render the first row");
+assert(countOccurrences(meterMonthHtml, '<span class="calendar-meter-count">6</span>') === 2, "six-count rows should aggregate as one ball plus count in both variants");
+assert(countOccurrences(meterMonthHtml, '<span class="calendar-meter-count">3</span>') === 1, "mobile meter variant should aggregate counts over two balls");
+assert(countOccurrences(meterMonthHtml, '<span class="calendar-meter-overflow">+2</span>') === 2, "hidden fourth-row balls should be summarized in both variants");
+
 const dayListHtml = renderCalendarOverlay({
   balls: [],
   dayListBalls: [
     {
       ...sampleBall,
+      count: 3,
       descents: [
         {
           id: "descent_1",
@@ -169,8 +218,10 @@ const dayListHtml = renderCalendarOverlay({
   selectedDate: "2026-07-03",
   selectedBallId: sampleBall.id,
   emotionEchoStrength: "medium",
+  calendarMarkerMode: "spread",
 });
 
+assert(dayListHtml.includes('<p class="screen-kicker">Ball List</p>'), "day list view should show the Ball List screen name above the selected date");
 assert(dayListHtml.includes("<h2>2026-07-03</h2>"), "day list view should title only the selected date");
 assert(!dayListHtml.includes("2026-07-03 の玉"), "day list view should not append no-tama to the title");
 assert(dayListHtml.includes('data-calendar-shift-day="-1"'), "day list view should offer a previous-day action");
@@ -189,6 +240,9 @@ assert(dayListHtml.includes("日常／ひらめき"), "day list view should show
 assert(dayListHtml.includes("表示中"), "day list view should label active balls as displayed");
 assert(dayListHtml.includes("朝に少し進めた。午後に続きを見る。"), "day list view should show memo snippets");
 assert(dayListHtml.includes("calendar-day-ball-memo"), "day list memo should use the compact two-line memo class");
+assert(dayListHtml.includes("calendar-day-count-under-icon"), "day list view should show multi-ball counts below the ball icon");
+assert(dayListHtml.includes("3玉"), "day list view should show multi-ball counts only when needed");
+assert(!dayListHtml.includes("calendar-day-count-badge"), "day list view should not show the old title-row count badge");
 assert(dayListHtml.includes("供養した玉"), "day list view should include offered balls for daily management history");
 assert(dayListHtml.includes("供養済み"), "day list view should label offered balls");
 assert(dayListHtml.includes("しまい中"), "day list view should label archived balls");
@@ -204,7 +258,8 @@ assert(!dayListHtml.includes("data-copy-ball-url-id"), "day list view should omi
 assert(!dayListHtml.includes("data-copy-ball-line-url-id"), "day list view should omit LINE actions");
 assert(!dayListHtml.includes("data-descend-ball-id"), "day list view should omit kourin actions");
 assert(!dayListHtml.includes("data-clear-ledger-list-date"), "calendar day list should not render the saved-list all-balls control");
-assert(dayListHtml.includes("表示期間: 週。押すとメイン画面で月を表示"), "day list toolbar should keep the current period on the cycle button");
+assert(!dayListHtml.includes("data-calendar-cycle-display-mode"), "day list toolbar should not render the period cycle action");
+assert(!dayListHtml.includes("data-calendar-cycle-marker-mode"), "day list toolbar should not render the calendar marker mode action");
 
 const offeredOnlyHtml = renderCalendarOverlay({
   balls: [],
@@ -215,6 +270,7 @@ const offeredOnlyHtml = renderCalendarOverlay({
   selectedDate: "2026-07-03",
   selectedBallId: offeredBall.id,
   emotionEchoStrength: "medium",
+  calendarMarkerMode: "spread",
 });
 
 assert(offeredOnlyHtml.includes('data-view-ball-id="ball_20260703_offered"'), "offered day-list balls should keep content actions");

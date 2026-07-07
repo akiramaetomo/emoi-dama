@@ -1,4 +1,4 @@
-import { getDisplayDateRange, shiftDisplayAnchor } from "./display-period.js";
+import { getDisplayDateRange, getDisplayModeIconDotCount, moveDisplayAnchorToCalendarMonth, shiftDisplayAnchor } from "./display-period.js";
 
 assertEqualRange(
   getDisplayDateRange("day", "2026-07-01"),
@@ -35,6 +35,19 @@ assertEqual(
   shiftDisplayAnchor("month", "2024-03-31", -1),
   "2024-02-29",
   "month mode should clamp backward across leap-year February",
+);
+assertEqual(getDisplayModeIconDotCount("day"), 1, "day mode icon should render one square");
+assertEqual(getDisplayModeIconDotCount("week"), 5, "week mode icon should render five dots");
+assertEqual(getDisplayModeIconDotCount("month"), 20, "month mode icon should render a five-by-four grid");
+assertEqual(
+  moveDisplayAnchorToCalendarMonth("2026-05-15", "2026-09"),
+  "2026-09-15",
+  "calendar month movement should preserve the day number when possible",
+);
+assertEqual(
+  moveDisplayAnchorToCalendarMonth("2026-05-31", "2026-09"),
+  "2026-09-30",
+  "calendar month movement should clamp to the target month's last day",
 );
 
 function assertEqualRange(

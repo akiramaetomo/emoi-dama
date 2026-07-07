@@ -1,6 +1,6 @@
 {
   "name": "happy-ball-web",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,7 @@
     "dev:lan": "vite --host 0.0.0.0",
     "build": "tsc && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "tsc --noEmit && tsc -p tsconfig.test.json && node .test-build/packet.test.js && node .test-build/storage.test.js && node .test-build/descent.test.js && node .test-build/categories.test.js && node .test-build/calendar-renderers.test.js && node .test-build/dialog-renderers.test.js && node .test-build/form-renderers.test.js && node .test-build/screen-navigation.test.js && node .test-build/startup-state.test.js && node .test-build/settings.test.js && node .test-build/settings-renderers.test.js && node .test-build/json-transfer.test.js && node .test-build/device-gravity.test.js && node .test-build/visibility.test.js && node .test-build/qr-code.test.js && node .test-build/display-period.test.js"
+    "test": "tsc --noEmit && tsc -p tsconfig.test.json && node .test-build/packet.test.js && node .test-build/storage.test.js && node .test-build/descent.test.js && node .test-build/location.test.js && node .test-build/categories.test.js && node .test-build/calendar-renderers.test.js && node .test-build/dialog-renderers.test.js && node .test-build/form-renderers.test.js && node .test-build/screen-navigation.test.js && node .test-build/startup-state.test.js && node .test-build/settings.test.js && node .test-build/settings-renderers.test.js && node .test-build/json-transfer.test.js && node .test-build/device-gravity.test.js && node .test-build/visibility.test.js && node .test-build/qr-code.test.js && node .test-build/display-period.test.js && node .test-build/viewport-height.test.js"
   },
   "devDependencies": {
     "esbuild": "^0.28.1",

@@ -69,6 +69,7 @@ const sampleBall: HappyBall = {
 
 const descendedSampleBall: HappyBall = {
   ...sampleBall,
+  count: 3,
   descents: [
     {
       id: "descent_1",
@@ -85,6 +86,10 @@ const ledgerListHtml = renderLedgerList([descendedSampleBall], sampleBall.id, { 
 assert(ledgerListHtml.includes("2026-07-03 の保存された玉"), "ledger list should show the selected calendar day scope");
 assert(ledgerListHtml.includes("ledger-descent-badge"), "ledger list should show a descent star badge");
 assert(ledgerListHtml.includes("✦1"), "ledger list should show descent star count");
+assert(ledgerListHtml.includes("ledger-ball-visual"), "ledger list should show a ball icon beside each row");
+assert(ledgerListHtml.includes("ledger-count-under-icon"), "ledger list should show multi-ball counts below the ball icon");
+assert(ledgerListHtml.includes("3玉"), "ledger list should show multi-ball counts only when needed");
+assert(!ledgerListHtml.includes("ledger-count-badge"), "ledger list should not show the old title-row count badge");
 assert(ledgerListHtml.includes("降臨1回"), "ledger list should show descent count in metadata");
 assert(ledgerListHtml.includes("data-clear-ledger-list-date"), "ledger list should offer a way back to all saved balls");
 assert(ledgerListHtml.includes('data-lifecycle-status="archived"'), "ledger list should render the archive/shimau action");

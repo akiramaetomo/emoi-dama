@@ -1,6 +1,6 @@
 import { formatBallDateTime, type HappyBall } from "./models.js";
 import type { DisplayMode } from "./display-period";
-import type { EmotionEchoStrength } from "./settings";
+import type { CalendarMarkerMode, EmotionEchoStrength } from "./settings";
 
 export type CalendarOverlayMode = "month" | "dayList";
 
@@ -16,6 +16,7 @@ export interface CalendarRenderContext {
   selectedBallId: string | null;
   selectedDate: string;
   emotionEchoStrength: EmotionEchoStrength;
+  calendarMarkerMode: CalendarMarkerMode;
 }
 
 export function renderCalendarOverlay(context: CalendarRenderContext): string {
@@ -44,7 +45,7 @@ function renderCalendarMonth(context: CalendarRenderContext): string {
     cells.push(`
       <button class="calendar-cell${selectedClass}${todayClass}" type="button" data-filter-date="${date}" aria-label="${date}${todayLabel} ${total}玉">
         <span class="calendar-day">${day}</span>
-        ${renderCalendarMarkers(balls, context.emotionEchoStrength)}
+        ${renderCalendarMarkers(balls, context.emotionEchoStrength, context.calendarMarkerMode)}
       </button>
     `);
   }
@@ -53,7 +54,10 @@ function renderCalendarMonth(context: CalendarRenderContext): string {
     <section class="calendar-overlay" aria-label="カレンダー">
       <div class="calendar-head calendar-month-head">
         <button class="calendar-nav" type="button" data-calendar-month="${escapeAttribute(shiftCalendarMonth(context.calendarMonth, -1))}" aria-label="前の月">‹</button>
-        <h2>${year}年 ${month}月</h2>
+        <div class="screen-heading-block">
+          <p class="screen-kicker">Calendar</p>
+          <h2>${year}年 ${month}月</h2>
+        </div>
         <button class="calendar-nav" type="button" data-calendar-month="${escapeAttribute(shiftCalendarMonth(context.calendarMonth, 1))}" aria-label="次の月">›</button>
       </div>
       <div class="calendar-weekdays" aria-hidden="true">
@@ -72,7 +76,10 @@ function renderCalendarDayList(context: CalendarRenderContext): string {
     <section class="calendar-overlay calendar-day-list-overlay" aria-label="${escapeAttribute(context.selectedDate)}">
       <div class="calendar-head calendar-day-list-head">
         <button class="calendar-nav" type="button" data-calendar-shift-day="-1" aria-label="前の日">‹</button>
-        <h2>${escapeHtml(context.selectedDate)}</h2>
+        <div class="screen-heading-block">
+          <p class="screen-kicker">Ball List</p>
+          <h2>${escapeHtml(context.selectedDate)}</h2>
+        </div>
         <button class="calendar-nav" type="button" data-calendar-shift-day="1" aria-label="次の日">›</button>
       </div>
       <div class="calendar-day-list-body">
@@ -102,6 +109,7 @@ function renderCalendarDayListItem(ball: HappyBall, context: CalendarRenderConte
       <span class="calendar-day-ball-visual-wrap">
         ${renderCompactDescentBadge(ball)}
         <span class="mini-ball calendar-day-ball-visual lifecycle-${ball.lifecycleStatus} ${renderVisualKindClass(ball.visual)} ${renderEchoClass(ball, context.emotionEchoStrength)}" style="${renderBallVisualStyle(ball, context.emotionEchoStrength)}" aria-hidden="true"></span>
+        ${renderBallCountUnderIcon(ball, "calendar-day-count-under-icon")}
       </span>
       <div class="calendar-day-ball-main">
         <div class="calendar-day-ball-title-row">
@@ -168,6 +176,7 @@ function renderCalendarBallMeta(ball: HappyBall): string {
 function renderCalendarControlDock(context: CalendarRenderContext): string {
   return `
     <div class="calendar-control-dock">
+      ${context.calendarMode === "month" ? `<p class="control-state-label calendar-marker-state-label">${renderCalendarMarkerModeName(context.calendarMarkerMode)}表示</p>` : ""}
       <div class="world-actions calendar-actions-bar" aria-label="カレンダー操作">
         <button class="dock-symbol-button dock-create-button" type="button" data-calendar-open-panel="create" aria-label="選択日に玉を作る">＋</button>
         <span class="primary-screen-control-group" aria-label="主要3画面">
@@ -181,22 +190,57 @@ function renderCalendarControlDock(context: CalendarRenderContext): string {
             <span class="day-list-screen-icon" aria-hidden="true"></span>
           </button>
         </span>
-        <button type="button" data-calendar-cycle-display-mode aria-label="${escapeAttribute(renderCalendarDisplayModeCycleAriaLabel(context.displayMode))}">${renderDisplayModeName(context.displayMode)}</button>
+        ${context.calendarMode === "month" ? `<button class="calendar-marker-mode-button" type="button" data-calendar-cycle-marker-mode aria-label="${escapeAttribute(renderCalendarMarkerModeCycleAriaLabel(context.calendarMarkerMode))}">${renderCalendarMarkerModeIcon(context.calendarMarkerMode)}</button>` : ""}
         <button class="dock-symbol-button dock-settings-button" type="button" data-calendar-open-panel="settings" aria-label="設定">⚙</button>
       </div>
     </div>
   `;
 }
 
-function renderCalendarDisplayModeCycleAriaLabel(mode: DisplayMode): string {
-  return `表示期間: ${renderDisplayModeName(mode)}。押すとメイン画面で${renderDisplayModeName(nextDisplayMode(mode))}を表示`;
+function renderCalendarMarkerModeCycleAriaLabel(mode: CalendarMarkerMode): string {
+  return `玉表示: ${renderCalendarMarkerModeName(mode)}。押すと${renderNextCalendarMarkerModeName(mode)}に切り替え`;
+}
+
+function renderCalendarMarkerModeName(mode: CalendarMarkerMode): string {
+  return mode === "meter" ? "メーター" : "通常";
+}
+
+function renderNextCalendarMarkerModeName(mode: CalendarMarkerMode): string {
+  return renderCalendarMarkerModeName(nextCalendarMarkerMode(mode));
+}
+
+function renderCalendarMarkerModeIcon(mode: CalendarMarkerMode): string {
+  return mode === "spread" ? renderMeterModeIcon() : renderSpreadModeIcon();
+}
+
+function renderMeterModeIcon(): string {
+  return `
+    <span class="marker-mode-icon marker-mode-icon-meter" aria-hidden="true">
+      <span class="marker-mode-row marker-mode-row-red"><i></i><i></i><i></i></span>
+      <span class="marker-mode-row marker-mode-row-blue"><i></i><i></i></span>
+      <span class="marker-mode-row marker-mode-row-yellow"><i></i><i></i><i></i><i></i></span>
+    </span>
+  `;
+}
+
+function renderSpreadModeIcon(): string {
+  return `
+    <span class="marker-mode-icon marker-mode-icon-spread" aria-hidden="true">
+      ${Array.from({ length: 12 }, (_, index) => `<i class="marker-mode-dot-${index}"></i>`).join("")}
+    </span>
+  `;
+}
+
+function nextCalendarMarkerMode(mode: CalendarMarkerMode): CalendarMarkerMode {
+  return mode === "spread" ? "meter" : "spread";
 }
 
 function renderCalendarScreenIcon(): string {
   return `
     <span class="calendar-screen-icon" aria-hidden="true">
       <svg viewBox="0 0 32 28" focusable="false">
-        <rect class="calendar-icon-frame" x="2" y="2.5" width="28" height="24" rx="2.25"></rect>
+        <rect class="calendar-icon-frame" x="2" y="2.5" width="28" height="24" rx="0.8"></rect>
+        <line class="calendar-icon-bar" x1="12.75" y1="8" x2="19.25" y2="8"></line>
         <circle class="calendar-icon-dot" cx="8.5" cy="13" r="1.45"></circle>
         <circle class="calendar-icon-dot" cx="13.5" cy="13" r="1.45"></circle>
         <circle class="calendar-icon-dot" cx="18.5" cy="13" r="1.45"></circle>
@@ -214,30 +258,18 @@ function renderCalendarScreenIcon(): string {
   `;
 }
 
-function renderDisplayModeName(mode: DisplayMode): string {
-  if (mode === "day") {
-    return "日";
-  }
-  if (mode === "week") {
-    return "週";
-  }
-  return "月";
-}
-
-function nextDisplayMode(mode: DisplayMode): DisplayMode {
-  if (mode === "day") {
-    return "week";
-  }
-  if (mode === "week") {
-    return "month";
-  }
-  return "day";
-}
-
-function renderCalendarMarkers(balls: HappyBall[], emotionEchoStrength: EmotionEchoStrength): string {
+function renderCalendarMarkers(
+  balls: HappyBall[],
+  emotionEchoStrength: EmotionEchoStrength,
+  markerMode: CalendarMarkerMode,
+): string {
   const total = countVisualBalls(balls);
   if (total === 0) {
     return `<span class="mini-ball-row" aria-hidden="true"></span>`;
+  }
+
+  if (markerMode === "meter") {
+    return renderCalendarMeterMarkers(balls, emotionEchoStrength);
   }
 
   return `
@@ -246,6 +278,65 @@ function renderCalendarMarkers(balls: HappyBall[], emotionEchoStrength: EmotionE
       ${renderCalendarMarkerVariant(balls, total, MOBILE_MARKER_LIMIT, "mobile", emotionEchoStrength)}
     </span>
   `;
+}
+
+function renderCalendarMeterMarkers(balls: HappyBall[], emotionEchoStrength: EmotionEchoStrength): string {
+  const sorted = [...balls].sort(compareCalendarMarkerBalls);
+  return `
+    <span class="calendar-marker-set calendar-meter-marker-set" aria-hidden="true">
+      ${renderCalendarMeterMarkerVariant(sorted, 5, "desktop", emotionEchoStrength)}
+      ${renderCalendarMeterMarkerVariant(sorted, 2, "mobile", emotionEchoStrength)}
+    </span>
+  `;
+}
+
+function renderCalendarMeterMarkerVariant(
+  balls: HappyBall[],
+  rowLimit: number,
+  variant: "desktop" | "mobile",
+  emotionEchoStrength: EmotionEchoStrength,
+): string {
+  const visible = balls.slice(0, 3);
+  const hiddenTotal = countVisualBalls(balls.slice(3));
+  return `
+    <span class="calendar-meter-list calendar-marker-variant calendar-marker-${variant}">
+      ${visible.map((ball) => renderCalendarMeterMarkerRow(ball, rowLimit, emotionEchoStrength)).join("")}
+      ${hiddenTotal > 0 ? `<span class="calendar-meter-overflow">+${hiddenTotal}</span>` : ""}
+    </span>
+  `;
+}
+
+function renderCalendarMeterMarkerRow(
+  ball: HappyBall,
+  rowLimit: number,
+  emotionEchoStrength: EmotionEchoStrength,
+): string {
+  const count = normalizeBallCount(ball);
+  if (count > rowLimit) {
+    return `
+      <span class="calendar-meter-row" data-calendar-meter-ball-id="${escapeAttribute(ball.id)}">
+        ${renderCalendarMeterMiniBall(ball, emotionEchoStrength)}
+        <span class="calendar-meter-count">${count}</span>
+      </span>
+    `;
+  }
+
+  return `
+    <span class="calendar-meter-row" data-calendar-meter-ball-id="${escapeAttribute(ball.id)}">
+      ${Array.from({ length: count }, () => renderCalendarMeterMiniBall(ball, emotionEchoStrength)).join("")}
+    </span>
+  `;
+}
+
+function renderCalendarMeterMiniBall(ball: HappyBall, emotionEchoStrength: EmotionEchoStrength): string {
+  return `<span class="mini-ball lifecycle-${ball.lifecycleStatus} ${renderVisualKindClass(ball.visual)} ${renderEchoClass(ball, emotionEchoStrength)}" style="${renderBallVisualStyle(ball, emotionEchoStrength)}"></span>`;
+}
+
+function renderBallCountUnderIcon(ball: HappyBall, className: string): string {
+  if (ball.count <= 1) {
+    return "";
+  }
+  return `<span class="ball-count-under-icon ${className}" aria-label="玉数 ${ball.count}玉">${ball.count}玉</span>`;
 }
 
 function renderCalendarMarkerVariant(
@@ -269,8 +360,16 @@ function renderCalendarMarkerVariant(
 
 function createCalendarMarkerBalls(balls: HappyBall[], limit: number): HappyBall[] {
   return balls.flatMap((ball) => (
-    Array.from({ length: Math.max(1, Math.min(ball.count, limit)) }, () => ball)
+    Array.from({ length: Math.max(1, Math.min(normalizeBallCount(ball), limit)) }, () => ball)
   )).slice(0, limit);
+}
+
+function compareCalendarMarkerBalls(a: HappyBall, b: HappyBall): number {
+  const createdDiff = Date.parse(a.createdAt) - Date.parse(b.createdAt);
+  if (Number.isFinite(createdDiff) && createdDiff !== 0) {
+    return createdDiff;
+  }
+  return a.id.localeCompare(b.id);
 }
 
 function shiftCalendarMonth(calendarMonth: string, delta: number): string {
@@ -285,7 +384,11 @@ function getLocalIsoDate(): string {
 }
 
 function countVisualBalls(balls: HappyBall[]): number {
-  return balls.reduce((sum, ball) => sum + Math.max(1, Number.isFinite(ball.count) ? Math.floor(ball.count) : 1), 0);
+  return balls.reduce((sum, ball) => sum + normalizeBallCount(ball), 0);
+}
+
+function normalizeBallCount(ball: HappyBall): number {
+  return Math.max(1, Number.isFinite(ball.count) ? Math.floor(ball.count) : 1);
 }
 
 function renderBallVisualStyle(ball: HappyBall, emotionEchoStrength: EmotionEchoStrength): string {

@@ -5,6 +5,16 @@ export interface DisplayDateRange {
   end: string;
 }
 
+export function getDisplayModeIconDotCount(mode: DisplayMode): number {
+  if (mode === "day") {
+    return 1;
+  }
+  if (mode === "week") {
+    return 5;
+  }
+  return 20;
+}
+
 export function getDisplayDateRange(mode: DisplayMode, anchorDate: string): DisplayDateRange {
   const date = parseIsoLocalDate(anchorDate);
   if (mode === "day") {
@@ -35,6 +45,13 @@ export function shiftDisplayAnchor(mode: DisplayMode, anchorDate: string, delta:
     current.setFullYear(next.getFullYear(), next.getMonth(), next.getDate());
   }
   return formatIsoLocalDate(current);
+}
+
+export function moveDisplayAnchorToCalendarMonth(anchorDate: string, calendarMonth: string): string {
+  const [, , day] = anchorDate.split("-").map(Number);
+  const [year, month] = calendarMonth.split("-").map(Number);
+  const lastDay = new Date(year, month, 0).getDate();
+  return formatIsoLocalDate(new Date(year, month - 1, Math.min(day, lastDay)));
 }
 
 function parseIsoLocalDate(value: string): Date {
