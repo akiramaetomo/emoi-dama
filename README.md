@@ -86,6 +86,14 @@ Prototype safety notes:
 - URL and JSON features are prototype transfer tools, not a durable backup
   service.
 
+## License / Rights
+
+This prototype is source-available for viewing and evaluation only. It is not
+released under MIT or another open-source license. Unauthorized copying,
+modification, redistribution, sublicensing, or commercial use is prohibited.
+
+See [LICENSE.md](LICENSE.md).
+
 ## Start Here
 
 1. Open the app.
@@ -101,6 +109,9 @@ Prototype safety notes:
 
 This repository is the public GitHub Pages target for the early Web prototype.
 The normal development repository is separate.
+
+For published app versions and user-visible changes, see
+[`CHANGELOG.md`](CHANGELOG.md).
 
 ```powershell
 npm install
