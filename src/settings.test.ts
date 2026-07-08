@@ -13,7 +13,7 @@ const normalized = normalizeAppSettings({
   frequencyHz: Number.NaN,
   soundEnabled: false,
   gravityEnabled: true,
-  ballLabelMode: "date",
+  ballLabelMode: "name",
   showMemoField: true,
   emotionEchoStrength: "strong",
   backgroundTexture: "random",
@@ -29,7 +29,7 @@ assertEqual(normalized.masterVolume, 0.5, "valid numbers should be preserved");
 assertEqual(normalized.frequencyHz, DEFAULT_APP_SETTINGS.frequencyHz, "invalid numbers should fall back to defaults");
 assertEqual(normalized.soundEnabled, false, "explicit false should be preserved");
 assertEqual(normalized.gravityEnabled, true, "explicit true should be preserved");
-assertEqual(normalized.ballLabelMode, "date", "valid ball label mode should be preserved");
+assertEqual(normalized.ballLabelMode, "name", "valid name ball label mode should be preserved");
 assertEqual(normalized.showMemoField, true, "memo field boolean should be preserved");
 assertEqual(normalized.emotionEchoStrength, "strong", "valid echo strength should be preserved");
 assertEqual(normalized.backgroundTexture, "random", "valid background texture should be preserved");

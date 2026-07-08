@@ -74,6 +74,7 @@ const monthHtml = renderCalendarOverlay({
   selectedBallId: sampleBall.id,
   emotionEchoStrength: "medium",
   calendarMarkerMode: "spread",
+  activityLog: [],
 });
 
 assert(monthHtml.includes('data-filter-date="2026-07-03"'), "month view should render tappable day cells");
@@ -108,6 +109,7 @@ const sevenBallMonthHtml = renderCalendarOverlay({
   selectedBallId: null,
   emotionEchoStrength: "medium",
   calendarMarkerMode: "spread",
+  activityLog: [],
 });
 
 assert(
@@ -128,6 +130,7 @@ const fifteenBallMonthHtml = renderCalendarOverlay({
   selectedBallId: null,
   emotionEchoStrength: "medium",
   calendarMarkerMode: "spread",
+  activityLog: [],
 });
 
 assert(
@@ -146,6 +149,7 @@ const sixteenBallMonthHtml = renderCalendarOverlay({
   selectedBallId: null,
   emotionEchoStrength: "medium",
   calendarMarkerMode: "spread",
+  activityLog: [],
 });
 
 assert(
@@ -170,6 +174,7 @@ const meterMonthHtml = renderCalendarOverlay({
   selectedBallId: null,
   emotionEchoStrength: "medium",
   calendarMarkerMode: "meter",
+  activityLog: [],
 });
 
 assert(meterMonthHtml.includes("calendar-meter-marker-set"), "meter mode should render meter marker sets");
@@ -219,6 +224,18 @@ const dayListHtml = renderCalendarOverlay({
   selectedBallId: sampleBall.id,
   emotionEchoStrength: "medium",
   calendarMarkerMode: "spread",
+  activityLog: [
+    {
+      id: "activity_1",
+      recordedAt: "2026-07-03T11:00:00.000Z",
+      action: "send-url",
+      status: "success",
+      ballId: sampleBall.id,
+      title: sampleBall.title,
+      issuedBy: sampleBall.issuedBy,
+      sendMode: "casual",
+    },
+  ],
 });
 
 assert(dayListHtml.includes('<p class="screen-kicker">Ball List</p>'), "day list view should show the Ball List screen name above the selected date");
@@ -238,6 +255,8 @@ assert(dayListHtml.includes("しまった玉"), "day list view should show archi
 assert(dayListHtml.includes("2026-07-03"), "day list view should show ball dates even without recorded times");
 assert(dayListHtml.includes("日常／ひらめき"), "day list view should show category and echo category");
 assert(dayListHtml.includes("表示中"), "day list view should label active balls as displayed");
+assert(dayListHtml.includes("発行者: エモ次郎"), "day list view should show the issuer");
+assert(dayListHtml.includes("送り手段: お配り"), "day list view should show the latest send method");
 assert(dayListHtml.includes("朝に少し進めた。午後に続きを見る。"), "day list view should show memo snippets");
 assert(dayListHtml.includes("calendar-day-ball-memo"), "day list memo should use the compact two-line memo class");
 assert(dayListHtml.includes("calendar-day-count-under-icon"), "day list view should show multi-ball counts below the ball icon");
@@ -271,6 +290,7 @@ const offeredOnlyHtml = renderCalendarOverlay({
   selectedBallId: offeredBall.id,
   emotionEchoStrength: "medium",
   calendarMarkerMode: "spread",
+  activityLog: [],
 });
 
 assert(offeredOnlyHtml.includes('data-view-ball-id="ball_20260703_offered"'), "offered day-list balls should keep content actions");

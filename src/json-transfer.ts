@@ -1,10 +1,11 @@
 import { normalizeCategoryColorPresets, type CategoryColorPreset } from "./categories.js";
+import { createActivityLogPayload, type ActivityLogEntry } from "./activity-log.js";
 import type { HappyBall, HappyBallLedger, NameBookEntry } from "./models";
 import { PACKET_TYPE, normalizePacketBall, reviewPacketImport } from "./packet.js";
 import { looksLikeAppSettings, normalizeAppSettings, type AppSettings } from "./settings.js";
 import { MAX_NAME_BOOK_ENTRIES } from "./storage.js";
 
-export type ExportSection = "ledger" | "appSettings" | "categories";
+export type ExportSection = "ledger" | "appSettings" | "categories" | "activityLog";
 export type JsonImportSection = ExportSection;
 
 export interface JsonImportReview {
@@ -26,16 +27,18 @@ interface ExportPayloadSource {
   ledger: HappyBallLedger;
   appSettings: AppSettings;
   categories: CategoryColorPreset[];
+  activityLog: ActivityLogEntry[];
 }
 
 const exportSectionSlugs: Record<ExportSection, string> = {
   ledger: "ledger",
   appSettings: "app-settings",
   categories: "categories",
+  activityLog: "activity-log",
 };
 
 export function isExportSection(value: string): value is ExportSection {
-  return value === "ledger" || value === "appSettings" || value === "categories";
+  return value === "ledger" || value === "appSettings" || value === "categories" || value === "activityLog";
 }
 
 export function createExportPayload(
@@ -58,6 +61,9 @@ export function createExportPayload(
   }
   if (sections.includes("categories")) {
     payload.categories = source.categories;
+  }
+  if (sections.includes("activityLog")) {
+    payload.activityLog = createActivityLogPayload(source.activityLog);
   }
 
   return payload;

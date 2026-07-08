@@ -7,7 +7,20 @@ const html = renderToolsPanel({
   appSettings: DEFAULT_APP_SETTINGS,
   appVersion: "0.1.0",
   categories: categoryColorPresets,
+  activityLog: [
+    {
+      id: "activity_1",
+      recordedAt: "2026-07-03T11:00:00.000Z",
+      action: "send-line-url",
+      status: "success",
+      ballId: "ball_20260703_sample",
+      title: "今日のえもい玉",
+      issuedBy: "エモ次郎",
+      sendMode: "formal",
+    },
+  ],
   openSettingsGroups: ["backup-settings"],
+  activityLogHelpOpen: false,
   nameBook: [],
   maxNameBookEntries: 10,
   defaultSampleName: "エモ次郎",
@@ -21,6 +34,13 @@ assert(html.includes('id="setting-descent-distance"'), "descent distance setting
 assert(html.includes('value="500"'), "descent distance should default to 500m");
 assert(html.includes('id="export-json"'), "backup export action should be rendered");
 assert(html.includes('id="import-json"'), "backup import action should be rendered");
+assert(html.includes('value="activityLog"'), "backup export options should include activity logs");
+assert(html.includes("<h2>操作ログ</h2>"), "activity log group should be rendered");
+assert(html.includes("操作ログの簡易仕様を見る"), "activity log group should render a help trigger");
+assert(html.includes('data-toggle-activity-log-help'), "activity log help should render as a normal button");
+assert(html.includes('aria-expanded="false"'), "activity log help should start closed");
+assert(!html.includes("玉を置くだけの通常作成は、現在は操作ログに記録しません。"), "closed activity log help should hide help text");
+assert(html.includes("LINE用URL"), "activity log should render recent action labels");
 assert(!html.includes("summary-action"), "settings summaries should not contain action-button hooks");
 assert(!html.includes("export-panel"), "backup/restore group should not keep the old export-panel-specific hook");
 
@@ -82,7 +102,21 @@ const descendedSampleBall: HappyBall = {
   descentBadgeCount: 1,
 };
 
-const ledgerListHtml = renderLedgerList([descendedSampleBall], sampleBall.id, { dateFilter: "2026-07-03" });
+const ledgerListHtml = renderLedgerList([descendedSampleBall], sampleBall.id, {
+  dateFilter: "2026-07-03",
+  activityLog: [
+    {
+      id: "activity_1",
+      recordedAt: "2026-07-03T11:00:00.000Z",
+      action: "send-line-url",
+      status: "success",
+      ballId: sampleBall.id,
+      title: sampleBall.title,
+      issuedBy: sampleBall.issuedBy,
+      sendMode: "formal",
+    },
+  ],
+});
 assert(ledgerListHtml.includes("2026-07-03 の保存された玉"), "ledger list should show the selected calendar day scope");
 assert(ledgerListHtml.includes("ledger-descent-badge"), "ledger list should show a descent star badge");
 assert(ledgerListHtml.includes("✦1"), "ledger list should show descent star count");
@@ -91,6 +125,8 @@ assert(ledgerListHtml.includes("ledger-count-under-icon"), "ledger list should s
 assert(ledgerListHtml.includes("3玉"), "ledger list should show multi-ball counts only when needed");
 assert(!ledgerListHtml.includes("ledger-count-badge"), "ledger list should not show the old title-row count badge");
 assert(ledgerListHtml.includes("降臨1回"), "ledger list should show descent count in metadata");
+assert(ledgerListHtml.includes("発行者: エモ次郎"), "ledger list should show issuer metadata");
+assert(ledgerListHtml.includes("送り手段: お預け"), "ledger list should show latest send method metadata");
 assert(ledgerListHtml.includes("data-clear-ledger-list-date"), "ledger list should offer a way back to all saved balls");
 assert(ledgerListHtml.includes('data-lifecycle-status="archived"'), "ledger list should render the archive/shimau action");
 assert(ledgerListHtml.includes(">しまう</button>"), "active balls should show the shimau action");
@@ -102,6 +138,34 @@ const archivedLedgerListHtml = renderLedgerList([{ ...sampleBall, lifecycleStatu
 assert(archivedLedgerListHtml.includes('data-lifecycle-status="active"'), "archived balls should render the restore action");
 assert(archivedLedgerListHtml.includes(">戻す</button>"), "archived balls should show the restore label");
 assert(!archivedLedgerListHtml.includes(">しまう</button>"), "archived balls should not show the shimau label");
+
+const emptyActivityLogPanelHtml = renderToolsPanel({
+  appSettings: DEFAULT_APP_SETTINGS,
+  appVersion: "0.1.0",
+  categories: categoryColorPresets,
+  activityLog: [],
+  openSettingsGroups: ["activity-log-panel"],
+  activityLogHelpOpen: false,
+  nameBook: [],
+  maxNameBookEntries: 10,
+  defaultSampleName: "エモ次郎",
+});
+assert(emptyActivityLogPanelHtml.includes("まだ操作ログはありません。"), "empty activity log panel should still show empty state");
+assert(emptyActivityLogPanelHtml.includes("操作ログの簡易仕様を見る"), "empty activity log panel should still expose help");
+
+const openActivityLogHelpHtml = renderToolsPanel({
+  appSettings: DEFAULT_APP_SETTINGS,
+  appVersion: "0.1.0",
+  categories: categoryColorPresets,
+  activityLog: [],
+  openSettingsGroups: ["activity-log-panel"],
+  activityLogHelpOpen: true,
+  nameBook: [],
+  maxNameBookEntries: 10,
+  defaultSampleName: "エモ次郎",
+});
+assert(openActivityLogHelpHtml.includes('aria-expanded="true"'), "open activity log help should announce expanded state");
+assert(openActivityLogHelpHtml.includes("玉を置くだけの通常作成は、現在は操作ログに記録しません。"), "open activity log help should explain non-logged creation");
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {

@@ -1,4 +1,5 @@
 import type { CategoryColorPreset } from "./categories";
+import type { ActivityLogEntry } from "./activity-log";
 import {
   createExportFileName,
   createExportPayload,
@@ -15,6 +16,7 @@ export interface JsonExportSource {
   ledger: HappyBallLedger;
   appSettings: AppSettings;
   categories: CategoryColorPreset[];
+  activityLog: ActivityLogEntry[];
 }
 
 export interface JsonImportApplySource {

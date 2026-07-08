@@ -1,5 +1,5 @@
 export type EmotionEchoStrength = "off" | "weak" | "medium" | "strong";
-export type BallLabelMode = "none" | "date" | "title";
+export type BallLabelMode = "none" | "date" | "title" | "name";
 export type BackgroundTexture = "grid" | "paper" | "grain" | "mist" | "random";
 export type StartupScreen = "main" | "calendarMonth" | "calendarDayList";
 export type CalendarMarkerMode = "spread" | "meter";
@@ -146,7 +146,7 @@ export function readEchoStrength(value: unknown): EmotionEchoStrength {
 }
 
 function readBallLabelMode(value: unknown, legacyShowLabels: unknown): BallLabelMode {
-  if (value === "none" || value === "date" || value === "title") {
+  if (value === "none" || value === "date" || value === "title" || value === "name") {
     return value;
   }
   if (typeof legacyShowLabels === "boolean") {

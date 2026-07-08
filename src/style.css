@@ -555,7 +555,6 @@ h2 {
 .calendar-main-ball-button.is-label-on .calendar-main-ball-icon {
   box-shadow:
     inset -5px -6px 10px rgba(28, 42, 37, 0.24),
-    0 0 0 2px rgba(247, 234, 211, 0.34),
     0 0 18px rgba(240, 192, 111, 0.3);
 }
 
@@ -814,6 +813,7 @@ h2 {
 }
 
 .ball-body {
+  z-index: 1;
   overflow: hidden;
   background: hsl(var(--ball-hue, 34) var(--ball-saturation, 68%) var(--ball-lightness, 58%));
   box-shadow:
@@ -951,6 +951,7 @@ h2 {
 
 .ball-label,
 .happy-ball span {
+  z-index: 4;
   display: none;
   width: 100%;
   height: 100%;
@@ -965,7 +966,12 @@ h2 {
   overflow-wrap: anywhere;
   text-align: center;
   text-shadow: 0 1px 3px rgba(28, 42, 37, 0.42);
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  -webkit-font-smoothing: antialiased;
   white-space: normal;
+  will-change: transform;
 }
 
 .stage.show-ball-labels .ball-label {
@@ -1442,6 +1448,16 @@ h2 {
   font-weight: 850;
 }
 
+.calendar-day-ball-relation {
+  margin: -1px 0 0;
+  overflow: hidden;
+  color: rgba(184, 216, 206, 0.78);
+  font-size: var(--readable-xs);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .calendar-day-ball-memo {
   display: -webkit-box;
   min-height: 2.8em;
@@ -1740,6 +1756,32 @@ h2 {
   box-shadow:
     inset -5px -6px 10px rgba(28, 42, 37, 0.24),
     0 0 16px rgba(240, 192, 111, 0.24);
+}
+
+.ball-label-mode-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: #143028;
+}
+
+.ball-label-mode-icon span {
+  display: block;
+  max-width: 25px;
+  padding-top: 1px;
+  color: #102820;
+  font-size: 10px;
+  font-weight: 950;
+  line-height: 1;
+  text-align: center;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+
+.ball-label-mode-icon-title span {
+  font-size: 10px;
 }
 
 .calendar-screen-icon {
@@ -2507,6 +2549,14 @@ h2 {
   display: flex;
   gap: 8px;
   align-items: center;
+  justify-content: space-between;
+}
+
+.edit-descent-feedback,
+.edit-descent-action-feedback {
+  color: #ffe27d;
+  font-size: var(--readable-xs);
+  font-weight: 900;
 }
 
 .edit-descent-item {
@@ -3967,6 +4017,81 @@ textarea:focus {
   font-weight: 900;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.activity-log-list {
+  display: grid;
+  gap: 8px;
+}
+
+.feature-help {
+  justify-self: start;
+}
+
+.feature-help-button {
+  display: inline-grid;
+  position: relative;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(240, 192, 111, 0.42);
+  border-radius: 50%;
+  background: rgba(14, 24, 21, 0.62);
+  color: #ffe27d;
+  cursor: pointer;
+  font: inherit;
+  appearance: none;
+}
+
+.feature-help-mark {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  font-size: var(--readable-sm);
+  font-weight: 950;
+  line-height: 1;
+}
+
+.feature-help-body {
+  display: grid;
+  gap: 6px;
+  max-width: 62ch;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(184, 216, 206, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 17, 15, 0.34);
+}
+
+.feature-help-body p {
+  margin: 0;
+  color: #f7ead3;
+  font-size: var(--readable-xs);
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.activity-log-item {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid rgba(184, 216, 206, 0.14);
+  border-radius: 8px;
+  background: rgba(8, 17, 15, 0.28);
+}
+
+.activity-log-item strong {
+  color: #fff4de;
+  font-size: var(--readable-sm);
+}
+
+.activity-log-item span,
+.activity-log-item small {
+  color: #b8d8ce;
+  font-size: var(--readable-xs);
+  font-weight: 800;
 }
 
 .ledger-actions {

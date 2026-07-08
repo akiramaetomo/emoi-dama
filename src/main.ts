@@ -1,4 +1,17 @@
 import RAPIER from "@dimforge/rapier2d-compat";
+import {
+  createBallActivityInput,
+  createBallActivitySnapshot,
+  loadActivityLog,
+  recordActivity,
+  type ActivityLogEntry,
+} from "./activity-log";
+import {
+  createBallDisplayLabel,
+  nextBallLabelMode,
+  renderBallLabelModeCycleAriaLabel,
+  renderNextBallLabelModeIcon,
+} from "./ball-labels";
 import { renderCalendarOverlay, type CalendarOverlayMode } from "./calendar-renderers";
 import {
   loadCategoryColorPresets,
@@ -27,7 +40,6 @@ import {
 import { getDisplayDateRange, getDisplayModeIconDotCount, moveDisplayAnchorToCalendarMonth, shiftDisplayAnchor, type DisplayMode } from "./display-period";
 import {
   createVisibilitySafeSummaryLabel,
-  createVisibilitySafeTitleLabel,
   getReceiptTitle,
   renderBallDialog,
   renderReceiptDialog,
@@ -35,6 +47,7 @@ import {
   type DialogRenderContext,
 } from "./dialog-renderers";
 import {
+  renderEditableDescentItem,
   renderBallEditDialog,
   renderCreateForm,
   type FormRenderContext,
@@ -63,7 +76,6 @@ import {
   normalizeAppSettings,
   saveAppSettings,
   type AppSettings,
-  type BallLabelMode,
 } from "./settings";
 import { bindSettingsPanelEvents } from "./settings-panel-events";
 import {
@@ -100,6 +112,7 @@ import {
 const appRoot = getAppRoot();
 
 let ledger = loadLedger();
+let activityLog: ActivityLogEntry[] = loadActivityLog();
 let appSettings: AppSettings = loadAppSettings();
 const startupScreenState = createStartupScreenState(ledger.balls, todayIsoDate(), appSettings.startupScreen);
 let draft = createDefaultDraft(getPrimarySelfName(ledger));
@@ -117,6 +130,7 @@ let pendingJsonImport: JsonImportReview | null = null;
 let physicsStage: RapierStage | null = null;
 const physicsSnapshots = new Map<string, PhysicsBallSnapshot>();
 let openSettingsGroups: string[] = [];
+let activityLogHelpOpen = false;
 let rapierReady = false;
 let audioEngine: TinyImpactAudio;
 let deviceGravity: DeviceGravityController;
@@ -157,6 +171,7 @@ const SETTINGS_GROUP_CLASSES = [
   "tuning-panel",
   "backup-settings",
   "ball-management-panel",
+  "activity-log-panel",
   "app-about-panel",
 ];
 
@@ -290,8 +305,8 @@ function render(): void {
           <div class="world-actions" aria-label="操作">
             <button class="dock-symbol-button dock-create-button" type="button" data-open-panel="create" aria-label="玉を作る">＋</button>
             <span class="primary-screen-control-group" aria-label="主要3画面">
-              <button class="calendar-main-ball-button is-primary-active ${appSettings.ballLabelMode !== "none" ? "is-label-on" : ""}" type="button" data-cycle-ball-label-mode aria-label="${escapeHtml(renderBallLabelModeCycleAriaLabel())}">
-                <span class="calendar-main-ball-icon" aria-hidden="true"></span>
+              <button class="calendar-main-ball-button is-primary-active ${appSettings.ballLabelMode !== "none" ? "is-label-on" : ""}" type="button" data-cycle-ball-label-mode aria-label="${escapeHtml(renderBallLabelModeCycleAriaLabel(appSettings.ballLabelMode))}">
+                ${renderNextBallLabelModeIcon(appSettings.ballLabelMode)}
               </button>
               <button class="calendar-screen-button" type="button" data-open-panel="calendar" aria-label="カレンダー">
                 ${renderCalendarScreenIcon()}
@@ -349,11 +364,17 @@ function getToolsPanelRenderContext(): ToolsPanelRenderContext {
     appSettings,
     appVersion: __APP_VERSION__,
     categories: editableCategories,
+    activityLog,
     openSettingsGroups,
+    activityLogHelpOpen,
     nameBook: ledger.ownerProfile.nameBook,
     maxNameBookEntries: MAX_NAME_BOOK_ENTRIES,
     defaultSampleName: DEFAULT_SAMPLE_NAME,
   };
+}
+
+function appendActivity(input: Parameters<typeof recordActivity>[0]): void {
+  activityLog = recordActivity(input);
 }
 
 function readOpenSettingsGroups(): string[] {
@@ -431,20 +452,6 @@ function renderDisplayModeCycleIcon(mode: DisplayMode): string {
   `;
 }
 
-function renderBallLabelModeCycleAriaLabel(): string {
-  return `玉の文字表示: ${renderBallLabelModeName(appSettings.ballLabelMode)}。押すと${renderBallLabelModeName(nextBallLabelMode(appSettings.ballLabelMode))}に切り替え`;
-}
-
-function renderBallLabelModeName(mode: BallLabelMode): string {
-  if (mode === "date") {
-    return "日付";
-  }
-  if (mode === "title") {
-    return "題";
-  }
-  return "なし";
-}
-
 function renderActiveOverlay(): string {
   if (activeOverlay === "none") {
     return "";
@@ -461,6 +468,7 @@ function renderActiveOverlay(): string {
       selectedBallId,
       emotionEchoStrength: appSettings.emotionEchoStrength,
       calendarMarkerMode: appSettings.calendarMarkerMode,
+      activityLog,
     });
   }
 
@@ -473,7 +481,7 @@ function renderActiveOverlay(): string {
     const title = ledgerListDateFilter ? `${ledgerListDateFilter} の保存された玉` : "保存された玉";
     return renderPanelOverlay(
       title,
-      renderLedgerList(managedBalls, selectedBallId, { dateFilter: ledgerListDateFilter }),
+      renderLedgerList(managedBalls, selectedBallId, { dateFilter: ledgerListDateFilter, activityLog }),
       "list",
     );
   }
@@ -631,6 +639,10 @@ function showReceiptQrDialog(ballId: string, sendMode: SendMode = "formal"): voi
     return;
   }
   updateReceiptCreatedIndicators(ball);
+  appendActivity(createBallActivityInput(ball, {
+    action: "send-qr",
+    sendMode,
+  }));
 
   closeBallDialog();
   const root = document.createElement("div");
@@ -804,7 +816,8 @@ function hasEditDraftChanged(ball: HappyBall, next: BallDraft): boolean {
 }
 
 function hasEditFormChanged(ball: HappyBall, form: HTMLFormElement): boolean {
-  return hasEditDraftChanged(ball, readDraft(form)) || haveDescentRecordsChanged(ball.descents ?? [], readEditedDescentRecords(form));
+  const latestBall = ledger.balls.find((item) => item.id === ball.id) ?? ball;
+  return hasEditDraftChanged(ball, readDraft(form)) || haveDescentRecordsChanged(latestBall.descents ?? [], readEditedDescentRecords(form));
 }
 
 function haveDescentRecordsChanged(previous: NonNullable<HappyBall["descents"]>, next: NonNullable<HappyBall["descents"]>): boolean {
@@ -862,16 +875,6 @@ function expandVisualBalls(balls: HappyBall[]): VisualBallSource[] {
   });
 }
 
-function createBallDisplayLabel(ball: HappyBall, mode: BallLabelMode): string {
-  if (mode === "date") {
-    return formatBallDateLabel(ball.date);
-  }
-  if (mode === "title") {
-    return createVisibilitySafeTitleLabel(ball);
-  }
-  return "";
-}
-
 function createBallLabelClass(label: string): string {
   const length = Array.from(label).length;
   if (length <= 4) {
@@ -884,11 +887,6 @@ function createBallLabelClass(label: string): string {
     return "label-long";
   }
   return "label-xlong";
-}
-
-function formatBallDateLabel(date: string): string {
-  const [, month, day] = date.split("-");
-  return month && day ? `${Number(month)}/${Number(day)}` : date;
 }
 
 function updateSelectedState(): void {
@@ -962,6 +960,12 @@ function bindEvents(): void {
 
   document.querySelector("[data-cycle-ball-label-mode]")?.addEventListener("click", () => {
     updateAppSettings({ ballLabelMode: nextBallLabelMode(appSettings.ballLabelMode) });
+    render();
+  });
+
+  document.querySelector("[data-toggle-activity-log-help]")?.addEventListener("click", () => {
+    activityLogHelpOpen = !activityLogHelpOpen;
+    openSettingsGroups = readOpenSettingsGroups();
     render();
   });
 
@@ -1110,13 +1114,19 @@ function bindEvents(): void {
     if (!confirm("保存された玉データをすべて消します。名前帳、アプリ設定、カテゴリ設定は残ります。実行しますか？")) {
       return;
     }
+    appendActivity({
+      action: "clear-ball-data",
+      message: `${ledger.balls.length}件`,
+    });
     ledger = clearBallData(ledger);
     selectedBallId = null;
     render();
   });
 
   document.querySelector("#export-json")?.addEventListener("click", () => {
-    exportSelectedJson({ ledger, appSettings, categories: editableCategories });
+    if (exportSelectedJson({ ledger, appSettings, categories: editableCategories, activityLog })) {
+      appendActivity({ action: "json-export" });
+    }
   });
 
   document.querySelector("#import-json")?.addEventListener("click", () => {
@@ -1208,6 +1218,11 @@ function bindLifecycleActionEvents(root: ParentNode = document): void {
         return;
       }
       rememberCalendarDayListScroll(button);
+      appendActivity(createBallActivityInput(target, {
+        action: "lifecycle-change",
+        previousLifecycleStatus: target.lifecycleStatus,
+        lifecycleStatus: status,
+      }));
       ledger = updateBallLifecycleStatus(ledger, id, status);
       selectedBallId = status === "offered" ? getVisibleBalls()[0]?.id ?? null : id;
       closeBallDialog();
@@ -1228,6 +1243,10 @@ function bindDeleteBallEvents(root: ParentNode = document): void {
         return;
       }
       rememberCalendarDayListScroll(button);
+      appendActivity(createBallActivityInput(target, {
+        action: "delete-ball",
+        ballSnapshot: createBallActivitySnapshot(target),
+      }));
       ledger = deleteBall(ledger, id);
       selectedBallId = getVisibleBalls()[0]?.id ?? ledger.balls[0]?.id ?? null;
       closeBallDialog();
@@ -1271,6 +1290,8 @@ function bindEditDescentEvents(root: ParentNode = document): void {
       writeDescentField(item, "accuracyMeters", "");
       writeDescentField(item, "distanceFromPreviousMeters", "");
       updateEditDescentGpsUi(item, null);
+      updateDescentActionFeedback(item, "GPSを削除しました");
+      recordEditDescentGpsActivity(item, "descent-gps-clear");
     });
   });
 }
@@ -1293,6 +1314,8 @@ async function updateEditDescentGps(item: HTMLElement, button: HTMLButtonElement
     writeDescentField(item, "accuracyMeters", String(input.accuracyMeters));
     writeDescentField(item, "distanceFromPreviousMeters", "");
     updateEditDescentGpsUi(item, input);
+    updateDescentActionFeedback(item, "GPS取得できました");
+    recordEditDescentGpsActivity(item, "descent-gps-update");
   } catch (error) {
     alert(`位置情報を取得できませんでした。時間をおいて、同じ降臨カードからもう一度GPS取得を試せます。\n${formatGeolocationError(error)}`);
   } finally {
@@ -1442,6 +1465,10 @@ function applyPendingJsonImport(): void {
     editableCategories = saveCategoryColorPresets(result.categories);
   }
 
+  appendActivity({
+    action: "json-import",
+    message: selectedSections.join(","),
+  });
   pendingJsonImport = null;
   activeOverlay = "none";
   render();
@@ -1468,13 +1495,43 @@ async function shareReceiptImage(ballId: string, sendMode: SendMode = "formal"):
       title: `えもい玉 ${receiptTitle}`,
       text: `${receiptTitle}です。`,
     });
+    appendActivity(createBallActivityInput(ball, {
+      action: "send-image-share",
+      sendMode,
+    }));
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       return;
     }
     downloadBlob(blob, fileName);
+    appendActivity(createBallActivityInput(ball, {
+      action: "send-image-download",
+      sendMode,
+      message: "共有不可のため画像保存",
+    }));
     alert("この端末では直接共有できなかったため、画像として保存しました。LINEで画像添付してください。");
   }
+}
+
+function updateDescentActionFeedback(item: HTMLElement, message: string): void {
+  const feedback = item.querySelector<HTMLElement>("[data-descent-action-feedback]");
+  if (feedback) {
+    feedback.textContent = message;
+  }
+}
+
+function recordEditDescentGpsActivity(item: HTMLElement, action: "descent-gps-update" | "descent-gps-clear"): void {
+  const form = item.closest<HTMLFormElement>("#ball-edit-form");
+  const ballId = form?.dataset.editingBallId;
+  const ball = ballId ? ledger.balls.find((entry) => entry.id === ballId) : null;
+  const sequence = readPositiveInteger(readDescentField(item, "sequence"), 1);
+  if (!ball) {
+    return;
+  }
+  appendActivity(createBallActivityInput(ball, {
+    action,
+    descentSequence: sequence,
+  }));
 }
 
 async function downloadReceiptImage(ballId: string, sendMode: SendMode = "formal"): Promise<void> {
@@ -1485,6 +1542,10 @@ async function downloadReceiptImage(ballId: string, sendMode: SendMode = "formal
 
   const blob = await createReceiptImageBlob(prepared.ball, getReceiptImageContext(), sendMode);
   downloadBlob(blob, createReceiptImageFileName(prepared.ball, sendMode));
+  appendActivity(createBallActivityInput(prepared.ball, {
+    action: "send-image-download",
+    sendMode,
+  }));
 }
 
 function getReceiptImageContext() {
@@ -1550,6 +1611,12 @@ function bindPendingUrlPacketEvents(): void {
     }
     const review = reviewPacketImport(pendingUrlPacket.packet, ledger.balls);
     ledger = importNewBalls(ledger, review.newItems);
+    for (const ball of review.newItems) {
+      appendActivity(createBallActivityInput(ball, {
+        action: "url-receive",
+        sendMode: pendingUrlPacket.packet.sendMode ?? "formal",
+      }));
+    }
     selectedBallId = review.newItems[0]?.id ?? selectedBallId;
     displayAnchorDate = review.newItems[0]?.date ?? displayAnchorDate;
     displayMode = "day";
@@ -1569,6 +1636,12 @@ function bindPendingUrlPacketEvents(): void {
       return;
     }
     ledger = importNewAndReplaceBalls(ledger, review.newItems, review.conflicts);
+    for (const ball of [...review.newItems, ...review.conflicts]) {
+      appendActivity(createBallActivityInput(ball, {
+        action: "url-replace-receive",
+        sendMode: pendingUrlPacket.packet.sendMode ?? "formal",
+      }));
+    }
     selectedBallId = review.newItems[0]?.id ?? review.conflicts[0]?.id ?? selectedBallId;
     displayAnchorDate = review.newItems[0]?.date ?? review.conflicts[0]?.date ?? displayAnchorDate;
     displayMode = "day";
@@ -1590,6 +1663,10 @@ async function copyBallUrl(ballId: string, sendMode: SendMode = "formal"): Promi
 
   const url = createPacketImportUrl(ball, window.location.href, sendMode);
   await copyTextWithFallback(url, "玉URLをコピーしました。");
+  appendActivity(createBallActivityInput(ball, {
+    action: "send-url",
+    sendMode,
+  }));
 }
 
 async function copyBallLineUrl(ballId: string, sendMode: SendMode = "formal"): Promise<void> {
@@ -1602,6 +1679,10 @@ async function copyBallLineUrl(ballId: string, sendMode: SendMode = "formal"): P
 
   const url = createLinePacketImportUrl(ball, window.location.href, sendMode);
   await copyTextWithFallback(url, "LINE用の玉URLをコピーしました。");
+  appendActivity(createBallActivityInput(ball, {
+    action: "send-line-url",
+    sendMode,
+  }));
 }
 
 function updateReceiptCreatedIndicators(ball: HappyBall): void {
@@ -1777,6 +1858,7 @@ async function requestDescendLocation(ball: HappyBall, sourceButton?: HTMLButton
     return;
   }
 
+  const editForm = sourceButton?.closest<HTMLFormElement>("#ball-edit-form") ?? null;
   const memo = window.prompt("降臨メモ（任意・80文字まで）", "") ?? "";
   pendingDescentBallIds.add(ball.id);
   updateDescentButtonsBusy(ball.id, true, sourceButton);
@@ -1800,6 +1882,15 @@ async function requestDescendLocation(ball: HappyBall, sourceButton?: HTMLButton
       return;
     }
     saveDescentResult(ball, result.ball);
+    appendActivity(createBallActivityInput(result.ball, {
+      action: "descent-create",
+      descentSequence: result.record.sequence,
+      message: hasDescentPosition(result.record) ? "GPS取得成功" : "位置未取得",
+    }));
+    if (editForm) {
+      updateEditDialogAfterNewDescent(editForm, result.record, `GPS取得できました / No.${result.record.sequence}を記録しました`);
+      return;
+    }
     const locationText = hasDescentPosition(result.record)
       ? `現在地: ${formatCoordinatesForUi(result.record.latitude, result.record.longitude)}`
       : "現在地: 位置未取得";
@@ -1811,21 +1902,79 @@ async function requestDescendLocation(ball: HappyBall, sourceButton?: HTMLButton
     if (!confirm(`位置情報を取得できませんでした。${detailText}\nGPSなしの仮降臨として、メモと星を残しますか？`)) {
       return;
     }
-    saveGpslessDescent(ball, memo);
+    saveGpslessDescent(ball, memo, editForm);
   } finally {
     pendingDescentBallIds.delete(ball.id);
     updateDescentButtonsBusy(ball.id, false, sourceButton);
   }
 }
 
-function saveGpslessDescent(ball: HappyBall, memo: string): void {
+function saveGpslessDescent(ball: HappyBall, memo: string, editForm: HTMLFormElement | null = null): void {
   const result = appendDescentToBall(ball, null, appSettings.descentMinDistanceMeters, memo);
   if (!result.ok) {
     return;
   }
   saveDescentResult(ball, result.ball);
+  appendActivity(createBallActivityInput(result.ball, {
+    action: "descent-create",
+    descentSequence: result.record.sequence,
+    message: "仮降臨",
+  }));
+  if (editForm) {
+    updateEditDialogAfterNewDescent(editForm, result.record, `仮降臨を記録しました / No.${result.record.sequence}`);
+    return;
+  }
   alert(`「${ball.title}」に第${result.record.sequence}回の仮降臨を記録しました。\n位置は後で編集画面から取得できます。`);
   render();
+}
+
+function updateEditDialogAfterNewDescent(form: HTMLFormElement, record: HappyBallDescentRecord, message: string): void {
+  let history = form.querySelector<HTMLElement>(".edit-descent-history");
+  if (!history) {
+    history = document.createElement("section");
+    history.className = "edit-descent-history";
+    history.setAttribute("aria-label", "降臨情報");
+    history.innerHTML = `
+      <div class="edit-descent-head">
+        <span class="descent-section-label">降臨情報</span>
+        <span class="edit-descent-feedback" data-edit-descent-feedback role="status" aria-live="polite"></span>
+      </div>
+    `;
+    form.querySelector(".edit-lifecycle-actions")?.insertAdjacentElement("afterend", history);
+  }
+
+  const primary = history.querySelector<HTMLElement>(":scope > [data-descent-edit-item]");
+  if (primary) {
+    let folded = history.querySelector<HTMLDetailsElement>(":scope > .edit-descent-more");
+    if (!folded) {
+      folded = document.createElement("details");
+      folded.className = "edit-descent-more";
+      folded.innerHTML = `<summary>ほかの降臨を見る（1回）</summary>`;
+      history.appendChild(folded);
+    } else {
+      const count = folded.querySelectorAll("[data-descent-edit-item]").length + 1;
+      const summary = folded.querySelector("summary");
+      if (summary) {
+        summary.textContent = `ほかの降臨を見る（${count}回）`;
+      }
+    }
+    folded.insertAdjacentElement("afterbegin", primary);
+  }
+
+  const head = history.querySelector<HTMLElement>(":scope > .edit-descent-head");
+  if (head) {
+    head.insertAdjacentHTML("afterend", renderEditableDescentItem(record));
+  } else {
+    history.insertAdjacentHTML("afterbegin", renderEditableDescentItem(record));
+  }
+  const newItem = history.querySelector<HTMLElement>(`[data-descent-id="${cssEscape(record.id)}"]`);
+  if (newItem) {
+    bindEditDescentEvents(newItem);
+  }
+  const feedback = history.querySelector<HTMLElement>("[data-edit-descent-feedback]");
+  if (feedback) {
+    feedback.textContent = message;
+  }
 }
 
 function saveDescentResult(previousBall: HappyBall, nextBall: HappyBall): void {
@@ -1907,14 +2056,8 @@ function formatCoordinatesForUi(latitude: number, longitude: number): string {
   return `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
 }
 
-function nextBallLabelMode(mode: BallLabelMode): BallLabelMode {
-  if (mode === "none") {
-    return "date";
-  }
-  if (mode === "date") {
-    return "title";
-  }
-  return "none";
+function cssEscape(value: string): string {
+  return typeof CSS !== "undefined" && CSS.escape ? CSS.escape(value) : value.replace(/["\\]/g, "\\$&");
 }
 
 function nextDisplayMode(mode: DisplayMode): DisplayMode {

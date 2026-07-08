@@ -115,6 +115,20 @@ if (gpsless.ok) {
     assertEqual(backfilled.ball.descents?.length, 1, "GPS backfill should not add another descent record");
     assertEqual(backfilled.ball.descentBadgeCount, 1, "GPS backfill should not add another badge");
     assertEqual(hasDescentPosition(backfilled.record), true, "GPS backfill should add coordinates");
+
+    const cleared = updateDescentRecordPosition(
+      backfilled.ball,
+      backfilled.record.id,
+      null,
+      "2026-07-06T13:10:00.000Z",
+    );
+    assert(cleared.ok, "GPS clear should update the existing descent record");
+    if (cleared.ok) {
+      assertEqual(cleared.record.sequence, 1, "GPS clear should keep the same sequence");
+      assertEqual(cleared.ball.descents?.length, 1, "GPS clear should not add another descent record");
+      assertEqual(cleared.ball.descentBadgeCount, 1, "GPS clear should not add another badge");
+      assertEqual(hasDescentPosition(cleared.record), false, "GPS clear should remove coordinates");
+    }
   }
 }
 
@@ -154,6 +168,7 @@ const provisionalBetween = appendDescentToBall(
 assert(provisionalBetween.ok, "GPS-less descent between positioned descents should succeed");
 if (provisionalBetween.ok) {
   gpslessBetweenPositioned = provisionalBetween.ball;
+  assertEqual(gpslessBetweenPositioned.descents?.[gpslessBetweenPositioned.descents.length - 1]?.sequence, 2, "latest descent should have the highest sequence");
   const nearbyAfterGpsless = appendDescentToBall(
     gpslessBetweenPositioned,
     { latitude: 35.6815, longitude: 139.7673, accuracyMeters: 10 },

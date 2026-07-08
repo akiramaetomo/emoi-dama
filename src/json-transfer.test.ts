@@ -67,11 +67,22 @@ const newBall: HappyBall = {
 };
 
 const exportPayload = createExportPayload(
-  ["ledger", "appSettings"],
+  ["ledger", "appSettings", "activityLog"],
   {
     ledger: existingLedger,
     appSettings: DEFAULT_APP_SETTINGS,
     categories: categoryColorPresets,
+    activityLog: [
+      {
+        id: "activity_1",
+        recordedAt: "2026-06-29T12:00:00.000Z",
+        action: "url-receive",
+        status: "success",
+        ballId: sampleBall.id,
+        title: sampleBall.title,
+        sendMode: "casual",
+      },
+    ],
   },
   "2026-06-29T12:34:56.000Z",
 );
@@ -80,10 +91,12 @@ assertEqual(exportPayload.exportedAt, "2026-06-29T12:34:56.000Z", "export payloa
 assertEqual(Boolean(exportPayload.ledger), true, "export payload should include selected ledger data");
 assertEqual(Boolean(exportPayload.appSettings), true, "export payload should include selected settings data");
 assertEqual(Boolean(exportPayload.categories), false, "export payload should omit unselected category data");
+assertEqual(Boolean(exportPayload.activityLog), true, "export payload should include selected activity log data");
 
 const fileName = createExportFileName(["ledger", "categories"], "2026-06-29T12:34:56.000Z");
 assertEqual(fileName, "emoi-dama-export-ledger-categories-20260629-123456.json", "export file name should be deterministic");
 assert(isExportSection("appSettings"), "valid export section should be accepted");
+assert(isExportSection("activityLog"), "activity log should be a valid export section");
 assert(!isExportSection("settings"), "invalid export section should be rejected");
 
 const importReview = reviewJsonImport({

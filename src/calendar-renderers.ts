@@ -1,3 +1,4 @@
+import { findLatestBallSendMode, formatSendModeLabel, type ActivityLogEntry } from "./activity-log.js";
 import { formatBallDateTime, type HappyBall } from "./models.js";
 import type { DisplayMode } from "./display-period";
 import type { CalendarMarkerMode, EmotionEchoStrength } from "./settings";
@@ -17,6 +18,7 @@ export interface CalendarRenderContext {
   selectedDate: string;
   emotionEchoStrength: EmotionEchoStrength;
   calendarMarkerMode: CalendarMarkerMode;
+  activityLog: ActivityLogEntry[];
 }
 
 export function renderCalendarOverlay(context: CalendarRenderContext): string {
@@ -116,6 +118,7 @@ function renderCalendarDayListItem(ball: HappyBall, context: CalendarRenderConte
           <strong>${escapeHtml(ball.title)}</strong>
           <span>${escapeHtml(renderCalendarBallMeta(ball))} / ${escapeHtml(renderLifecycleLabel(ball.lifecycleStatus))}</span>
         </div>
+        <p class="calendar-day-ball-relation">${escapeHtml(renderCalendarBallRelationMeta(ball, context.activityLog))}</p>
         <p class="calendar-day-ball-time">${escapeHtml(formatBallDateTime(ball.date, ball.time))}</p>
         <p class="calendar-day-ball-memo ${ball.note.trim() ? "" : "is-empty"}">${escapeHtml(ball.note.trim() || "メモなし")}</p>
       </div>
@@ -171,6 +174,15 @@ function renderCalendarBallMeta(ball: HappyBall): string {
     return ball.category;
   }
   return `${ball.category}／${ball.emotionEcho.category}`;
+}
+
+function renderCalendarBallRelationMeta(ball: HappyBall, activityLog: ActivityLogEntry[]): string {
+  const sendMode = findLatestBallSendMode(activityLog, ball.id);
+  const parts = [`発行者: ${ball.issuedBy}`];
+  if (sendMode) {
+    parts.push(`送り手段: ${formatSendModeLabel(sendMode)}`);
+  }
+  return parts.join(" / ");
 }
 
 function renderCalendarControlDock(context: CalendarRenderContext): string {

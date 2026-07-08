@@ -224,6 +224,7 @@ function renderEditableDescentHistory(ball: HappyBall): string {
     <section class="edit-descent-history" aria-label="降臨情報">
       <div class="edit-descent-head">
         <span class="descent-section-label">降臨情報</span>
+        <span class="edit-descent-feedback" data-edit-descent-feedback role="status" aria-live="polite"></span>
       </div>
       ${primary ? renderEditableDescentItem(primary) : ""}
       ${folded.length > 0 ? `
@@ -236,7 +237,7 @@ function renderEditableDescentHistory(ball: HappyBall): string {
   `;
 }
 
-function renderEditableDescentItem(record: NonNullable<HappyBall["descents"]>[number]): string {
+export function renderEditableDescentItem(record: NonNullable<HappyBall["descents"]>[number]): string {
   const hasPosition = hasDescentPosition(record);
   const latitude = hasPosition ? String(record.latitude) : "";
   const longitude = hasPosition ? String(record.longitude) : "";
@@ -267,6 +268,7 @@ function renderEditableDescentItem(record: NonNullable<HappyBall["descents"]>[nu
       <div class="edit-descent-actions">
         <button class="ghost-action" type="button" data-descent-gps-record-id="${escapeAttribute(record.id)}">${hasPosition ? "GPS再取得" : "GPS取得"}</button>
         <button class="ghost-action" type="button" data-descent-clear-gps-record-id="${escapeAttribute(record.id)}"${hasPosition ? "" : " disabled"}>GPS削除</button>
+        <span class="edit-descent-action-feedback" data-descent-action-feedback role="status" aria-live="polite"></span>
       </div>
     </article>
   `;

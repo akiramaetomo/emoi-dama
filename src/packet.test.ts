@@ -62,6 +62,7 @@ const casualImportUrl = createPacketImportUrl(sampleBall, "https://example.test/
 const parsedCasual = parsePacketHash(new URL(casualImportUrl).hash);
 assertOk(parsedCasual, "casual import URL should parse");
 assertEqual(parsedCasual.packet.sendMode, "casual", "casual import URL should preserve send mode");
+assertEqual("activityLog" in parsedCasual.packet, false, "packet payloads should not include local activity logs");
 
 const casualLineImportUrl = createLinePacketImportUrl(sampleBall, "https://example.test/happy-ball/", "casual");
 const parsedCasualLine = parsePacketQuery(new URL(casualLineImportUrl).search);

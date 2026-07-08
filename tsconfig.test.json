@@ -9,6 +9,10 @@
   "include": [
     "src/categories.ts",
     "src/categories.test.ts",
+    "src/activity-log.ts",
+    "src/activity-log.test.ts",
+    "src/ball-labels.ts",
+    "src/ball-labels.test.ts",
     "src/calendar-renderers.ts",
     "src/calendar-renderers.test.ts",
     "src/display-period.ts",

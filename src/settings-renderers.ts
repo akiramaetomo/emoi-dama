@@ -1,4 +1,5 @@
 import { toneLabels, type CategoryColorPreset, type CategoryTone } from "./categories.js";
+import { findLatestBallSendMode, formatActivityActionLabel, formatSendModeLabel, type ActivityLogEntry } from "./activity-log.js";
 import { renderOptions } from "./form-renderers.js";
 import { issuerLabels, type HappyBall, type LifecycleStatus, type NameBookEntry, type NameRole } from "./models.js";
 import type { AppSettings, BackgroundTexture, EmotionEchoStrength, StartupScreen } from "./settings.js";
@@ -8,7 +9,9 @@ export interface ToolsPanelRenderContext {
   appVersion: string;
   categories: CategoryColorPreset[];
   openSettingsGroups: string[];
+  activityLogHelpOpen: boolean;
   nameBook: NameBookEntry[];
+  activityLog: ActivityLogEntry[];
   maxNameBookEntries: number;
   defaultSampleName: string;
 }
@@ -28,6 +31,7 @@ const lifecycleLabels: Record<LifecycleStatus, string> = {
 export interface LedgerListRenderOptions {
   dateFilter: string | null;
   emptyCopy?: string;
+  activityLog?: ActivityLogEntry[];
   showAllControl?: boolean;
   showScope?: boolean;
 }
@@ -169,6 +173,10 @@ export function renderToolsPanel(context: ToolsPanelRenderContext): string {
             <input type="checkbox" name="export-section" value="categories" />
             <span>カテゴリ設定</span>
           </label>
+          <label class="inline-toggle">
+            <input type="checkbox" name="export-section" value="activityLog" />
+            <span>操作ログ</span>
+          </label>
         </div>
         <div class="settings-group-actions">
           <button id="export-json" class="primary-action" type="button">書き出し</button>
@@ -188,6 +196,15 @@ export function renderToolsPanel(context: ToolsPanelRenderContext): string {
         <div class="ball-data-clear-zone">
           <button class="danger-action ball-data-clear-action" id="clear-ball-data" type="button">玉データを空にする</button>
         </div>
+      </details>
+
+      <details class="settings-group activity-log-panel"${renderDetailsOpen(context, "activity-log-panel")}>
+        <summary class="panel-title">
+          <h2>操作ログ</h2>
+        </summary>
+        <p class="settings-copy">受領、送付準備、お焚上、降臨など、原因調査に必要な最近の操作だけをこの端末に残します。</p>
+        ${renderActivityLogHelp(context.activityLogHelpOpen)}
+        ${renderActivityLogList(context.activityLog)}
       </details>
 
       <details class="settings-group app-about-panel"${renderDetailsOpen(context, "app-about-panel")}>
@@ -246,6 +263,7 @@ export function renderLedgerList(
                   <span>${escapeHtml(ball.date)} / ${escapeHtml(ball.subject)}</span>
                   <strong>${escapeHtml(ball.title)}</strong>
                   <small>${escapeHtml(issuerLabels[ball.issuerType])} / ${escapeHtml(ball.category)} / ${escapeHtml(lifecycleLabels[ball.lifecycleStatus])}${renderLedgerDescentText(ball)}</small>
+                  <small>${escapeHtml(renderLedgerRelationshipMeta(ball, options.activityLog ?? []))}</small>
                 </span>
               </button>
               <div class="ledger-actions">
@@ -272,6 +290,76 @@ function renderLedgerDescentText(ball: HappyBall): string {
     return "";
   }
   return count > 0 ? ` / 降臨${count}回` : ` / ${badges}星`;
+}
+
+function renderLedgerRelationshipMeta(ball: HappyBall, activityLog: ActivityLogEntry[]): string {
+  const sendMode = findLatestBallSendMode(activityLog, ball.id);
+  const parts = [`発行者: ${ball.issuedBy}`];
+  if (sendMode) {
+    parts.push(`送り手段: ${formatSendModeLabel(sendMode)}`);
+  }
+  return parts.join(" / ");
+}
+
+function renderActivityLogList(entries: ActivityLogEntry[]): string {
+  if (entries.length === 0) {
+    return `<p class="empty-copy">まだ操作ログはありません。</p>`;
+  }
+  return `
+    <div class="activity-log-list">
+      ${entries.slice(0, 30).map((entry) => `
+        <article class="activity-log-item">
+          <strong>${escapeHtml(formatActivityActionLabel(entry.action))}${entry.status === "failure" ? "（失敗）" : ""}</strong>
+          <span>${escapeHtml(formatActivityLogTime(entry.recordedAt))}${entry.sendMode ? ` / ${escapeHtml(formatSendModeLabel(entry.sendMode))}` : ""}</span>
+          <small>${escapeHtml(renderActivityLogSummary(entry))}</small>
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderActivityLogHelp(isOpen: boolean): string {
+  return `
+    <div class="feature-help activity-log-help">
+      <button class="feature-help-button" type="button" data-toggle-activity-log-help aria-label="操作ログの簡易仕様を見る" aria-expanded="${isOpen ? "true" : "false"}" aria-controls="activity-log-help-body">
+        <span class="feature-help-mark" aria-hidden="true">?</span>
+      </button>
+      ${isOpen ? `<div id="activity-log-help-body" class="feature-help-body">
+        <p>操作ログは、受領、送付準備、JSON読み書き、しまう・供養・お焚上、降臨/GPS操作など、原因調査に必要な操作をこの端末だけに残します。</p>
+        <p>玉を置くだけの通常作成は、現在は操作ログに記録しません。</p>
+        <p>バックアップJSONには「操作ログ」を選んだ場合だけ含めます。URL、LINE、QRで渡す1玉データには含めません。</p>
+      </div>` : ""}
+    </div>
+  `;
+}
+
+function renderActivityLogSummary(entry: ActivityLogEntry): string {
+  const title = entry.title || entry.ballSnapshot?.title || entry.ballId || "対象なし";
+  const issuer = entry.issuedBy || entry.ballSnapshot?.issuedBy;
+  const parts = [title];
+  if (issuer) {
+    parts.push(`発行者: ${issuer}`);
+  }
+  if (entry.descentSequence) {
+    parts.push(`No.${entry.descentSequence}`);
+  }
+  if (entry.message) {
+    parts.push(entry.message);
+  }
+  return parts.join(" / ");
+}
+
+function formatActivityLogTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hours}:${minutes}`;
 }
 
 function renderCompactDescentBadge(ball: HappyBall): string {
