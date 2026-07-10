@@ -1,8 +1,15 @@
-import RAPIER, { type RigidBody, type World } from "@dimforge/rapier2d-compat";
+import RAPIER, { type Collider, type RigidBody, type World } from "@dimforge/rapier2d-compat";
+import { createGlobalMotionTuning, type MotionTuning } from "./motion-tuning.js";
 import type { AppSettings } from "./settings.js";
 
 const BALL_TAP_MAX_MS = 520;
 const BALL_TAP_MOVE_PX = 10;
+const BALL_DRAG_START_PX = 0;
+const WALL_COLLISION_COOLDOWN_MS = 140;
+const PHYSICS_TIMESTEP_SECONDS = 1 / 60;
+const PHYSICS_TIMESTEP_MS = 1000 / 60;
+const MAX_PHYSICS_FRAME_DELTA_MS = 100;
+const MAX_PHYSICS_STEPS_PER_FRAME = 4;
 
 export interface VisualBallSource {
   id: string;
@@ -37,6 +44,27 @@ export interface ImpactEvent {
 }
 
 export type GravityVector = { x: number; y: number };
+export type WallImpactSide = "left" | "right" | "top" | "bottom";
+
+export interface WallImpactCandidate {
+  side: WallImpactSide;
+  energy: number;
+}
+
+export interface PhysicsStepSchedule {
+  steps: number;
+  accumulatorMs: number;
+}
+
+export interface MutableBallCollider {
+  setRestitution(value: number): void;
+  setFriction(value: number): void;
+}
+
+export interface BallColliderSettings {
+  contactRestitution: number;
+  friction: number;
+}
 
 export interface ImpactAudio {
   unlock(): void;
@@ -45,6 +73,7 @@ export interface ImpactAudio {
 
 interface RapierBall extends VisualBallSource {
   body: RigidBody;
+  collider: Collider;
   radius: number;
   element: HTMLButtonElement;
 }
@@ -54,7 +83,10 @@ export class RapierStage {
   private readonly balls: RapierBall[] = [];
   private readonly resizeObserver: ResizeObserver;
   private readonly collisionCooldown = new Map<string, number>();
+  private readonly wallCollisionCooldown = new Map<string, number>();
   private animationId = 0;
+  private lastTickTimeMs: number | null = null;
+  private physicsAccumulatorMs = 0;
   private width = 0;
   private height = 0;
   private dragging: RapierBall | null = null;
@@ -62,10 +94,10 @@ export class RapierStage {
   private dragVelocity = { x: 0, y: 0 };
   private lastPointer: { x: number; y: number; time: number } | null = null;
   private tapStart: { x: number; y: number; time: number; ball: RapierBall } | null = null;
-  private movedBeyondTap = false;
   private dragActive = false;
   private heldBallMotion: { position: { x: number; y: number }; linvel: { x: number; y: number }; angvel: number } | null = null;
   private gravityVector: GravityVector = { x: 0, y: 0 };
+  private motionTuning: MotionTuning;
   private disposed = false;
 
   constructor(
@@ -77,7 +109,8 @@ export class RapierStage {
     private readonly audio: ImpactAudio,
   ) {
     this.world = new RAPIER.World({ x: 0, y: 0 });
-    this.world.timestep = 1 / 60;
+    this.motionTuning = createGlobalMotionTuning(settings);
+    this.world.timestep = PHYSICS_TIMESTEP_SECONDS;
     this.resizeObserver = new ResizeObserver(() => {
       if (!this.disposed) {
         this.updateBounds();
@@ -89,12 +122,17 @@ export class RapierStage {
     this.field.addEventListener("pointermove", this.handlePointerMove);
     this.field.addEventListener("pointerup", this.handlePointerUp);
     this.field.addEventListener("pointercancel", this.handlePointerUp);
+    this.field.addEventListener("selectstart", this.preventPlaySelection);
+    this.field.addEventListener("dragstart", this.preventPlaySelection);
+    this.field.addEventListener("contextmenu", this.preventPlaySelection);
   }
 
   start(): void {
     if (this.disposed || this.balls.length === 0) {
       return;
     }
+    this.lastTickTimeMs = null;
+    this.physicsAccumulatorMs = 0;
     this.animationId = requestAnimationFrame(this.tick);
   }
 
@@ -109,6 +147,9 @@ export class RapierStage {
     this.field.removeEventListener("pointermove", this.handlePointerMove);
     this.field.removeEventListener("pointerup", this.handlePointerUp);
     this.field.removeEventListener("pointercancel", this.handlePointerUp);
+    this.field.removeEventListener("selectstart", this.preventPlaySelection);
+    this.field.removeEventListener("dragstart", this.preventPlaySelection);
+    this.field.removeEventListener("contextmenu", this.preventPlaySelection);
     this.safeFreeWorld();
   }
 
@@ -117,6 +158,7 @@ export class RapierStage {
       return;
     }
     this.settings = settings;
+    this.motionTuning = createGlobalMotionTuning(settings);
     if (!settings.gravityEnabled) {
       this.setGravityVector({ x: 0, y: 0 });
     }
@@ -124,8 +166,12 @@ export class RapierStage {
       ball.radius = settings.radius;
       ball.element.style.width = `${ball.radius * 2}px`;
       ball.element.style.height = `${ball.radius * 2}px`;
-      ball.body.setLinearDamping(settings.linearDamping);
+      ball.body.setLinearDamping(this.motionTuning.linearDamping);
       ball.body.setAngularDamping(settings.angularDamping);
+      applyBallColliderSettings(ball.collider, {
+        contactRestitution: this.motionTuning.contactRestitution,
+        friction: settings.friction,
+      });
     }
   }
 
@@ -164,8 +210,11 @@ export class RapierStage {
     this.balls.length = 0;
     this.safeFreeWorld();
     this.world = new RAPIER.World({ x: 0, y: 0 });
-    this.world.timestep = 1 / 60;
+    this.world.timestep = PHYSICS_TIMESTEP_SECONDS;
+    this.lastTickTimeMs = null;
+    this.physicsAccumulatorMs = 0;
     this.collisionCooldown.clear();
+    this.wallCollisionCooldown.clear();
 
     if (sources.length === 0) {
       this.field.innerHTML = `<div class="empty-state" aria-hidden="true"></div>`;
@@ -188,7 +237,6 @@ export class RapierStage {
     this.dragVelocity = { x: 0, y: 0 };
     this.lastPointer = null;
     this.tapStart = null;
-    this.movedBeyondTap = false;
     this.dragActive = false;
     this.heldBallMotion = null;
   }
@@ -220,13 +268,13 @@ export class RapierStage {
           .setRotation(snapshot?.rotation ?? 0)
           .setLinvel(startLinvel.x, startLinvel.y)
           .setAngularDamping(this.settings.angularDamping)
-          .setLinearDamping(this.settings.linearDamping)
+          .setLinearDamping(this.motionTuning.linearDamping)
           .setCanSleep(false)
           .setCcdEnabled(true),
       );
-      this.world.createCollider(
+      const collider = this.world.createCollider(
         RAPIER.ColliderDesc.ball(radius)
-          .setRestitution(this.settings.contactRestitution)
+          .setRestitution(this.motionTuning.contactRestitution)
           .setFriction(this.settings.friction)
           .setDensity(0.7),
         body,
@@ -237,6 +285,7 @@ export class RapierStage {
 
       const element = document.createElement("button");
       element.type = "button";
+      element.draggable = false;
       element.tabIndex = -1;
       element.className = `physics-ball ${source.labelClass} lifecycle-${source.lifecycleStatus} ${source.visualKind === "ring" ? "is-ring-ball" : "is-filled-ball"}${source.echo ? ` has-echo echo-${this.settings.emotionEchoStrength}` : ""}${source.descentBadgeCount > 0 ? " has-descent-badges" : ""}${source.isKamiBall ? " is-kami-ball" : ""}`;
       element.dataset.visualBallId = source.id;
@@ -261,23 +310,30 @@ export class RapierStage {
         <span class="ball-label">${escapeHtml(source.label)}</span>
       `;
       this.field.appendChild(element);
-      this.balls.push({ ...source, body, radius, element });
+      this.balls.push({ ...source, body, collider, radius, element });
     });
     this.paint();
   }
 
-  private readonly tick = (): void => {
+  private readonly tick = (timestampMs: number): void => {
     if (this.disposed) {
       return;
     }
     try {
-      this.world.gravity = this.settings.gravityEnabled ? this.gravityVector : { x: 0, y: 0 };
-      this.world.step();
-      const impacts = [
-        ...this.containBalls(),
-        ...this.resolveBallOverlaps(),
-        ...this.detectContactImpacts(),
-      ];
+      const previousTimestampMs = this.lastTickTimeMs ?? timestampMs - PHYSICS_TIMESTEP_MS;
+      this.lastTickTimeMs = timestampMs;
+      const schedule = scheduleFixedPhysicsSteps(this.physicsAccumulatorMs, timestampMs - previousTimestampMs);
+      this.physicsAccumulatorMs = schedule.accumulatorMs;
+      const impacts: ImpactEvent[] = [];
+      for (let step = 0; step < schedule.steps; step += 1) {
+        this.world.gravity = this.settings.gravityEnabled ? this.gravityVector : { x: 0, y: 0 };
+        this.world.step();
+        impacts.push(
+          ...this.containBalls(),
+          ...this.resolveBallOverlaps(),
+          ...this.detectContactImpacts(),
+        );
+      }
       this.audio.play(impacts, this.settings);
       this.paint();
       if (!this.disposed) {
@@ -290,6 +346,7 @@ export class RapierStage {
   };
 
   private containBalls(): ImpactEvent[] {
+    const now = performance.now();
     const impacts: ImpactEvent[] = [];
 
     for (const ball of this.balls) {
@@ -311,26 +368,33 @@ export class RapierStage {
 
       if (outX) {
         nextVx = position.x < nextX
-          ? Math.abs(nextVx) * this.settings.wallRestitution
-          : -Math.abs(nextVx) * this.settings.wallRestitution;
+          ? Math.abs(nextVx) * this.motionTuning.wallRestitution
+          : -Math.abs(nextVx) * this.motionTuning.wallRestitution;
       }
 
       if (outY) {
         nextVy = position.y < nextY
-          ? Math.abs(nextVy) * this.settings.wallRestitution
-          : -Math.abs(nextVy) * this.settings.wallRestitution;
+          ? Math.abs(nextVy) * this.motionTuning.wallRestitution
+          : -Math.abs(nextVy) * this.motionTuning.wallRestitution;
       }
 
       if (outX || outY) {
+        const wallImpacts = findWallImpactCandidates(position, velocity, ball.radius, this.width, this.height);
         ball.body.setTranslation({ x: nextX, y: nextY }, true);
         ball.body.setLinvel(this.limitVelocity({ x: nextVx, y: nextVy }), true);
-        if (speed > this.settings.soundThreshold) {
-          impacts.push({ kind: "wall", energy: speed });
+
+        for (const impact of wallImpacts) {
+          const key = `${ball.id}:${impact.side}`;
+          if (impact.energy <= this.settings.soundThreshold || (this.wallCollisionCooldown.get(key) ?? 0) > now) {
+            continue;
+          }
+          impacts.push({ kind: "wall", energy: impact.energy });
+          this.wallCollisionCooldown.set(key, now + WALL_COLLISION_COOLDOWN_MS);
         }
         continue;
       }
 
-      if (speed > this.settings.maxSpeed) {
+      if (speed > this.motionTuning.maxSpeed) {
         ball.body.setLinvel(this.limitVelocity(velocity), true);
       }
     }
@@ -409,7 +473,7 @@ export class RapierStage {
         const vb = b.body.linvel();
         const relativeNormalSpeed = ((va.x - vb.x) * normal.x) + ((va.y - vb.y) * normal.y);
         if (relativeNormalSpeed > 0) {
-          const impulse = relativeNormalSpeed * this.settings.contactRestitution;
+          const impulse = relativeNormalSpeed * this.motionTuning.contactRestitution;
           if (!aDragging) {
             a.body.setLinvel(this.limitVelocity({ x: va.x - normal.x * impulse * 0.5, y: va.y - normal.y * impulse * 0.5 }), true);
           }
@@ -440,10 +504,10 @@ export class RapierStage {
 
   private limitVelocity(velocity: { x: number; y: number }): { x: number; y: number } {
     const speed = Math.hypot(velocity.x, velocity.y);
-    if (speed <= this.settings.maxSpeed || speed === 0) {
+    if (speed <= this.motionTuning.maxSpeed || speed === 0) {
       return velocity;
     }
-    const scale = this.settings.maxSpeed / speed;
+    const scale = this.motionTuning.maxSpeed / speed;
     return {
       x: velocity.x * scale,
       y: velocity.y * scale,
@@ -459,12 +523,12 @@ export class RapierStage {
   }
 
   private readonly handlePointerDown = (event: PointerEvent): void => {
-    const point = this.pointerPoint(event);
-    const target = this.findBall(point.x, point.y);
+    const target = this.findBallFromTarget(event.target);
     if (!target) {
       return;
     }
 
+    const point = this.pointerPoint(event);
     event.preventDefault();
     this.audio.unlock();
     this.dragging = target;
@@ -475,7 +539,6 @@ export class RapierStage {
     this.dragVelocity = { x: 0, y: 0 };
     this.lastPointer = { x: position.x, y: position.y, time: now };
     this.tapStart = { x: point.x, y: point.y, time: now, ball: target };
-    this.movedBeyondTap = false;
     this.heldBallMotion = {
       position: { x: position.x, y: position.y },
       linvel: { x: velocity.x, y: velocity.y },
@@ -483,6 +546,10 @@ export class RapierStage {
     };
     this.field.setPointerCapture(event.pointerId);
     this.onSelect(target.ballId);
+  };
+
+  private readonly preventPlaySelection = (event: Event): void => {
+    event.preventDefault();
   };
 
   private readonly handlePointerMove = (event: PointerEvent): void => {
@@ -495,11 +562,8 @@ export class RapierStage {
     const now = performance.now();
     const x = clamp(point.x + this.dragOffset.x, this.dragging.radius, this.width - this.dragging.radius);
     const y = clamp(point.y + this.dragOffset.y, this.dragging.radius, this.height - this.dragging.radius);
-    if (this.tapStart && Math.hypot(point.x - this.tapStart.x, point.y - this.tapStart.y) > BALL_TAP_MOVE_PX) {
-      this.movedBeyondTap = true;
-    }
-
-    if (!this.movedBeyondTap) {
+    const pointerTravel = this.tapStart ? Math.hypot(point.x - this.tapStart.x, point.y - this.tapStart.y) : Infinity;
+    if (pointerTravel <= BALL_DRAG_START_PX) {
       return;
     }
 
@@ -515,8 +579,8 @@ export class RapierStage {
     if (this.lastPointer) {
       const dt = Math.max(0.016, (now - this.lastPointer.time) / 1000);
       this.dragVelocity = this.limitVelocity({
-        x: ((x - this.lastPointer.x) / dt) * this.settings.flickPower,
-        y: ((y - this.lastPointer.y) / dt) * this.settings.flickPower,
+        x: ((x - this.lastPointer.x) / dt) * this.motionTuning.flickPower,
+        y: ((y - this.lastPointer.y) / dt) * this.motionTuning.flickPower,
       });
     }
 
@@ -535,25 +599,25 @@ export class RapierStage {
     const tapDistance = this.tapStart ? Math.hypot(point.x - this.tapStart.x, point.y - this.tapStart.y) : Infinity;
     const isTap = event.type !== "pointercancel"
       && this.tapStart?.ball === released
-      && !this.movedBeyondTap
       && tapDistance <= BALL_TAP_MOVE_PX
       && now - this.tapStart.time <= BALL_TAP_MAX_MS;
     if (this.dragActive) {
       released.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
-      released.body.setLinvel(this.limitVelocity(this.dragVelocity), true);
-      released.body.setAngvel(this.dragVelocity.x / Math.max(released.radius, 1), true);
       released.element.classList.remove("is-dragging");
-    } else if (isTap && this.heldBallMotion) {
+    }
+    if (isTap && this.heldBallMotion) {
       released.body.setTranslation(this.heldBallMotion.position, true);
       released.body.setLinvel(this.limitVelocity(this.heldBallMotion.linvel), true);
       released.body.setAngvel(this.heldBallMotion.angvel, true);
+    } else if (this.dragActive) {
+      released.body.setLinvel(this.limitVelocity(this.dragVelocity), true);
+      released.body.setAngvel(this.dragVelocity.x / Math.max(released.radius, 1), true);
     }
     this.dragging = null;
     this.dragOffset = { x: 0, y: 0 };
     this.dragVelocity = { x: 0, y: 0 };
     this.lastPointer = null;
     this.tapStart = null;
-    this.movedBeyondTap = false;
     this.dragActive = false;
     this.heldBallMotion = null;
     if (this.field.hasPointerCapture(event.pointerId)) {
@@ -573,19 +637,61 @@ export class RapierStage {
     };
   }
 
-  private findBall(x: number, y: number): RapierBall | null {
-    let best: RapierBall | null = null;
-    let bestDistance = Number.POSITIVE_INFINITY;
-    for (const ball of this.balls) {
-      const position = ball.body.translation();
-      const distance = Math.hypot(position.x - x, position.y - y);
-      if (distance <= ball.radius && distance < bestDistance) {
-        best = ball;
-        bestDistance = distance;
-      }
+  private findBallFromTarget(target: EventTarget | null): RapierBall | null {
+    if (!(target instanceof Element)) {
+      return null;
     }
-    return best;
+    const element = target.closest<HTMLElement>(".physics-ball");
+    const visualBallId = element?.dataset.visualBallId;
+    return this.balls.find((ball) => ball.id === visualBallId) ?? null;
   }
+}
+
+export function findWallImpactCandidates(
+  position: { x: number; y: number },
+  velocity: { x: number; y: number },
+  radius: number,
+  width: number,
+  height: number,
+): WallImpactCandidate[] {
+  const impacts: WallImpactCandidate[] = [];
+
+  if (position.x < radius) {
+    impacts.push({ side: "left", energy: Math.max(0, -velocity.x) });
+  } else if (position.x > width - radius) {
+    impacts.push({ side: "right", energy: Math.max(0, velocity.x) });
+  }
+
+  if (position.y < radius) {
+    impacts.push({ side: "top", energy: Math.max(0, -velocity.y) });
+  } else if (position.y > height - radius) {
+    impacts.push({ side: "bottom", energy: Math.max(0, velocity.y) });
+  }
+
+  return impacts;
+}
+
+export function scheduleFixedPhysicsSteps(accumulatorMs: number, elapsedMs: number): PhysicsStepSchedule {
+  const safeAccumulatorMs = Number.isFinite(accumulatorMs) ? Math.max(0, accumulatorMs) : 0;
+  const safeElapsedMs = Number.isFinite(elapsedMs)
+    ? clamp(elapsedMs, 0, MAX_PHYSICS_FRAME_DELTA_MS)
+    : 0;
+  let nextAccumulatorMs = safeAccumulatorMs + safeElapsedMs;
+  const steps = Math.min(Math.floor(nextAccumulatorMs / PHYSICS_TIMESTEP_MS), MAX_PHYSICS_STEPS_PER_FRAME);
+  nextAccumulatorMs -= steps * PHYSICS_TIMESTEP_MS;
+  if (steps === MAX_PHYSICS_STEPS_PER_FRAME && nextAccumulatorMs >= PHYSICS_TIMESTEP_MS) {
+    nextAccumulatorMs = 0;
+  }
+
+  return {
+    steps,
+    accumulatorMs: nextAccumulatorMs,
+  };
+}
+
+export function applyBallColliderSettings(collider: MutableBallCollider, settings: BallColliderSettings): void {
+  collider.setRestitution(settings.contactRestitution);
+  collider.setFriction(settings.friction);
 }
 
 function renderDescentBadges(count: number): string {

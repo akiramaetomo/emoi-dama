@@ -2,6 +2,7 @@ import { toneLabels, type CategoryColorPreset, type CategoryTone } from "./categ
 import { findLatestBallSendMode, formatActivityActionLabel, formatSendModeLabel, type ActivityLogEntry } from "./activity-log.js";
 import { renderOptions } from "./form-renderers.js";
 import { issuerLabels, type HappyBall, type LifecycleStatus, type NameBookEntry, type NameRole } from "./models.js";
+import { DAMPING_SLIDER_RANGE, MOVEMENT_SETTING_RANGES, dampingValueToSlider } from "./motion-tuning.js";
 import type { AppSettings, BackgroundTexture, EmotionEchoStrength, StartupScreen } from "./settings.js";
 
 export interface ToolsPanelRenderContext {
@@ -132,15 +133,19 @@ export function renderToolsPanel(context: ToolsPanelRenderContext): string {
         </summary>
         <div class="tuning-section">
           <h3>玉の動き</h3>
-          ${renderRange("setting-wall", "Wall Bounce", appSettings.wallRestitution, 0, 1, 0.01)}
-          ${renderRange("setting-contact", "Contact Bounce", appSettings.contactRestitution, 0, 1, 0.01)}
-          ${renderRange("setting-damping", "Damping", appSettings.linearDamping, 0, 2, 0.01)}
-          ${renderRange("setting-flick", "Flick Power", appSettings.flickPower, 0.2, 2.2, 0.01)}
-          ${renderRange("setting-speed", "Max Speed", appSettings.maxSpeed, 400, 5000, 50)}
-          ${renderRange("setting-gravity-strength", "Gravity", appSettings.gravityStrength, 80, 1800, 20)}
+          ${renderRange("setting-wall", "Wall Bounce", appSettings.wallRestitution, MOVEMENT_SETTING_RANGES.wallRestitution)}
+          ${renderRange("setting-contact", "Contact Bounce", appSettings.contactRestitution, MOVEMENT_SETTING_RANGES.contactRestitution)}
+          ${renderDampingRange(appSettings.linearDamping)}
+          ${renderRange("setting-flick", "Flick Power", appSettings.flickPower, MOVEMENT_SETTING_RANGES.flickPower)}
+          ${renderRange("setting-speed", "Max Speed", appSettings.maxSpeed, MOVEMENT_SETTING_RANGES.maxSpeed)}
+          ${renderRange("setting-gravity-strength", "Gravity", appSettings.gravityStrength, MOVEMENT_SETTING_RANGES.gravityStrength)}
           <label class="inline-toggle">
             <input id="setting-gravity" type="checkbox" ${appSettings.gravityEnabled ? "checked" : ""} />
             <span>重力センサー</span>
+          </label>
+          <label class="inline-toggle">
+            <input id="setting-gravity-debug" type="checkbox" ${appSettings.gravityDebugEnabled ? "checked" : ""} />
+            <span>センサー値表示</span>
           </label>
         </div>
         <div class="tuning-section">
@@ -458,11 +463,30 @@ function renderCategorySettingsFields(categories: CategoryColorPreset[]): string
   `).join("");
 }
 
-function renderRange(id: string, label: string, value: number, min: number, max: number, step: number): string {
+function renderRange(
+  id: string,
+  label: string,
+  value: number,
+  rangeOrMin: { min: number; max: number; step: number } | number,
+  max?: number,
+  step?: number,
+): string {
+  const range = typeof rangeOrMin === "number"
+    ? { min: rangeOrMin, max: max ?? rangeOrMin, step: step ?? 1 }
+    : rangeOrMin;
   return `
     <label class="range-control">
       <span>${escapeHtml(label)} <strong id="${id}-value">${formatSettingValue(value)}</strong></span>
-      <input id="${id}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" />
+      <input id="${id}" type="range" min="${range.min}" max="${range.max}" step="${range.step}" value="${value}" />
+    </label>
+  `;
+}
+
+function renderDampingRange(value: number): string {
+  return `
+    <label class="range-control">
+      <span>Damping <strong id="setting-damping-value">${formatSettingValue(value)}</strong></span>
+      <input id="setting-damping" type="range" min="${DAMPING_SLIDER_RANGE.min}" max="${DAMPING_SLIDER_RANGE.max}" step="${DAMPING_SLIDER_RANGE.step}" value="${dampingValueToSlider(value)}" />
     </label>
   `;
 }

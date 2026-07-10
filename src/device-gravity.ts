@@ -5,16 +5,63 @@ interface DeviceSensorEventConstructorWithPermission {
   requestPermission?: () => Promise<"granted" | "denied">;
 }
 
+const MOTION_GRAVITY_REFERENCE = 9.8;
+
+export type DeviceGravityAxisCorrection = "none" | "ios-inverted";
+
+export interface DeviceGravityPlatformInput {
+  userAgent?: string;
+  platform?: string;
+  maxTouchPoints?: number;
+}
+
+export interface DeviceGravityPlatform {
+  name: "ios-webkit" | "standard";
+  axisCorrection: DeviceGravityAxisCorrection;
+  userAgent: string;
+  platform: string;
+  maxTouchPoints: number;
+}
+
 export interface MotionGravitySource {
   x?: number | null;
   y?: number | null;
+  z?: number | null;
+}
+
+export interface DeviceGravityDebugSnapshot {
+  source: "orientation" | "motion";
+  used: boolean;
+  reason: "motion-2d" | "orientation-debug" | "empty";
+  gravity: GravityVector;
+  rawGravity: GravityVector;
+  platform: DeviceGravityPlatform;
+  axisCorrection: DeviceGravityAxisCorrection;
+  screenAngle: number;
+  orientationType: string;
+  viewport: { width: number; height: number };
+  beta: number | null;
+  gamma: number | null;
+  alpha: number | null;
+  motionX: number | null;
+  motionY: number | null;
+  motionZ: number | null;
 }
 
 export class DeviceGravityController {
   private active = false;
   private strength = DEFAULT_APP_SETTINGS.gravityStrength;
+  private readonly platform = resolveDeviceGravityPlatform();
+  private latestOrientation: Pick<DeviceGravityDebugSnapshot, "beta" | "gamma" | "alpha"> = {
+    beta: null,
+    gamma: null,
+    alpha: null,
+  };
 
-  constructor(private readonly onGravity: (gravity: GravityVector) => void) {}
+  constructor(
+    private readonly onGravity: (gravity: GravityVector) => void,
+    private readonly onDebug?: (snapshot: DeviceGravityDebugSnapshot) => void,
+  ) {}
 
   start(): void {
     if (this.active) {
@@ -30,6 +77,7 @@ export class DeviceGravityController {
       return;
     }
     this.active = false;
+    this.latestOrientation = { beta: null, gamma: null, alpha: null };
     window.removeEventListener("deviceorientation", this.handleOrientation);
     window.removeEventListener("devicemotion", this.handleMotion);
     this.onGravity({ x: 0, y: 0 });
@@ -40,13 +88,21 @@ export class DeviceGravityController {
   }
 
   private readonly handleOrientation = (event: DeviceOrientationEvent): void => {
-    this.onGravity(orientationToGravity(event.beta, event.gamma, this.strength));
+    this.latestOrientation = {
+      beta: readFiniteNumberOrNull(event.beta),
+      gamma: readFiniteNumberOrNull(event.gamma),
+      alpha: readFiniteNumberOrNull(event.alpha),
+    };
   };
 
   private readonly handleMotion = (event: DeviceMotionEvent): void => {
-    const gravity = motionToGravity(event.accelerationIncludingGravity, this.strength);
+    const rawGravity = motionToGravity(event.accelerationIncludingGravity, this.strength);
+    const gravity = applyAxisCorrection(rawGravity, this.platform.axisCorrection);
+    this.onDebug?.(createMotionDebugSnapshot(event, this.latestOrientation, rawGravity, gravity, this.platform, "motion-2d"));
     if (gravity.x !== 0 || gravity.y !== 0) {
       this.onGravity(gravity);
+    } else {
+      this.onGravity({ x: 0, y: 0 });
     }
   };
 }
@@ -70,23 +126,109 @@ export async function requestDeviceGravityPermission(): Promise<boolean> {
   return results.some(Boolean);
 }
 
-export function orientationToGravity(beta: number | null, gamma: number | null, strength: number): GravityVector {
-  const safeBeta = typeof beta === "number" ? beta : 0;
-  const safeGamma = typeof gamma === "number" ? gamma : 0;
-  return {
-    x: clamp(safeGamma / 35, -1, 1) * strength,
-    y: clamp(safeBeta / 45, -1, 1) * strength,
-  };
-}
-
-export function motionToGravity(gravity: MotionGravitySource | null, strength: number): GravityVector {
+export function motionToGravity(
+  gravity: MotionGravitySource | null,
+  strength: number,
+  axisCorrection: DeviceGravityAxisCorrection = "none",
+): GravityVector {
   if (!gravity) {
     return { x: 0, y: 0 };
   }
-  return {
-    x: typeof gravity.x === "number" ? clamp(gravity.x / 6, -1, 1) * strength : 0,
-    y: typeof gravity.y === "number" ? clamp(-gravity.y / 6, -1, 1) * strength : 0,
+  const gravityX = readFiniteNumber(gravity.x);
+  const gravityY = readFiniteNumber(gravity.y);
+  const rawGravity = {
+    x: gravityX === 0 ? 0 : clamp(-gravityX / MOTION_GRAVITY_REFERENCE, -1, 1) * strength,
+    y: gravityY === 0 ? 0 : clamp(gravityY / MOTION_GRAVITY_REFERENCE, -1, 1) * strength,
   };
+  return applyAxisCorrection(rawGravity, axisCorrection);
+}
+
+export function resolveDeviceGravityPlatform(input?: DeviceGravityPlatformInput): DeviceGravityPlatform {
+  const source = input ?? readNavigatorPlatformInput();
+  const userAgent = source.userAgent ?? "";
+  const platform = source.platform ?? "";
+  const maxTouchPoints = source.maxTouchPoints ?? 0;
+  const isExplicitIos = /iPad|iPhone|iPod/i.test(userAgent);
+  const isDesktopModeIpad = platform === "MacIntel" && maxTouchPoints > 1;
+  const isIosWebKit = isExplicitIos || isDesktopModeIpad;
+  return {
+    name: isIosWebKit ? "ios-webkit" : "standard",
+    axisCorrection: isIosWebKit ? "ios-inverted" : "none",
+    userAgent,
+    platform,
+    maxTouchPoints,
+  };
+}
+
+function readNavigatorPlatformInput(): DeviceGravityPlatformInput {
+  if (typeof navigator === "undefined") {
+    return {};
+  }
+  return {
+    userAgent: navigator.userAgent,
+    platform: navigator.platform,
+    maxTouchPoints: navigator.maxTouchPoints,
+  };
+}
+
+function applyAxisCorrection(gravity: GravityVector, axisCorrection: DeviceGravityAxisCorrection): GravityVector {
+  if (axisCorrection !== "ios-inverted") {
+    return gravity;
+  }
+  return {
+    x: gravity.x === 0 ? 0 : -gravity.x,
+    y: gravity.y === 0 ? 0 : -gravity.y,
+  };
+}
+
+function getScreenOrientationAngle(): number {
+  const orientation = screen.orientation?.angle;
+  if (typeof orientation === "number") {
+    return orientation;
+  }
+  const legacyOrientation = window.orientation;
+  return typeof legacyOrientation === "number" ? legacyOrientation : 0;
+}
+
+function getScreenOrientationType(): string {
+  return screen.orientation?.type ?? "unknown";
+}
+
+function createMotionDebugSnapshot(
+  event: DeviceMotionEvent,
+  orientation: Pick<DeviceGravityDebugSnapshot, "beta" | "gamma" | "alpha">,
+  rawGravity: GravityVector,
+  gravity: GravityVector,
+  platform: DeviceGravityPlatform,
+  reason: DeviceGravityDebugSnapshot["reason"],
+): DeviceGravityDebugSnapshot {
+  const motion = event.accelerationIncludingGravity;
+  return {
+    source: "motion",
+    used: true,
+    reason,
+    gravity,
+    rawGravity,
+    platform,
+    axisCorrection: platform.axisCorrection,
+    screenAngle: getScreenOrientationAngle(),
+    orientationType: getScreenOrientationType(),
+    viewport: { width: window.innerWidth, height: window.innerHeight },
+    beta: orientation.beta,
+    gamma: orientation.gamma,
+    alpha: orientation.alpha,
+    motionX: readFiniteNumberOrNull(motion?.x),
+    motionY: readFiniteNumberOrNull(motion?.y),
+    motionZ: readFiniteNumberOrNull(motion?.z),
+  };
+}
+
+function readFiniteNumber(value: number | null | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function readFiniteNumberOrNull(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 async function requestSensorPermission(eventConstructor: DeviceSensorEventConstructorWithPermission): Promise<boolean> {

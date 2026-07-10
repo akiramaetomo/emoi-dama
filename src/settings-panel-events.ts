@@ -1,5 +1,6 @@
 import type { CategoryColorPreset } from "./categories";
 import type { NameBookEntry } from "./models";
+import { dampingSliderToValue } from "./motion-tuning";
 import { readBackgroundTexture, readEchoStrength, readStartupScreen, type AppSettings } from "./settings";
 import { formatSettingValue } from "./settings-renderers";
 
@@ -20,10 +21,10 @@ interface SettingsPanelEventContext {
   root?: ParentNode;
 }
 
-const numberSettings: { id: string; prop: keyof AppSettings }[] = [
+const numberSettings: { id: string; prop: keyof AppSettings; readValue?: (input: HTMLInputElement) => number }[] = [
   { id: "setting-wall", prop: "wallRestitution" },
   { id: "setting-contact", prop: "contactRestitution" },
-  { id: "setting-damping", prop: "linearDamping" },
+  { id: "setting-damping", prop: "linearDamping", readValue: (input) => dampingSliderToValue(input.valueAsNumber) },
   { id: "setting-flick", prop: "flickPower" },
   { id: "setting-speed", prop: "maxSpeed" },
   { id: "setting-gravity-strength", prop: "gravityStrength" },
@@ -52,6 +53,11 @@ function bindTuningEvents(root: ParentNode, handlers: SettingsPanelEventHandlers
     handlers.toggleGravitySensor();
   });
 
+  const gravityDebug = root.querySelector<HTMLInputElement>("#setting-gravity-debug");
+  gravityDebug?.addEventListener("change", () => {
+    handlers.updateAppSettings({ gravityDebugEnabled: gravityDebug.checked });
+  });
+
   const memoField = root.querySelector<HTMLInputElement>("#setting-memo-field");
   memoField?.addEventListener("change", () => {
     handlers.updateAppSettings({ showMemoField: memoField.checked });
@@ -73,7 +79,7 @@ function bindTuningEvents(root: ParentNode, handlers: SettingsPanelEventHandlers
   });
 
   for (const setting of numberSettings) {
-    bindNumberSetting(root, setting.id, setting.prop, handlers);
+    bindNumberSetting(root, setting.id, setting.prop, handlers, setting.readValue);
   }
 
 }
@@ -256,10 +262,11 @@ function bindNumberSetting(
   id: string,
   prop: keyof AppSettings,
   handlers: SettingsPanelEventHandlers,
+  readValue?: (input: HTMLInputElement) => number,
 ): void {
   const input = root.querySelector<HTMLInputElement>(`#${id}`);
   input?.addEventListener("input", () => {
-    const value = Number(input.value);
+    const value = readValue ? readValue(input) : Number(input.value);
     handlers.unlockAudio();
     updateRangeValue(root, id, value);
     handlers.updateAppSettings({ [prop]: value });

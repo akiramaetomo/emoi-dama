@@ -12,6 +12,41 @@ This project follows a lightweight changelog discipline:
 
 ## Unreleased
 
+## 0.5.0 - 2026-07-11
+
+- Retuned the global ball motion defaults and ranges: wall/contact bounce now
+  default to `0.9`, damping defaults to `0.3` with a logarithmic `0..100`
+  control, flick power defaults to `2` with a max of `3`, gravity defaults to
+  `4000` with a max of `20000`, and max speed defaults to `5000`.
+- Applied contact bounce/friction changes to existing physics colliders while
+  keeping stacked-ball overlap correction energy-dissipating, so piled balls
+  absorb impacts instead of receiving artificial separating kicks.
+- Fixed iPad/iOS WebKit gravity-sensor direction by automatically applying the
+  iOS axis correction while preserving the Android motion mapping.
+- Added a gravity-debug JSON export/copy path under `センサー値表示` for iPad
+  hands-on sensor and touch-event log collection.
+- Suppressed WebKit long-press selection/drag previews on the Play surface and
+  rolling balls.
+- Let non-interactive Play text pass through ball touches and disabled long-press
+  text selection on Play labels.
+- Made ball dragging start after a smaller finger movement while preserving the
+  larger tap threshold for opening details.
+- Removed the dragged-ball scale-up effect so touch dragging stays visually
+  aligned with the physics contact circle.
+- Removed empty-space swipe period navigation from the Play surface, prevented
+  empty swipes from grabbing nearby balls, and added explicit top `‹` / `›`
+  period buttons around the current day/week/month label.
+- Stabilized Play physics timing so Android Chrome touch frames cannot make the
+  ball simulation run faster than real time.
+- Tuned gravity-sensor play to use the device-motion `x/y` gravity vector as a
+  direct 2D screen-plane input, leaving the `z` axis out of ball movement.
+- Added an optional gravity-sensor debug overlay that shows live orientation,
+  motion, viewport, and converted gravity values during phone testing.
+- Stabilized the gravity debug overlay so ignored/auxiliary sensor events do
+  not make the readout flicker.
+- Retuned tiny impact audio so wall grazing and weak contacts are much quieter,
+  with wall-chatter suppression for repeated edge contact.
+
 ## 0.4.0 - 2026-07-09
 
 - Kept edit-flow `降臨` in the edit dialog after success, with clearer success

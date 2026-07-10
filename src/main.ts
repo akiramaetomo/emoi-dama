@@ -20,6 +20,7 @@ import {
   type CategoryColorPreset,
 } from "./categories";
 import "./style.css";
+import { createDebugLogFileName, DebugLogBuffer } from "./debug-log";
 import {
   type JsonImportReview,
 } from "./json-transfer";
@@ -29,7 +30,7 @@ import {
   readSelectedJsonImportSections,
   reviewJsonImportFile,
 } from "./json-transfer-actions";
-import { DeviceGravityController, requestDeviceGravityPermission } from "./device-gravity";
+import { DeviceGravityController, requestDeviceGravityPermission, type DeviceGravityDebugSnapshot } from "./device-gravity";
 import {
   appendDescentToBall,
   applyDescentRecordsToBall,
@@ -134,8 +135,10 @@ let activityLogHelpOpen = false;
 let rapierReady = false;
 let audioEngine: TinyImpactAudio;
 let deviceGravity: DeviceGravityController;
+let latestGravityDebug: DeviceGravityDebugSnapshot | null = null;
+const debugLog = new DebugLogBuffer(400);
+let lastMotionDebugLogAt = 0;
 let appViewportHeightFrame = 0;
-let stageSwipeStart: { x: number; y: number; pointerId: number } | null = null;
 let activeBallDialogEscapeHandler: (() => void) | null = null;
 let createPromptDismissed = false;
 let randomTextureVariables: Record<string, string> | null = null;
@@ -234,9 +237,16 @@ async function boot(): Promise<void> {
     await RAPIER.init();
     audioEngine = new TinyImpactAudio();
     installAudioLifecycleHandlers();
-    deviceGravity = new DeviceGravityController((gravity) => {
-      physicsStage?.setGravityVector(gravity);
-    });
+    deviceGravity = new DeviceGravityController(
+      (gravity) => {
+        physicsStage?.setGravityVector(gravity);
+      },
+      (snapshot) => {
+        latestGravityDebug = snapshot;
+        appendGravityDebugLog(snapshot);
+        updateGravityDebugPanel();
+      },
+    );
     syncGravityController();
     rapierReady = true;
     render();
@@ -294,11 +304,12 @@ function render(): void {
         <div class="stage-topline">
           <div>
             <p class="screen-kicker play-screen-kicker">Emotion Play</p>
+            ${renderPlayPeriodNav()}
             <h1 id="stage-title">${escapeHtml(selectedBall ? createVisibilitySafeSummaryLabel(selectedBall) : "今日のえもい玉は？")}</h1>
-            <p class="stage-filter">${escapeHtml(renderDisplayRangeLabel())}</p>
           </div>
         </div>
         <div id="ball-field" class="ball-field texture-${appSettings.backgroundTexture}" aria-label="触って転がせるえもい玉"></div>
+        ${renderGravityDebugPanel()}
         <div class="world-control-dock">
           <p class="control-state-label play-display-state-label">${renderDisplayModeName(displayMode)}表示</p>
           ${createPromptDismissed ? "" : `<p class="world-action-prompt">＋で玉を置きましょう</p>`}
@@ -342,6 +353,80 @@ function getVisibleBalls(): HappyBall[] {
     ball.date >= range.start &&
     ball.date <= range.end
   ));
+}
+
+function renderGravityDebugPanel(): string {
+  if (!appSettings.gravityDebugEnabled) {
+    return "";
+  }
+  return `
+    <aside class="gravity-debug-panel" aria-live="polite" aria-label="重力センサーデバッグ">
+      <div class="gravity-debug-heading">Gravity debug</div>
+      <pre data-gravity-debug-output>${escapeHtml(formatGravityDebugSnapshot(latestGravityDebug))}</pre>
+      <div class="gravity-debug-actions">
+        <button type="button" data-download-debug-log>ログJSON保存</button>
+        <button type="button" data-copy-debug-log>ログコピー</button>
+        <button type="button" data-clear-debug-log>ログ消去</button>
+      </div>
+    </aside>
+  `;
+}
+
+function updateGravityDebugPanel(): void {
+  if (!appSettings.gravityDebugEnabled) {
+    return;
+  }
+  const output = document.querySelector<HTMLElement>("[data-gravity-debug-output]");
+  if (!output) {
+    return;
+  }
+  output.textContent = formatGravityDebugSnapshot(latestGravityDebug);
+}
+
+function formatGravityDebugSnapshot(snapshot: DeviceGravityDebugSnapshot | null): string {
+  if (!snapshot) {
+    return [
+      `gravity: ${appSettings.gravityEnabled ? "waiting" : "off"}`,
+      `angle: ${readCurrentScreenAngleForDebug()}deg`,
+      `viewport: ${window.innerWidth}x${window.innerHeight}`,
+    ].join("\n");
+  }
+  return [
+    `src: ${snapshot.source} ${snapshot.used ? "used" : "skip"}`,
+    `why: ${formatGravityDebugReason(snapshot.reason)}`,
+    `angle: ${formatDebugNumber(snapshot.screenAngle, 0)} ${snapshot.orientationType}`,
+    `viewport: ${formatDebugNumber(snapshot.viewport.width, 0)}x${formatDebugNumber(snapshot.viewport.height, 0)}`,
+    `b/g/a: ${formatDebugNumber(snapshot.beta)} ${formatDebugNumber(snapshot.gamma)} ${formatDebugNumber(snapshot.alpha)}`,
+    `m x/y/z: ${formatDebugNumber(snapshot.motionX)} ${formatDebugNumber(snapshot.motionY)} ${formatDebugNumber(snapshot.motionZ)}`,
+    `raw x/y: ${formatDebugNumber(snapshot.rawGravity.x, 1)} ${formatDebugNumber(snapshot.rawGravity.y, 1)}`,
+    `g x/y: ${formatDebugNumber(snapshot.gravity.x, 1)} ${formatDebugNumber(snapshot.gravity.y, 1)}`,
+    `platform: ${snapshot.platform.name}`,
+    `axis: ${snapshot.axisCorrection}`,
+  ].join("\n");
+}
+
+function formatGravityDebugReason(reason: DeviceGravityDebugSnapshot["reason"]): string {
+  switch (reason) {
+    case "motion-2d":
+      return "motion x/y";
+    case "orientation-debug":
+      return "orientation dbg";
+    default:
+      return reason;
+  }
+}
+
+function readCurrentScreenAngleForDebug(): number {
+  const orientation = screen.orientation?.angle;
+  if (typeof orientation === "number") {
+    return orientation;
+  }
+  const legacyOrientation = window.orientation;
+  return typeof legacyOrientation === "number" ? legacyOrientation : 0;
+}
+
+function formatDebugNumber(value: number | null, digits = 2): string {
+  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "-";
 }
 
 function getDialogRenderContext(): DialogRenderContext {
@@ -401,6 +486,17 @@ function renderDisplayRangeLabel(): string {
     return `${range.start} - ${range.end} の週`;
   }
   return `${displayAnchorDate.slice(0, 7)} の月`;
+}
+
+function renderPlayPeriodNav(): string {
+  const displayModeName = renderDisplayModeName(displayMode);
+  return `
+    <div class="play-period-nav" aria-label="${escapeHtml(displayModeName)}表示の期間移動">
+      <button class="calendar-nav play-period-nav-button" type="button" data-shift-display-period="-1" aria-label="前の${escapeHtml(displayModeName)}">‹</button>
+      <p class="stage-filter">${escapeHtml(renderDisplayRangeLabel())}</p>
+      <button class="calendar-nav play-period-nav-button" type="button" data-shift-display-period="1" aria-label="次の${escapeHtml(displayModeName)}">›</button>
+    </div>
+  `;
 }
 
 function renderCalendarScreenIcon(): string {
@@ -847,7 +943,160 @@ function mountRapierStage(balls: HappyBall[]): void {
     appSettings,
     audioEngine,
   );
+  installPlayDebugEventLogging(field);
   physicsStage.start();
+}
+
+function installPlayDebugEventLogging(field: HTMLElement): void {
+  const logEvent = (event: Event) => {
+    if (!appSettings.gravityDebugEnabled) {
+      return;
+    }
+    debugLog.append(`play:${event.type}`, describeDebugEvent(event));
+  };
+
+  field.addEventListener("pointerdown", logEvent, { passive: true });
+  field.addEventListener("pointermove", logEvent, { passive: true });
+  field.addEventListener("pointerup", logEvent, { passive: true });
+  field.addEventListener("pointercancel", logEvent, { passive: true });
+  field.addEventListener("touchstart", logEvent, { passive: true });
+  field.addEventListener("touchmove", logEvent, { passive: true });
+  field.addEventListener("touchend", logEvent, { passive: true });
+  field.addEventListener("touchcancel", logEvent, { passive: true });
+  field.addEventListener("selectstart", logEvent);
+  field.addEventListener("dragstart", logEvent);
+  field.addEventListener("contextmenu", logEvent);
+}
+
+function appendGravityDebugLog(snapshot: DeviceGravityDebugSnapshot): void {
+  if (!appSettings.gravityDebugEnabled) {
+    return;
+  }
+  const now = Date.now();
+  if (now - lastMotionDebugLogAt < 120) {
+    return;
+  }
+  lastMotionDebugLogAt = now;
+  debugLog.append("motion", {
+    source: snapshot.source,
+    reason: snapshot.reason,
+    screenAngle: snapshot.screenAngle,
+    orientationType: snapshot.orientationType,
+    viewport: snapshot.viewport,
+    beta: snapshot.beta,
+    gamma: snapshot.gamma,
+    alpha: snapshot.alpha,
+    motion: {
+      x: snapshot.motionX,
+      y: snapshot.motionY,
+      z: snapshot.motionZ,
+    },
+    rawGravity: snapshot.rawGravity,
+    gravity: snapshot.gravity,
+    platform: snapshot.platform,
+    axisCorrection: snapshot.axisCorrection,
+  }, now);
+}
+
+function describeDebugEvent(event: Event): Record<string, unknown> {
+  const target = event.target instanceof HTMLElement ? event.target : null;
+  return {
+    eventType: event.type,
+    target: target ? describeDebugTarget(target) : null,
+    pointer: typeof PointerEvent !== "undefined" && event instanceof PointerEvent
+      ? {
+        pointerType: event.pointerType,
+        isPrimary: event.isPrimary,
+        clientX: Math.round(event.clientX),
+        clientY: Math.round(event.clientY),
+      }
+      : null,
+    touches: typeof TouchEvent !== "undefined" && event instanceof TouchEvent ? describeTouches(event) : null,
+    selection: describeCurrentSelection(),
+  };
+}
+
+function describeDebugTarget(target: HTMLElement): Record<string, unknown> {
+  return {
+    tagName: target.tagName.toLowerCase(),
+    className: target.className,
+    visualBallId: target.closest<HTMLElement>("[data-visual-ball-id]")?.dataset.visualBallId ?? null,
+  };
+}
+
+function describeTouches(event: TouchEvent): Record<string, unknown> {
+  return {
+    touches: event.touches.length,
+    changedTouches: event.changedTouches.length,
+    firstTouch: event.touches[0] ? describeTouch(event.touches[0]) : null,
+    firstChangedTouch: event.changedTouches[0] ? describeTouch(event.changedTouches[0]) : null,
+  };
+}
+
+function describeTouch(touch: Touch): Record<string, number> {
+  return {
+    clientX: Math.round(touch.clientX),
+    clientY: Math.round(touch.clientY),
+  };
+}
+
+function describeCurrentSelection(): Record<string, unknown> {
+  const selection = document.getSelection();
+  return {
+    type: selection?.type ?? null,
+    textLength: selection?.toString().length ?? 0,
+  };
+}
+
+function createDebugLogJson(): string {
+  return JSON.stringify(debugLog.toPayload(createDebugLogContext()), null, 2);
+}
+
+function createDebugLogContext(): Record<string, unknown> {
+  return {
+    url: window.location.href,
+    secureContext: window.isSecureContext,
+    userAgent: navigator.userAgent,
+    platform: navigator.platform,
+    maxTouchPoints: navigator.maxTouchPoints,
+    viewport: {
+      width: window.innerWidth,
+      height: window.innerHeight,
+      visualViewportWidth: window.visualViewport?.width ?? null,
+      visualViewportHeight: window.visualViewport?.height ?? null,
+      visualViewportOffsetTop: window.visualViewport?.offsetTop ?? null,
+    },
+    screen: {
+      width: screen.width,
+      height: screen.height,
+      orientationAngle: screen.orientation?.angle ?? null,
+      orientationType: screen.orientation?.type ?? null,
+    },
+    gravityEnabled: appSettings.gravityEnabled,
+    gravityDebugEnabled: appSettings.gravityDebugEnabled,
+    latestGravityDebug,
+  };
+}
+
+function downloadDebugLog(): void {
+  const json = createDebugLogJson();
+  try {
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = createDebugLogFileName();
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch {
+    showManualCopyDialog(json);
+  }
+}
+
+async function copyDebugLog(): Promise<void> {
+  await copyTextWithFallback(createDebugLogJson(), "デバッグログJSONをコピーしました。");
 }
 
 function expandVisualBalls(balls: HappyBall[]): VisualBallSource[] {
@@ -943,6 +1192,12 @@ function bindEvents(): void {
     });
   });
 
+  document.querySelectorAll<HTMLButtonElement>("[data-shift-display-period]").forEach((button) => {
+    button.addEventListener("click", () => {
+      navigateDisplayPeriod(button.dataset.shiftDisplayPeriod === "1" ? 1 : -1);
+    });
+  });
+
   document.querySelectorAll<HTMLElement>("[data-close-panel]").forEach((element) => {
     element.addEventListener("click", (event) => {
       const isBackdrop = element.classList.contains("panel-backdrop");
@@ -967,6 +1222,20 @@ function bindEvents(): void {
     activityLogHelpOpen = !activityLogHelpOpen;
     openSettingsGroups = readOpenSettingsGroups();
     render();
+  });
+
+  document.querySelector("[data-download-debug-log]")?.addEventListener("click", () => {
+    downloadDebugLog();
+  });
+
+  document.querySelector("[data-copy-debug-log]")?.addEventListener("click", () => {
+    void copyDebugLog();
+  });
+
+  document.querySelector("[data-clear-debug-log]")?.addEventListener("click", () => {
+    debugLog.clear();
+    debugLog.append("system", { message: "debug log cleared" });
+    alert("デバッグログを消去しました。");
   });
 
   document.querySelectorAll<HTMLButtonElement>("[data-calendar-month]").forEach((button) => {
@@ -1066,8 +1335,6 @@ function bindEvents(): void {
     activeOverlay = "none";
     render();
   });
-
-  bindDisplaySwipeEvents();
 
   const form = document.querySelector<HTMLFormElement>("#ball-form");
   form?.addEventListener("submit", (event) => {
@@ -1778,42 +2045,6 @@ function clearLocationPacketParams(): void {
   params.delete("openExternalBrowser");
   const search = params.toString();
   history.replaceState(null, document.title, `${location.pathname}${search ? `?${search}` : ""}`);
-}
-
-function bindDisplaySwipeEvents(): void {
-  const field = document.querySelector<HTMLElement>("#ball-field");
-  if (!field) {
-    return;
-  }
-
-  field.addEventListener("pointerdown", (event) => {
-    if (isBallInteractionTarget(event.target)) {
-      stageSwipeStart = null;
-      return;
-    }
-    stageSwipeStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
-  });
-
-  field.addEventListener("pointerup", (event) => {
-    if (!stageSwipeStart || stageSwipeStart.pointerId !== event.pointerId) {
-      return;
-    }
-    const deltaX = event.clientX - stageSwipeStart.x;
-    const deltaY = event.clientY - stageSwipeStart.y;
-    stageSwipeStart = null;
-    if (Math.abs(deltaX) < 72 || Math.abs(deltaY) > 64) {
-      return;
-    }
-    navigateDisplayPeriod(deltaX < 0 ? 1 : -1);
-  });
-
-  field.addEventListener("pointercancel", () => {
-    stageSwipeStart = null;
-  });
-}
-
-function isBallInteractionTarget(target: EventTarget | null): boolean {
-  return target instanceof Element && Boolean(target.closest(".physics-ball"));
 }
 
 function handleDisplayNavigationKey(event: KeyboardEvent): void {

@@ -66,16 +66,18 @@ const firstEntries = recordActivity(createBallActivityInput(sampleBall, {
 assertEqual(firstEntries.length, 1, "recordActivity should save one entry");
 assertEqual(loadActivityLog()[0]?.sendMode, "casual", "stored receive activity should keep send mode");
 
+const nextRecordedAt = new Date(Date.now() + 1000).toISOString();
 const nextEntries = appendActivityLogEntry(firstEntries, createBallActivityInput(sampleBall, {
   action: "send-line-url",
   sendMode: "formal",
-}), "2026-07-09T12:00:00.000Z");
+}), nextRecordedAt);
 assertEqual(findLatestBallSendMode(nextEntries, sampleBall.id), "formal", "latest send mode should win");
 
+const deletedRecordedAt = new Date(Date.now() + 2000).toISOString();
 const deletedEntries = appendActivityLogEntry(nextEntries, createBallActivityInput(sampleBall, {
   action: "delete-ball",
   ballSnapshot: createBallActivitySnapshot(sampleBall),
-}), "2026-07-09T12:05:00.000Z");
+}), deletedRecordedAt);
 assertEqual(deletedEntries[0]?.ballSnapshot?.id, sampleBall.id, "delete log should keep a minimal ball snapshot");
 
 let manyEntries = deletedEntries;

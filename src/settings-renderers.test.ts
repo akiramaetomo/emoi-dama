@@ -32,6 +32,10 @@ assert(html.includes('<option value="calendarMonth" selected>カレンダー</op
 assert(html.includes("<h2>降臨</h2>"), "descent settings group should be rendered");
 assert(html.includes('id="setting-descent-distance"'), "descent distance setting should be rendered");
 assert(html.includes('value="500"'), "descent distance should default to 500m");
+assert(html.includes('id="setting-gravity-debug"'), "gravity debug setting should be rendered");
+assert(html.includes('id="setting-damping" type="range" min="0" max="300" step="1" value="48"'), "damping should render as a logarithmic slider");
+assert(html.includes('id="setting-gravity-strength" type="range" min="80" max="20000" step="20" value="4000"'), "gravity strength should render with the expanded range");
+assert(html.includes('Damping <strong id="setting-damping-value">0.30</strong>'), "damping should display the real physics value");
 assert(html.includes('id="export-json"'), "backup export action should be rendered");
 assert(html.includes('id="import-json"'), "backup import action should be rendered");
 assert(html.includes('value="activityLog"'), "backup export options should include activity logs");

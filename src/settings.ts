@@ -1,3 +1,5 @@
+import { MOVEMENT_SETTING_RANGES } from "./motion-tuning.js";
+
 export type EmotionEchoStrength = "off" | "weak" | "medium" | "strong";
 export type BallLabelMode = "none" | "date" | "title" | "name";
 export type BackgroundTexture = "grid" | "paper" | "grain" | "mist" | "random";
@@ -15,6 +17,7 @@ export interface AppSettings {
   radius: number;
   soundEnabled: boolean;
   gravityEnabled: boolean;
+  gravityDebugEnabled: boolean;
   gravityStrength: number;
   masterVolume: number;
   frequencyHz: number;
@@ -33,17 +36,18 @@ export interface AppSettings {
 const SETTINGS_KEY = "happyBall.settings.v2";
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
-  wallRestitution: 0.38,
-  contactRestitution: 0.34,
-  linearDamping: 0.12,
+  wallRestitution: MOVEMENT_SETTING_RANGES.wallRestitution.defaultValue,
+  contactRestitution: MOVEMENT_SETTING_RANGES.contactRestitution.defaultValue,
+  linearDamping: MOVEMENT_SETTING_RANGES.linearDamping.defaultValue,
   angularDamping: 0.28,
   friction: 0.02,
-  flickPower: 0.92,
-  maxSpeed: 1900,
+  flickPower: MOVEMENT_SETTING_RANGES.flickPower.defaultValue,
+  maxSpeed: MOVEMENT_SETTING_RANGES.maxSpeed.defaultValue,
   radius: 42,
   soundEnabled: true,
   gravityEnabled: false,
-  gravityStrength: 720,
+  gravityDebugEnabled: false,
+  gravityStrength: MOVEMENT_SETTING_RANGES.gravityStrength.defaultValue,
   masterVolume: 0.28,
   frequencyHz: 1100,
   frequencySpread: 1.35,
@@ -74,17 +78,18 @@ export function saveAppSettings(settings: AppSettings): void {
 export function normalizeAppSettings(value: unknown): AppSettings {
   const source = isPlainObject(value) ? (value as Partial<AppSettings> & { showBallLabels?: unknown }) : {};
   return {
-    wallRestitution: clampNumber(source.wallRestitution, 0, 1, DEFAULT_APP_SETTINGS.wallRestitution),
-    contactRestitution: clampNumber(source.contactRestitution, 0, 1, DEFAULT_APP_SETTINGS.contactRestitution),
-    linearDamping: clampNumber(source.linearDamping, 0, 2, DEFAULT_APP_SETTINGS.linearDamping),
+    wallRestitution: clampNumber(source.wallRestitution, MOVEMENT_SETTING_RANGES.wallRestitution.min, MOVEMENT_SETTING_RANGES.wallRestitution.max, DEFAULT_APP_SETTINGS.wallRestitution),
+    contactRestitution: clampNumber(source.contactRestitution, MOVEMENT_SETTING_RANGES.contactRestitution.min, MOVEMENT_SETTING_RANGES.contactRestitution.max, DEFAULT_APP_SETTINGS.contactRestitution),
+    linearDamping: clampNumber(source.linearDamping, MOVEMENT_SETTING_RANGES.linearDamping.min, MOVEMENT_SETTING_RANGES.linearDamping.max, DEFAULT_APP_SETTINGS.linearDamping),
     angularDamping: clampNumber(source.angularDamping, 0, 2, DEFAULT_APP_SETTINGS.angularDamping),
     friction: clampNumber(source.friction, 0, 1, DEFAULT_APP_SETTINGS.friction),
-    flickPower: clampNumber(source.flickPower, 0.2, 2.2, DEFAULT_APP_SETTINGS.flickPower),
-    maxSpeed: clampNumber(source.maxSpeed, 400, 5000, DEFAULT_APP_SETTINGS.maxSpeed),
+    flickPower: clampNumber(source.flickPower, MOVEMENT_SETTING_RANGES.flickPower.min, MOVEMENT_SETTING_RANGES.flickPower.max, DEFAULT_APP_SETTINGS.flickPower),
+    maxSpeed: clampNumber(source.maxSpeed, MOVEMENT_SETTING_RANGES.maxSpeed.min, MOVEMENT_SETTING_RANGES.maxSpeed.max, DEFAULT_APP_SETTINGS.maxSpeed),
     radius: clampNumber(source.radius, 24, 64, DEFAULT_APP_SETTINGS.radius),
     soundEnabled: readBoolean(source.soundEnabled, DEFAULT_APP_SETTINGS.soundEnabled),
     gravityEnabled: readBoolean(source.gravityEnabled, DEFAULT_APP_SETTINGS.gravityEnabled),
-    gravityStrength: clampNumber(source.gravityStrength, 80, 1800, DEFAULT_APP_SETTINGS.gravityStrength),
+    gravityDebugEnabled: readBoolean(source.gravityDebugEnabled, DEFAULT_APP_SETTINGS.gravityDebugEnabled),
+    gravityStrength: clampNumber(source.gravityStrength, MOVEMENT_SETTING_RANGES.gravityStrength.min, MOVEMENT_SETTING_RANGES.gravityStrength.max, DEFAULT_APP_SETTINGS.gravityStrength),
     masterVolume: clampNumber(source.masterVolume, 0, 1, DEFAULT_APP_SETTINGS.masterVolume),
     frequencyHz: clampNumber(source.frequencyHz, 200, 4200, DEFAULT_APP_SETTINGS.frequencyHz),
     frequencySpread: clampNumber(source.frequencySpread, 1, 3, DEFAULT_APP_SETTINGS.frequencySpread),
@@ -109,6 +114,7 @@ export function looksLikeAppSettings(value: unknown): boolean {
     "contactRestitution",
     "linearDamping",
     "gravityEnabled",
+    "gravityDebugEnabled",
     "soundEnabled",
     "ballLabelMode",
     "showBallLabels",

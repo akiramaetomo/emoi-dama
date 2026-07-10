@@ -6,14 +6,13 @@ const MAX_AUDIO_TRIGGERS_PER_FRAME = 3;
 const MIN_AUDIO_TRIGGER_INTERVAL_MS = 28;
 const AUDIO_TRIGGER_SPACING_SECONDS = 0.018;
 const AUDIO_FAILURE_REPORT_INTERVAL_MS = 2500;
-const IMPACT_ENERGY_REFERENCE = 70;
 const MAX_ENERGY_GAIN_REFERENCE = 3000;
-const MIN_GAIN_VALUE = 0.001;
-const BASE_IMPACT_GAIN_RATIO = 0.16;
-const IMPACT_GAIN_RANGE_RATIO = 0.84;
+const MIN_GAIN_VALUE = 0.00003;
+const MIN_DYNAMIC_GAIN_RATIO = 0.0032;
+const IMPACT_GAIN_LOG_CURVE = 18;
 const FILTER_FREQUENCY_HZ = 7400;
 const FILTER_Q = 0.4;
-const GAIN_FLOOR = 0.0001;
+const GAIN_FLOOR = 0.00001;
 const ATTACK_SECONDS = 0.008;
 
 export class TinyImpactAudio {
@@ -148,15 +147,10 @@ export class TinyImpactAudio {
     const now = context.currentTime;
     const start = now + offset;
     const duration = settings.durationMs / 1000;
-    const energyGain = Math.min(
-      1,
-      Math.log1p(impact.energy / IMPACT_ENERGY_REFERENCE)
-        / Math.log1p(MAX_ENERGY_GAIN_REFERENCE / IMPACT_ENERGY_REFERENCE),
-    );
-    const gainValue = Math.max(
-      MIN_GAIN_VALUE,
-      settings.masterVolume * (BASE_IMPACT_GAIN_RATIO + energyGain * IMPACT_GAIN_RANGE_RATIO),
-    );
+    const gainValue = impactEnergyToGain(impact.energy, settings);
+    if (gainValue <= 0) {
+      return;
+    }
     const spread = impact.kind === "wall" ? 1 : settings.frequencySpread;
     const pitchJitter = 1 + (Math.random() - 0.5) * (spread - 1);
     const oscillator = context.createOscillator();
@@ -186,6 +180,25 @@ export class TinyImpactAudio {
       gain.disconnect();
     });
   }
+}
+
+export function impactEnergyToGain(energy: number, settings: Pick<AppSettings, "masterVolume" | "soundThreshold">): number {
+  if (!Number.isFinite(energy) || energy < settings.soundThreshold || settings.masterVolume <= 0) {
+    return 0;
+  }
+
+  const normalizedEnergy = clamp(
+    (energy - settings.soundThreshold) / Math.max(1, MAX_ENERGY_GAIN_REFERENCE - settings.soundThreshold),
+    0,
+    1,
+  );
+  const perceptualEnergy = Math.log1p(normalizedEnergy * IMPACT_GAIN_LOG_CURVE) / Math.log1p(IMPACT_GAIN_LOG_CURVE);
+  const dynamicGainRatio = MIN_DYNAMIC_GAIN_RATIO * ((1 / MIN_DYNAMIC_GAIN_RATIO) ** perceptualEnergy);
+  return Math.max(MIN_GAIN_VALUE, settings.masterVolume * dynamicGainRatio);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 declare global {
