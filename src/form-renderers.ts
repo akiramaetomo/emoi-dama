@@ -1,6 +1,16 @@
 import { toneLabels, type CategoryColorPreset, type CategoryTone } from "./categories.js";
 import { createGoogleMapsUrl, hasDescentPosition } from "./descent.js";
 import {
+  BALL_COUNT_SLIDER_MAX,
+  BALL_COUNT_SLIDER_MIN,
+  BALL_COUNT_SLIDER_EMPHASIS,
+  ballCountToSliderPosition,
+  ballCountToTrackPercent,
+  formatBallCount,
+  isLegacyBallCount,
+  sliderPositionToBallCount,
+} from "./ball-count-slider.js";
+import {
   normalizeBallTime,
   issuerLabels,
   visibilityLabels,
@@ -15,6 +25,8 @@ export interface FormRenderContext {
   nameBook: NameBookEntry[];
 }
 
+export type EditSaveConfirmReason = "save" | "close";
+
 const nameRoleLabels: Record<NameRole, string> = {
   self: "自分",
   proxy: "代理",
@@ -22,56 +34,8 @@ const nameRoleLabels: Record<NameRole, string> = {
 
 export function renderCreateForm(draft: BallDraft, context: FormRenderContext): string {
   return `
-    <form id="ball-form" class="create-form">
-      <label class="create-inline-field">
-        <span>日時</span>
-        <input name="date" type="date" value="${escapeAttribute(draft.date)}" />
-      </label>
-
-      ${renderCreateTimeField(draft.time)}
-
-      <label class="create-inline-field">
-        <span>玉数</span>
-        <input name="count" type="number" min="1" max="12" value="${draft.count}" />
-      </label>
-
-      <label class="create-inline-field">
-        <span>だれの玉</span>
-        ${renderNamePresetSelect(draft.subject, context)}
-      </label>
-
-      <label class="create-inline-field">
-        <span>自由入力</span>
-        <input name="subject" type="text" value="${escapeAttribute(draft.subject)}" />
-      </label>
-
-      <label class="create-inline-field">
-        <span>作り方</span>
-        <select name="issuerType">
-          ${renderOptions(issuerLabels, draft.issuerType)}
-        </select>
-      </label>
-
-      <label class="create-inline-field">
-        <span>見せる範囲</span>
-        <select name="visibility">
-          ${renderOptions(visibilityLabels, draft.visibility)}
-        </select>
-      </label>
-
-      <div class="create-title-divider" aria-hidden="true"></div>
-
-      <label class="create-inline-field">
-        <span>タイトル</span>
-        <input name="title" type="text" maxlength="48" value="${escapeAttribute(draft.title)}" placeholder="小さなえもいゴト" />
-      </label>
-
-      ${renderCategoryPalette(draft.category, context)}
-
-      <label>
-        <span>メモ</span>
-        <textarea name="note" rows="3" maxlength="180">${escapeHtml(draft.note)}</textarea>
-      </label>
+    <form id="ball-form" class="create-form" autocomplete="off">
+      ${renderBallAuthoringFields(draft, context, "create")}
 
       <div class="button-row">
         <button class="primary-action" type="submit">玉を置く</button>
@@ -82,70 +46,19 @@ export function renderCreateForm(draft: BallDraft, context: FormRenderContext): 
 
 export function renderBallEditDialog(ball: HappyBall, context: FormRenderContext): string {
   return `
-    <div class="ball-dialog-backdrop ball-edit-dialog-backdrop" data-dialog-backdrop>
-      <section class="ball-dialog ball-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="ball-edit-title">
-        <button class="dialog-close" type="button" data-dialog-close aria-label="閉じる">&times;</button>
-        <div class="dialog-title-block">
-          <div class="edit-dialog-title-row">
-            <h2 id="ball-edit-title">玉を編集</h2>
+    <div class="ball-dialog-backdrop ball-edit-dialog-backdrop app-modal-backdrop" data-dialog-backdrop>
+      <section class="ball-dialog ball-edit-dialog surface-shell" role="dialog" aria-modal="true" aria-labelledby="ball-edit-title">
+        <div class="surface-fixed-header edit-surface-header">
+          <button class="dialog-close" type="button" data-dialog-close aria-label="閉じる">&times;</button>
+          <div class="dialog-title-block">
+            <div class="edit-dialog-title-row">
+              <h2 id="ball-edit-title">玉を編集</h2>
+            </div>
           </div>
         </div>
-        <form id="ball-edit-form" class="edit-form" data-editing-ball-id="${escapeAttribute(ball.id)}">
-          <label class="edit-inline-field">
-            <span>日時</span>
-            <input name="date" type="date" value="${escapeAttribute(ball.date)}" />
-          </label>
-
-          ${renderTimeField(ball.time, "edit-timestamp-field edit-inline-field timestamp-field-wide")}
-
-          <label class="edit-inline-field">
-            <span>玉数</span>
-            <input name="count" type="number" min="1" max="12" value="${ball.count}" />
-          </label>
-
-          <label class="edit-inline-field">
-            <span>だれの玉</span>
-            ${renderNamePresetSelect(ball.subject, context)}
-          </label>
-
-          <label class="edit-inline-field">
-            <span>自由入力</span>
-            <input name="subject" type="text" value="${escapeAttribute(ball.subject)}" />
-          </label>
-
-          <label class="edit-inline-field">
-            <span>作り方</span>
-            <select name="issuerType">
-              ${renderOptions(issuerLabels, ball.issuerType)}
-            </select>
-          </label>
-
-          <label class="edit-inline-field">
-            <span>見せる範囲</span>
-            <select name="visibility">
-              ${renderOptions(visibilityLabels, ball.visibility)}
-            </select>
-          </label>
-
-          <div class="edit-title-divider" aria-hidden="true"></div>
-
-          <label class="edit-inline-field">
-            <span>タイトル</span>
-            <input name="title" type="text" maxlength="48" value="${escapeAttribute(ball.title)}" />
-          </label>
-
-          <details class="edit-category-fold">
-            <summary>
-              <span>カテゴリ</span>
-              ${renderCurrentCategoryBadge(ball.category, context)}
-            </summary>
-            ${renderCategoryPalette(ball.category, context)}
-          </details>
-
-          <label class="inline-field textarea-field">
-            <span>メモ</span>
-            <textarea name="note" rows="4" maxlength="180">${escapeHtml(ball.note)}</textarea>
-          </label>
+        <div class="surface-scroll-body app-modal-scroll" data-scroll-owner>
+          <form id="ball-edit-form" class="edit-form" autocomplete="off" data-editing-ball-id="${escapeAttribute(ball.id)}">
+          ${renderBallAuthoringFields(ball, context, "edit")}
 
           ${renderEditableDescentHistory(ball)}
 
@@ -160,10 +73,121 @@ export function renderBallEditDialog(ball: HappyBall, context: FormRenderContext
             <button class="primary-action" type="submit">保存</button>
             <button class="ghost-action" type="button" data-dialog-close>キャンセル</button>
           </div>
-        </form>
+          </form>
+        </div>
       </section>
     </div>
   `;
+}
+
+function renderBallAuthoringFields(
+  value: BallDraft | HappyBall,
+  context: FormRenderContext,
+  mode: "create" | "edit",
+): string {
+  const inlineClass = `${mode}-inline-field`;
+  const timeField = mode === "create"
+    ? renderCreateTimeField(value.time)
+    : renderTimeField(value.time, "edit-timestamp-field edit-inline-field timestamp-field-wide");
+  const titlePlaceholder = mode === "create" ? ' placeholder="小さなえもいゴト"' : "";
+  return `
+      <label class="${inlineClass}">
+        <span>タイトル</span>
+        <input name="title" type="text" maxlength="48" value="${escapeAttribute(value.title)}"${titlePlaceholder} />
+      </label>
+
+      <label class="inline-field textarea-field" data-ball-authoring-memo-field>
+        <span>メモ</span>
+        <textarea name="note" rows="4" maxlength="180" autocomplete="off">${escapeHtml(value.note)}</textarea>
+      </label>
+
+      <details class="authoring-category-fold ${mode}-category-fold" data-authoring-category-fold>
+        <summary>
+          <span>カテゴリ</span>
+          ${renderCurrentCategoryBadge(value.category, context)}
+        </summary>
+        ${renderCategoryPalette(value.category, context)}
+      </details>
+
+      <div class="authoring-datetime-group ${mode}-datetime-group" data-authoring-datetime-group>
+        <label class="${inlineClass}">
+          <span>日時</span>
+          <input name="date" type="date" value="${escapeAttribute(value.date)}" />
+        </label>
+
+        ${timeField}
+      </div>
+
+      <div class="authoring-context-divider ${mode}-context-divider" data-authoring-context-divider aria-hidden="true"></div>
+
+      ${renderSubjectField(value.subject, context, mode)}
+
+      ${renderBallCountControl(value.count, mode)}
+
+      <label class="${inlineClass}">
+        <span>作り方</span>
+        <select name="issuerType">
+          ${renderOptions(issuerLabels, value.issuerType)}
+        </select>
+      </label>
+
+      <label class="${inlineClass}">
+        <span>見せる範囲</span>
+        <select name="visibility">
+          ${renderOptions(visibilityLabels, value.visibility)}
+        </select>
+      </label>
+  `;
+}
+
+export function renderBallCountControl(count: number, mode: "create" | "edit"): string {
+  const preserveLegacy = mode === "edit" && isLegacyBallCount(count);
+  const initialCount = preserveLegacy ? Math.round(count) : Math.min(BALL_COUNT_SLIDER_MAX, Math.max(1, Math.round(count)));
+  const position = preserveLegacy ? BALL_COUNT_SLIDER_MAX : ballCountToSliderPosition(initialCount);
+  const inputId = `${mode}-ball-count-range`;
+  return `
+    <div class="ball-count-field ${mode}-ball-count-field" data-ball-count-control>
+      <span class="ball-count-field-label">玉数</span>
+      <div class="ball-count-control-body">
+        <input name="count" type="hidden" value="${initialCount}" />
+        ${preserveLegacy ? `
+          <div class="ball-count-legacy" data-ball-count-legacy>
+            <strong>既存値 ${formatBallCount(initialCount)}</strong>
+            <button class="ghost-action" type="button" data-ball-count-convert>10玉以下へ変更</button>
+          </div>
+        ` : ""}
+        <div class="ball-count-slider" data-ball-count-slider${preserveLegacy ? " hidden" : ""}>
+          <output id="${inputId}-output" for="${inputId}" data-ball-count-output aria-live="polite">${formatBallCount(sliderPositionToBallCount(position))}</output>
+          <div class="ball-count-range-stack">
+            <input
+              id="${inputId}"
+              type="range"
+              min="${BALL_COUNT_SLIDER_MIN}"
+              max="${BALL_COUNT_SLIDER_MAX}"
+              step="1"
+              value="${position}"
+              aria-label="玉数"
+              aria-valuetext="${formatBallCount(sliderPositionToBallCount(position))}"
+              data-ball-count-range
+            />
+            <div class="ball-count-ticks" aria-hidden="true">
+              ${renderBallCountTicks()}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderBallCountTicks(): string {
+  const length = BALL_COUNT_SLIDER_MAX - BALL_COUNT_SLIDER_MIN + 1;
+  return Array.from({ length }, (_, index) => {
+    const count = BALL_COUNT_SLIDER_MIN + index;
+    const percent = `${ballCountToTrackPercent(count).toFixed(6).replace(/\.?0+$/, "")}%`;
+    const classes = count === BALL_COUNT_SLIDER_EMPHASIS ? "ball-count-tick is-emphasized" : "ball-count-tick";
+    return `<span class="${classes}" style="--ball-count-position: ${percent}" data-ball-count-tick="${count}"><i></i><b>${count}</b></span>`;
+  }).join("");
 }
 
 function renderCreateTimeField(time: string | undefined): string {
@@ -182,6 +206,36 @@ function renderCreateTimeField(time: string | undefined): string {
         <input name="time" type="time" value="${escapeAttribute(normalizedTime ?? "")}"${disabled} />
       </div>
     </div>
+  `;
+}
+
+function renderSubjectField(subject: string, context: FormRenderContext, mode: "create" | "edit"): string {
+  const fieldClass = mode === "create" ? "create-inline-field" : "edit-inline-field";
+  const inputId = `${mode}-ball-subject`;
+  return `
+    <div class="${fieldClass} subject-field">
+      <span class="subject-field-label">だれの玉</span>
+      <div class="subject-controls">
+        <input id="${inputId}" name="subject" type="text" value="${escapeAttribute(subject)}" placeholder="名前を自由に入力" aria-label="だれの玉を自由入力" />
+        ${renderNamePresetSelect(subject, context)}
+      </div>
+    </div>
+  `;
+}
+
+export function renderEditSaveModeConfirm(reason: EditSaveConfirmReason): string {
+  const isClose = reason === "close";
+  return `
+    <section class="edit-unsaved-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-unsaved-title">
+      <h3 id="edit-unsaved-title">${isClose ? "保存しますか？" : "保存方法を選んでください"}</h3>
+      <p>${isClose ? "変更した内容があります。" : "前の状態を余韻に残すか、訂正として保存できます。"}</p>
+      <div class="edit-unsaved-actions">
+        <button class="primary-action" type="button" data-edit-save-correction>訂正として保存</button>
+        <button class="ghost-action" type="button" data-edit-save-echo>余韻として保存</button>
+        <button class="ghost-action" type="button" data-edit-continue>編集を続ける</button>
+        ${isClose ? `<button class="ghost-action danger-action" type="button" data-edit-discard-close>保存せず閉じる</button>` : ""}
+      </div>
+    </section>
   `;
 }
 
@@ -259,7 +313,7 @@ export function renderEditableDescentItem(record: NonNullable<HappyBall["descent
       </div>
       <label class="inline-field textarea-field edit-descent-memo">
         <span>降臨メモ</span>
-        <textarea data-descent-field="memo" rows="2" maxlength="80">${escapeHtml(record.memo)}</textarea>
+        <textarea data-descent-field="memo" rows="2" maxlength="80" autocomplete="off">${escapeHtml(record.memo)}</textarea>
       </label>
       <div class="edit-descent-gps-row">
         <span data-descent-gps-status>${hasPosition ? escapeHtml(formatCoordinates(record.latitude, record.longitude)) : "位置未取得"}</span>

@@ -47,6 +47,7 @@ assert(!html.includes("玉を置くだけの通常作成は、現在は操作ロ
 assert(html.includes("LINE用URL"), "activity log should render recent action labels");
 assert(!html.includes("summary-action"), "settings summaries should not contain action-button hooks");
 assert(!html.includes("export-panel"), "backup/restore group should not keep the old export-panel-specific hook");
+assert(/<dt>公開版<\/dt>\s*<dd>0\.1\.0<\/dd>/.test(html), "a formal app version should also identify the official publication");
 
 const exportPanelStart = html.indexOf('<details class="settings-group backup-settings"');
 const exportPanelEnd = html.indexOf("</details>", exportPanelStart);

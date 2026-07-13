@@ -21,11 +21,29 @@ export interface CalendarRenderContext {
   activityLog: ActivityLogEntry[];
 }
 
-export function renderCalendarOverlay(context: CalendarRenderContext): string {
-  return context.calendarMode === "dayList" ? renderCalendarDayList(context) : renderCalendarMonth(context);
+export interface CalendarPrimaryParts {
+  header: string;
+  body: string;
 }
 
-function renderCalendarMonth(context: CalendarRenderContext): string {
+export function renderCalendarOverlay(context: CalendarRenderContext): string {
+  const parts = renderCalendarPrimaryParts(context);
+  return `
+    <section class="calendar-overlay app-interaction-surface" data-calendar-primary-shell aria-label="${context.calendarMode === "month" ? "カレンダー" : escapeAttribute(context.selectedDate)}">
+      <div data-calendar-primary-header>${parts.header}</div>
+      <div class="calendar-primary-scroll ${context.calendarMode === "dayList" ? "calendar-day-list-body" : "calendar-month-body"}" data-calendar-primary-body data-scroll-owner>
+        ${parts.body}
+      </div>
+      ${renderCalendarControlDock(context)}
+    </section>
+  `;
+}
+
+export function renderCalendarPrimaryParts(context: CalendarRenderContext): CalendarPrimaryParts {
+  return context.calendarMode === "month" ? renderCalendarMonthParts(context) : renderCalendarDayListParts(context);
+}
+
+function renderCalendarMonthParts(context: CalendarRenderContext): CalendarPrimaryParts {
   const [year, month] = context.calendarMonth.split("-").map(Number);
   const firstDay = new Date(year, month - 1, 1);
   const daysInMonth = new Date(year, month, 0).getDate();
@@ -52,8 +70,8 @@ function renderCalendarMonth(context: CalendarRenderContext): string {
     `);
   }
 
-  return `
-    <section class="calendar-overlay" aria-label="カレンダー">
+  return {
+    header: `
       <div class="calendar-head calendar-month-head">
         <button class="calendar-nav" type="button" data-calendar-month="${escapeAttribute(shiftCalendarMonth(context.calendarMonth, -1))}" aria-label="前の月">‹</button>
         <div class="screen-heading-block">
@@ -62,20 +80,21 @@ function renderCalendarMonth(context: CalendarRenderContext): string {
         </div>
         <button class="calendar-nav" type="button" data-calendar-month="${escapeAttribute(shiftCalendarMonth(context.calendarMonth, 1))}" aria-label="次の月">›</button>
       </div>
+    `,
+    body: `
       <div class="calendar-weekdays" aria-hidden="true">
         <span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span>
       </div>
       <div class="calendar-grid">
         ${cells.join("")}
       </div>
-      ${renderCalendarControlDock(context)}
-    </section>
-  `;
+    `,
+  };
 }
 
-function renderCalendarDayList(context: CalendarRenderContext): string {
-  return `
-    <section class="calendar-overlay calendar-day-list-overlay" aria-label="${escapeAttribute(context.selectedDate)}">
+function renderCalendarDayListParts(context: CalendarRenderContext): CalendarPrimaryParts {
+  return {
+    header: `
       <div class="calendar-head calendar-day-list-head">
         <button class="calendar-nav" type="button" data-calendar-shift-day="-1" aria-label="前の日">‹</button>
         <div class="screen-heading-block">
@@ -84,12 +103,9 @@ function renderCalendarDayList(context: CalendarRenderContext): string {
         </div>
         <button class="calendar-nav" type="button" data-calendar-shift-day="1" aria-label="次の日">›</button>
       </div>
-      <div class="calendar-day-list-body">
-        ${renderCalendarDayListItems(context)}
-      </div>
-      ${renderCalendarControlDock(context)}
-    </section>
-  `;
+    `,
+    body: renderCalendarDayListItems(context),
+  };
 }
 
 function renderCalendarDayListItems(context: CalendarRenderContext): string {
@@ -188,21 +204,21 @@ function renderCalendarBallRelationMeta(ball: HappyBall, activityLog: ActivityLo
 function renderCalendarControlDock(context: CalendarRenderContext): string {
   return `
     <div class="calendar-control-dock">
-      ${context.calendarMode === "month" ? `<p class="control-state-label calendar-marker-state-label">${renderCalendarMarkerModeName(context.calendarMarkerMode)}表示</p>` : ""}
+      <p class="control-state-label calendar-marker-state-label" data-calendar-marker-state${context.calendarMode === "dayList" ? " hidden" : ""}>${renderCalendarMarkerModeName(context.calendarMarkerMode)}表示</p>
       <div class="world-actions calendar-actions-bar" aria-label="カレンダー操作">
         <button class="dock-symbol-button dock-create-button" type="button" data-calendar-open-panel="create" aria-label="選択日に玉を作る">＋</button>
         <span class="primary-screen-control-group" aria-label="主要3画面">
           <button class="calendar-main-ball-button" type="button" data-calendar-main aria-label="メイン画面へ戻る">
             <span class="calendar-main-ball-icon" aria-hidden="true"></span>
           </button>
-          <button class="calendar-screen-button ${context.calendarMode === "month" ? "is-primary-active" : ""}" type="button" data-calendar-open-panel="calendar" aria-label="カレンダー">
+          <button class="calendar-screen-button" type="button" data-calendar-open-panel="calendar" aria-label="カレンダー"${context.calendarMode === "month" ? ` aria-current="page"` : ""}>
             ${renderCalendarScreenIcon()}
           </button>
-          <button class="day-list-screen-button ${context.calendarMode === "dayList" ? "is-primary-active" : ""}" type="button" data-calendar-open-panel="dayList" aria-label="玉リスト">
+          <button class="day-list-screen-button" type="button" data-calendar-open-panel="dayList" aria-label="玉リスト"${context.calendarMode === "dayList" ? ` aria-current="page"` : ""}>
             <span class="day-list-screen-icon" aria-hidden="true"></span>
           </button>
         </span>
-        ${context.calendarMode === "month" ? `<button class="calendar-marker-mode-button" type="button" data-calendar-cycle-marker-mode aria-label="${escapeAttribute(renderCalendarMarkerModeCycleAriaLabel(context.calendarMarkerMode))}">${renderCalendarMarkerModeIcon(context.calendarMarkerMode)}</button>` : ""}
+        <button class="calendar-marker-mode-button" type="button" data-calendar-cycle-marker-mode aria-label="${escapeAttribute(renderCalendarMarkerModeCycleAriaLabel(context.calendarMarkerMode))}"${context.calendarMode === "dayList" ? " hidden" : ""}>${renderCalendarMarkerModeIcon(context.calendarMarkerMode)}</button>
         <button class="dock-symbol-button dock-settings-button" type="button" data-calendar-open-panel="settings" aria-label="設定">⚙</button>
       </div>
     </div>

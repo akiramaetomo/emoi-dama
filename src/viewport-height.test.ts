@@ -1,20 +1,20 @@
 import { resolveAppViewportHeights } from "./viewport-height.js";
 
 assertDeepEqual(
-  resolveAppViewportHeights({ innerHeight: 820, visualViewportHeight: 420, visualViewportOffsetTop: 18 }),
-  { stableHeight: 820, visibleHeight: 420, visibleOffsetTop: 18 },
+  resolveAppViewportHeights({ innerHeight: 820, visualViewportHeight: 420 }),
+  { stableHeight: 820, visibleHeight: 420 },
   "visual viewport height should not shrink the stable app height",
 );
 
 assertDeepEqual(
   resolveAppViewportHeights({ innerHeight: 812, visualViewportHeight: null }),
-  { stableHeight: 812, visibleHeight: 812, visibleOffsetTop: 0 },
+  { stableHeight: 812, visibleHeight: 812 },
   "missing visual viewport should use the window height for both values",
 );
 
 assertDeepEqual(
   resolveAppViewportHeights({ innerHeight: 260, visualViewportHeight: 240 }),
-  { stableHeight: 320, visibleHeight: 320, visibleOffsetTop: 0 },
+  { stableHeight: 320, visibleHeight: 320 },
   "very small heights should be clamped to the minimum",
 );
 

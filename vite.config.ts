@@ -13,6 +13,14 @@ export default defineConfig(({ mode }) => ({
   server: {
     https: mode === "local-https" ? readLocalHttpsConfig() : undefined,
   },
+  build: {
+    rollupOptions: {
+      input: {
+        main: resolve("index.html"),
+        viewportLab: resolve("viewport-lab.html"),
+      },
+    },
+  },
 }));
 
 function readLocalHttpsConfig(): { pfx: Buffer; passphrase: string } {

@@ -60,6 +60,10 @@ const sampleBall: HappyBall = {
 };
 
 const detailHtml = renderBallDialog(sampleBall, context);
+assertIncludes(detailHtml, "app-modal-backdrop", "ball detail should use the shared fixed modal backdrop");
+assertIncludes(detailHtml, "app-modal-scroll", "ball detail should expose one shared modal scroll region");
+assertOrder(detailHtml, "surface-fixed-header", "surface-scroll-body", "ball detail header should remain outside its scroll owner");
+
 assertIncludes(detailHtml, "送る", "detail card should be titled send");
 assertIncludes(detailHtml, "お配り", "detail card should offer casual send");
 assertIncludes(detailHtml, "お預け", "detail card should offer formal send");
@@ -180,5 +184,11 @@ function assertIncludes(haystack: string, needle: string, message: string): void
 function assertNotIncludes(haystack: string, needle: string, message: string): void {
   if (haystack.includes(needle)) {
     throw new Error(`${message}: found ${needle}`);
+  }
+}
+
+function assertOrder(haystack: string, first: string, second: string, message: string): void {
+  if (haystack.indexOf(first) < 0 || haystack.indexOf(first) >= haystack.indexOf(second)) {
+    throw new Error(message);
   }
 }

@@ -32,12 +32,15 @@ export function renderBallDialog(ball: HappyBall, context: DialogRenderContext):
   const showIssuer = canShowIssuer(ball);
 
   return `
-    <div class="ball-dialog-backdrop ball-detail-backdrop" data-dialog-backdrop>
-      <section class="ball-dialog ball-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="ball-dialog-title">
-        <button class="dialog-close" type="button" data-dialog-close aria-label="閉じる">&times;</button>
-        <button class="primary-action detail-edit-top" type="button" data-dialog-edit-ball-id="${escapeAttribute(ball.id)}">編集</button>
-        <p class="detail-screen-name">玉の中身</p>
-        <div class="dialog-head">
+    <div class="ball-dialog-backdrop ball-detail-backdrop app-modal-backdrop" data-dialog-backdrop>
+      <section class="ball-dialog ball-detail-dialog surface-shell" role="dialog" aria-modal="true" aria-labelledby="ball-dialog-title">
+        <div class="surface-fixed-header detail-surface-header">
+          <button class="dialog-close" type="button" data-dialog-close aria-label="閉じる">&times;</button>
+          <button class="primary-action detail-edit-top" type="button" data-dialog-edit-ball-id="${escapeAttribute(ball.id)}">編集</button>
+          <p class="detail-screen-name">玉の中身</p>
+        </div>
+        <div class="surface-scroll-body app-modal-scroll" data-scroll-owner>
+          <div class="dialog-head">
           <div class="dialog-ball-stack">
             <div class="dialog-ball ${renderLifecycleClass(ball)} ${renderVisualKindClass(ball.visual)} ${renderEchoClass(ball, context)}" style="${renderBallVisualStyle(ball, context)} --ball-rotation: 0.34rad;" aria-hidden="true">
               <span class="ball-body">
@@ -108,8 +111,9 @@ export function renderBallDialog(ball: HappyBall, context: DialogRenderContext):
             </dl>
           </details>
         </div>
-        <div class="dialog-actions">
-          <button class="primary-action" type="button" data-dialog-edit-ball-id="${escapeAttribute(ball.id)}">編集</button>
+          <div class="dialog-actions">
+            <button class="primary-action" type="button" data-dialog-edit-ball-id="${escapeAttribute(ball.id)}">編集</button>
+          </div>
         </div>
       </section>
     </div>
@@ -210,7 +214,7 @@ function renderBallCountUnderIcon(ball: HappyBall, className: string): string {
 export function renderReceiptDialog(ball: HappyBall, context: DialogRenderContext, sendMode: SendMode = "formal"): string {
   return `
     <div class="ball-dialog-backdrop" data-dialog-backdrop>
-      <section class="ball-dialog receipt-dialog" role="dialog" aria-modal="true" aria-labelledby="receipt-dialog-title">
+      <section class="ball-dialog receipt-dialog app-modal-scroll" data-scroll-owner role="dialog" aria-modal="true" aria-labelledby="receipt-dialog-title">
         <button class="dialog-close" type="button" data-dialog-close aria-label="閉じる">&times;</button>
         <div class="dialog-actions receipt-dialog-actions">
           <button class="ghost-action" type="button" data-dialog-back-to-ball-id="${escapeAttribute(ball.id)}">詳細へ戻る</button>
@@ -244,7 +248,7 @@ export function renderReceiptQrDialog(ball: HappyBall, context: DialogRenderCont
 
   return `
     <div class="ball-dialog-backdrop" data-dialog-backdrop>
-      <section class="ball-dialog receipt-qr-dialog" role="dialog" aria-modal="true" aria-labelledby="receipt-qr-dialog-title">
+      <section class="ball-dialog receipt-qr-dialog app-modal-scroll" data-scroll-owner role="dialog" aria-modal="true" aria-labelledby="receipt-qr-dialog-title">
         <button class="dialog-close" type="button" data-dialog-close aria-label="閉じる">&times;</button>
         <div class="dialog-actions receipt-dialog-actions">
           <button class="ghost-action" type="button" data-dialog-receipt-ball-id="${escapeAttribute(ball.id)}" data-send-mode="${sendMode}">${escapeHtml(receiptTitle)}へ戻る</button>

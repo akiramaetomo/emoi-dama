@@ -12,6 +12,51 @@ This project follows a lightweight changelog discipline:
 
 ## Unreleased
 
+## 0.5.1 - 2026-07-14
+
+- Aligned `玉を置く` and `玉を編集` around one authoring flow: title, memo,
+  folded category, datetime, then a quiet boundary before owner, ball count,
+  issue mode, and visibility. Edit-only lifecycle controls remain after the
+  shared fields, and the read-oriented `玉の中身` order is unchanged.
+- Replaced numeric ball-count fields in both `玉を置く` and `玉を編集`
+  with a compact native `1..10` slider. Ten ticks form nine equal intervals,
+  five balls is emphasized at its natural `4/9` position, and the live count
+  sits beside the track. Existing counts above ten remain unchanged until the
+  user explicitly chooses to convert them.
+- Restored native thumb dragging for range controls by exempting touches that
+  begin on a range from the shared one-finger surface-pan guard while retaining
+  ordinary surface and multi-touch gesture protection.
+- Rebuilt the iPad screen foundation around one route state, persistent Base
+  physics, fixed Calendar/Ball List navigation, explicit internal scrolling,
+  focus-gated keyboard sizing, and contained runtime faults. The formal build
+  reports `0.5.1` in Settings for support identification.
+- Added an isolated viewport lab that compares the current fixed-App layout
+  with a fixed-body, single-viewport candidate without loading user data or
+  physics.
+- Refined the viewport lab after its first iPad comparison: mode labels now
+  distinguish the minimal control from the real app, non-editable text follows
+  the app's selection/callout policy, and JSON history retains 3000 snapshots
+  so earlier route phases are not discarded by touch and scroll events.
+- Added an evidence-based zero-range guard to the isolated candidate lab:
+  internal owners receive `pan-y` only when they have measurable scroll range,
+  while zero-range owners use no-pan without global touchmove cancellation.
+- Added the final Web-only viewport proof: a candidate zero-range owner now
+  propagates no-pan to its child controls, while controls inside scrollable
+  owners retain normal pan behavior.
+- Prevented long-press selection and touch-only sticky hover across app
+  surfaces while preserving editing and explicitly copyable text.
+- Kept the shared primary navigation to one semantic current page when moving
+  between Play, Calendar, and Ball List.
+- Improved the create, detail, and edit surfaces on iPad and smartphones with
+  fixed backdrops, one contained scroll region, horizontal-pan prevention, and
+  modal-local input focus scrolling so background movement does not displace
+  the active surface.
+- Prevented double-tap and pinch zoom gestures that start on the Play control
+  bar while keeping normal page zoom available elsewhere.
+- Unified `だれの玉` into one field group with free input first and registered
+  name selection below it, widened compact form labels, and shortened/reordered
+  the edit save choices so correction appears first.
+
 ## 0.5.0 - 2026-07-11
 
 - Retuned the global ball motion defaults and ranges: wall/contact bounce now

@@ -99,6 +99,8 @@ export class RapierStage {
   private gravityVector: GravityVector = { x: 0, y: 0 };
   private motionTuning: MotionTuning;
   private disposed = false;
+  private running = false;
+  private faulted = false;
 
   constructor(
     private readonly field: HTMLDivElement,
@@ -107,6 +109,7 @@ export class RapierStage {
     private readonly onOpenDetail: (ballId: string) => void,
     private settings: AppSettings,
     private readonly audio: ImpactAudio,
+    private readonly onFault: (error: unknown) => void = () => undefined,
   ) {
     this.world = new RAPIER.World({ x: 0, y: 0 });
     this.motionTuning = createGlobalMotionTuning(settings);
@@ -128,9 +131,22 @@ export class RapierStage {
   }
 
   start(): void {
-    if (this.disposed || this.balls.length === 0) {
+    this.resume();
+  }
+
+  pause(): void {
+    if (this.disposed || !this.running) {
       return;
     }
+    this.running = false;
+    cancelAnimationFrame(this.animationId);
+  }
+
+  resume(): void {
+    if (this.disposed || this.faulted || this.running || this.balls.length === 0) {
+      return;
+    }
+    this.running = true;
     this.lastTickTimeMs = null;
     this.physicsAccumulatorMs = 0;
     this.animationId = requestAnimationFrame(this.tick);
@@ -140,8 +156,8 @@ export class RapierStage {
     if (this.disposed) {
       return;
     }
+    this.pause();
     this.disposed = true;
-    cancelAnimationFrame(this.animationId);
     this.resizeObserver.disconnect();
     this.field.removeEventListener("pointerdown", this.handlePointerDown);
     this.field.removeEventListener("pointermove", this.handlePointerMove);
@@ -176,7 +192,7 @@ export class RapierStage {
   }
 
   captureSnapshots(): PhysicsBallSnapshot[] {
-    if (this.disposed) {
+    if (this.disposed || this.faulted) {
       return [];
     }
 
@@ -194,7 +210,7 @@ export class RapierStage {
   }
 
   setGravityVector(gravity: GravityVector): void {
-    if (this.disposed) {
+    if (this.disposed || this.faulted) {
       return;
     }
     this.gravityVector = gravity;
@@ -316,7 +332,7 @@ export class RapierStage {
   }
 
   private readonly tick = (timestampMs: number): void => {
-    if (this.disposed) {
+    if (this.disposed || !this.running) {
       return;
     }
     try {
@@ -336,12 +352,14 @@ export class RapierStage {
       }
       this.audio.play(impacts, this.settings);
       this.paint();
-      if (!this.disposed) {
+      if (!this.disposed && this.running) {
         this.animationId = requestAnimationFrame(this.tick);
       }
     } catch (error) {
       console.error("Rapier stage stopped after physics error.", error);
-      this.disposed = true;
+      this.running = false;
+      this.faulted = true;
+      this.onFault(error);
     }
   };
 

@@ -15,11 +15,6 @@ export interface PrimaryScreenCaptureInput {
   selectedDate: string;
 }
 
-export interface PlayStageMountInput {
-  activeOverlay: string;
-  hasPendingDialog?: boolean;
-}
-
 export function capturePrimaryScreen(input: PrimaryScreenCaptureInput): PrimaryScreenState {
   if (input.activePrimarySurface === "calendar") {
     return {
@@ -42,8 +37,4 @@ export function createMainPrimaryScreen(calendarMonth: string, selectedDate: str
     calendarMonth,
     selectedDate,
   };
-}
-
-export function shouldMountPlayStage(input: PlayStageMountInput): boolean {
-  return input.activeOverlay === "none" && input.hasPendingDialog !== true;
 }

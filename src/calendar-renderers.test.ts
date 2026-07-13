@@ -92,6 +92,8 @@ assert(monthHtml.includes('<p class="screen-kicker">Calendar</p>'), "month view 
 assert(!monthHtml.includes("primary-screen-label"), "calendar toolbar should not put screen names inside buttons");
 assert(!monthHtml.includes("data-calendar-cycle-display-mode"), "calendar toolbar should not render the period cycle action");
 assert(monthHtml.includes("data-calendar-cycle-marker-mode"), "calendar toolbar should render the calendar marker mode action");
+assert(monthHtml.includes("data-calendar-primary-body data-scroll-owner"), "calendar should expose one explicit internal scroll owner");
+assert(countOccurrences(monthHtml, "aria-current=\"page\"") === 1, "calendar should have exactly one semantic current navigation item");
 assert(monthHtml.includes("通常表示"), "calendar month view should show the current marker mode above the controls");
 assert(monthHtml.includes("玉表示: 通常。押すとメーターに切り替え"), "calendar marker mode action should describe the next marker mode");
 assert(monthHtml.includes("marker-mode-icon-meter"), "spread mode should offer the meter icon as the next marker mode");
@@ -278,7 +280,9 @@ assert(!dayListHtml.includes("data-copy-ball-line-url-id"), "day list view shoul
 assert(!dayListHtml.includes("data-descend-ball-id"), "day list view should omit kourin actions");
 assert(!dayListHtml.includes("data-clear-ledger-list-date"), "calendar day list should not render the saved-list all-balls control");
 assert(!dayListHtml.includes("data-calendar-cycle-display-mode"), "day list toolbar should not render the period cycle action");
-assert(!dayListHtml.includes("data-calendar-cycle-marker-mode"), "day list toolbar should not render the calendar marker mode action");
+assert(dayListHtml.includes("data-calendar-cycle-marker-mode") && dayListHtml.includes("data-calendar-cycle-marker-mode aria-label=\"玉表示: 通常。押すとメーターに切り替え\" hidden"), "day list should retain but hide the persistent calendar marker action");
+assert(dayListHtml.includes("aria-current=\"page\""), "day list should expose exactly one semantic current navigation item");
+assert(countOccurrences(dayListHtml, "aria-current=\"page\"") === 1, "day list should have exactly one semantic current navigation item");
 
 const offeredOnlyHtml = renderCalendarOverlay({
   balls: [],

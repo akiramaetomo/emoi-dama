@@ -1,12 +1,14 @@
 export function renderPanelOverlay(title: string, body: string, kind: string): string {
   return `
-    <div class="panel-backdrop panel-backdrop-${kind}" data-close-panel>
-      <aside class="floating-panel floating-panel-${kind}" aria-label="${escapeAttribute(title)}">
-        <div class="floating-panel-head">
+    <div class="panel-backdrop panel-backdrop-${kind} app-modal-backdrop" data-close-panel>
+      <aside class="floating-panel floating-panel-${kind} surface-shell" aria-label="${escapeAttribute(title)}">
+        <div class="floating-panel-head surface-fixed-header">
           <h2>${escapeHtml(title)}</h2>
           <button class="dialog-close" type="button" data-close-panel aria-label="閉じる">&times;</button>
         </div>
-        ${body}
+        <div class="surface-scroll-body app-modal-scroll" data-scroll-owner>
+          ${body}
+        </div>
       </aside>
     </div>
   `;

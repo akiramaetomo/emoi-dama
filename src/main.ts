@@ -1,5 +1,14 @@
 import RAPIER from "@dimforge/rapier2d-compat";
 import {
+  createAppUiSnapshot,
+  createInitialAppUiState,
+  isCalendarRoute,
+  reduceAppUiState,
+  type AppUiAction,
+  type AppUiState,
+  type PrimaryRoute,
+} from "./app-ui-state";
+import {
   createBallActivityInput,
   createBallActivitySnapshot,
   loadActivityLog,
@@ -12,7 +21,8 @@ import {
   renderBallLabelModeCycleAriaLabel,
   renderNextBallLabelModeIcon,
 } from "./ball-labels";
-import { renderCalendarOverlay, type CalendarOverlayMode } from "./calendar-renderers";
+import { bindBallCountSliderControls } from "./ball-count-slider";
+import { renderCalendarOverlay, renderCalendarPrimaryParts, type CalendarRenderContext } from "./calendar-renderers";
 import {
   loadCategoryColorPresets,
   resetCategoryColorPresets,
@@ -51,9 +61,12 @@ import {
   renderEditableDescentItem,
   renderBallEditDialog,
   renderCreateForm,
+  renderEditSaveModeConfirm,
   type FormRenderContext,
 } from "./form-renderers";
+import { resolveManualSubjectPreset, resolveNamePresetSelection } from "./form-interactions";
 import { TinyImpactAudio } from "./impact-audio";
+import { ImeViewportCoordinator } from "./ime-viewport-coordinator";
 import { isGeolocationUnavailableError, isStaleGeolocationPositionError, readReliableCurrentPosition } from "./location";
 import {
   renderPendingJsonImportDialog,
@@ -61,7 +74,8 @@ import {
   renderSnoozedUrlPacketReminder,
 } from "./import-dialog-renderers";
 import { renderManualCopyDialog } from "./manual-copy-renderers";
-import { visibilityValues, type BallDraft, type HappyBall, type HappyBallDescentRecord, type LifecycleStatus, type NameBookEntry, type SendMode } from "./models";
+import { visibilityValues, type BallDraft, type HappyBall, type HappyBallDescentRecord, type IssuerType, type LifecycleStatus, type NameBookEntry, type SendMode } from "./models";
+import { resolveFocusScrollDelta } from "./modal-interactions";
 import {
   createLinePacketImportUrl,
   createPacketImportUrl,
@@ -70,6 +84,7 @@ import {
   type UrlPacketParseResult,
 } from "./packet";
 import { renderPanelOverlay } from "./overlay-renderers";
+import { PhysicsRuntimeController } from "./physics-runtime-controller";
 import { RapierStage, type PhysicsBallSnapshot, type VisualBallSource } from "./rapier-stage";
 import { createReceiptImageBlob, createReceiptImageFileName } from "./receipt-image";
 import {
@@ -84,9 +99,11 @@ import {
   renderToolsPanel,
   type ToolsPanelRenderContext,
 } from "./settings-renderers";
-import { capturePrimaryScreen, createMainPrimaryScreen, shouldMountPlayStage, type PrimaryScreenState } from "./screen-navigation";
+import { capturePrimaryScreen, createMainPrimaryScreen, type PrimaryScreenState } from "./screen-navigation";
+import { SurfaceInteractionController } from "./surface-interaction-controller";
 import { createStartupScreenState } from "./startup-state";
-import { resolveAppViewportHeights } from "./viewport-height";
+import { UiLayerHosts } from "./ui-layer-hosts";
+import { isUiDebugEnabled, UiDebugDiagnostics } from "./ui-debug-diagnostics";
 import {
   addBall,
   clearBallData,
@@ -119,16 +136,16 @@ const startupScreenState = createStartupScreenState(ledger.balls, todayIsoDate()
 let draft = createDefaultDraft(getPrimarySelfName(ledger));
 let editableCategories: CategoryColorPreset[] = loadCategoryColorPresets();
 let selectedBallId: string | null = startupScreenState.selectedBallId;
-let activeOverlay: ActiveOverlay = startupScreenState.startupScreen === "main" ? "none" : "calendar";
+let uiState: AppUiState = createInitialAppUiState(startupScreenState.startupScreen);
 let displayMode: DisplayMode = "day";
 let displayAnchorDate = startupScreenState.displayAnchorDate;
 let calendarMonth = startupScreenState.calendarMonth;
-let calendarMode: CalendarOverlayMode = startupScreenState.startupScreen === "calendarDayList" ? "dayList" : "month";
 let subfeatureReturnScreen: PrimaryScreenState = createMainPrimaryScreen(calendarMonth, displayAnchorDate);
 let pendingUrlPacket: UrlPacketParseResult | null = parsePacketLocation(window.location.search, window.location.hash);
 let snoozedUrlPacket: UrlPacketParseResult | null = null;
 let pendingJsonImport: JsonImportReview | null = null;
 let physicsStage: RapierStage | null = null;
+const physicsRuntime = new PhysicsRuntimeController<RapierStage>();
 const physicsSnapshots = new Map<string, PhysicsBallSnapshot>();
 let openSettingsGroups: string[] = [];
 let activityLogHelpOpen = false;
@@ -138,7 +155,8 @@ let deviceGravity: DeviceGravityController;
 let latestGravityDebug: DeviceGravityDebugSnapshot | null = null;
 const debugLog = new DebugLogBuffer(400);
 let lastMotionDebugLogAt = 0;
-let appViewportHeightFrame = 0;
+let bootComplete = false;
+let baseRenderSignature = "";
 let activeBallDialogEscapeHandler: (() => void) | null = null;
 let createPromptDismissed = false;
 let randomTextureVariables: Record<string, string> | null = null;
@@ -146,7 +164,9 @@ let ledgerListDateFilter: string | null = null;
 let pendingCalendarDayListScrollTop: number | null = null;
 const pendingDescentBallIds = new Set<string>();
 
-const BALL_DIALOG_ROOT_ID = "ball-dialog-root";
+const uiHosts = new UiLayerHosts(appRoot, __APP_VERSION__);
+const imeViewport = new ImeViewportCoordinator(appRoot, () => createAppUiSnapshot(uiState).editableSurface);
+const interactionController = new SurfaceInteractionController(appRoot, () => createAppUiSnapshot(uiState).blocksBase);
 const RANDOM_TEXTURE_PROPERTY_NAMES = [
   "--texture-random-dot-1",
   "--texture-random-dot-2",
@@ -165,7 +185,6 @@ const RANDOM_TEXTURE_PROPERTY_NAMES = [
   "--texture-random-size-7",
   "--texture-random-size-8",
 ];
-type ActiveOverlay = "none" | "create" | "list" | "settings" | "calendar";
 const SETTINGS_GROUP_CLASSES = [
   "name-book-settings",
   "category-settings",
@@ -179,61 +198,25 @@ const SETTINGS_GROUP_CLASSES = [
 ];
 
 window.addEventListener("error", (event) => {
-  showFatalError(event.error ?? event.message);
+  handleApplicationError(event.error ?? event.message);
 });
 
 window.addEventListener("unhandledrejection", (event) => {
-  showFatalError(event.reason);
+  event.preventDefault();
+  handleApplicationError(event.reason);
 });
 
 window.addEventListener("keydown", handleDisplayNavigationKey);
-installAppViewportHeightSync();
+imeViewport.install();
+interactionController.install();
+if (isUiDebugEnabled()) {
+  new UiDebugDiagnostics(appRoot, __APP_VERSION__).install();
+}
 void boot();
-
-function installAppViewportHeightSync(): void {
-  syncAppViewportHeight();
-
-  const queueSettlingSync = () => {
-    queueAppViewportHeightSync();
-    window.setTimeout(queueAppViewportHeightSync, 80);
-    window.setTimeout(queueAppViewportHeightSync, 240);
-  };
-
-  window.visualViewport?.addEventListener("resize", queueSettlingSync, { passive: true });
-  window.visualViewport?.addEventListener("scroll", queueAppViewportHeightSync, { passive: true });
-  window.addEventListener("resize", queueSettlingSync, { passive: true });
-  window.addEventListener("orientationchange", queueSettlingSync, { passive: true });
-}
-
-function queueAppViewportHeightSync(): void {
-  if (appViewportHeightFrame !== 0) {
-    return;
-  }
-
-  appViewportHeightFrame = window.requestAnimationFrame(() => {
-    appViewportHeightFrame = 0;
-    syncAppViewportHeight();
-  });
-}
-
-function syncAppViewportHeight(): void {
-  const heights = resolveAppViewportHeights({
-    innerHeight: window.innerHeight,
-    visualViewportHeight: window.visualViewport?.height,
-    visualViewportOffsetTop: window.visualViewport?.offsetTop,
-  });
-  if (!heights) {
-    return;
-  }
-
-  document.documentElement.style.setProperty("--app-viewport-height", `${heights.stableHeight}px`);
-  document.documentElement.style.setProperty("--app-visible-height", `${heights.visibleHeight}px`);
-  document.documentElement.style.setProperty("--app-visible-offset-top", `${heights.visibleOffsetTop}px`);
-}
 
 async function boot(): Promise<void> {
   try {
-    appRoot.innerHTML = `<main class="loading-shell">Rapierを起動しています...</main>`;
+    uiHosts.renderBase(`<main class="loading-shell">Rapierを起動しています...</main>`);
     await RAPIER.init();
     audioEngine = new TinyImpactAudio();
     installAudioLifecycleHandlers();
@@ -250,6 +233,7 @@ async function boot(): Promise<void> {
     syncGravityController();
     rapierReady = true;
     render();
+    bootComplete = true;
   } catch (error) {
     showFatalError(error);
   }
@@ -267,38 +251,65 @@ function installAudioLifecycleHandlers(): void {
   });
 }
 
-function bindEditKeyboardFocusAssist(): void {
-  const dialog = document.querySelector<HTMLElement>(".ball-edit-dialog");
-  const form = document.querySelector<HTMLFormElement>("#ball-edit-form");
-  if (!dialog || !form) {
-    return;
-  }
-
-  form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea").forEach((field) => {
+function bindModalKeyboardFocusAssist(root: ParentNode = document): void {
+  root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(".app-modal-scroll input, .app-modal-scroll textarea").forEach((field) => {
     field.addEventListener("focus", () => {
       window.setTimeout(() => {
-        field.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+        const scrollRegion = field.closest<HTMLElement>(".app-modal-scroll");
+        if (!scrollRegion) {
+          return;
+        }
+        const regionRect = scrollRegion.getBoundingClientRect();
+        const fieldRect = field.getBoundingClientRect();
+        const delta = resolveFocusScrollDelta({
+          regionTop: regionRect.top,
+          regionBottom: regionRect.bottom,
+          fieldTop: fieldRect.top,
+          fieldBottom: fieldRect.bottom,
+        });
+        if (delta !== 0) {
+          scrollRegion.scrollBy({ top: delta, behavior: "smooth" });
+        }
       }, 180);
     });
   });
 }
 
 function render(): void {
-  openSettingsGroups = activeOverlay === "settings" ? readOpenSettingsGroups() : [];
-  if (physicsStage) {
-    for (const snapshot of physicsStage.captureSnapshots()) {
-      physicsSnapshots.set(snapshot.id, snapshot);
-    }
-  }
-  closeBallDialog();
+  openSettingsGroups = uiState.primary === "settings" ? readOpenSettingsGroups() : [];
+  clearModalLayers(false);
   const visibleBalls = getVisibleBalls();
   const selectedBall = visibleBalls.find((ball) => ball.id === selectedBallId) ?? visibleBalls[0] ?? null;
   selectedBallId = selectedBall?.id ?? null;
+  ensureBaseRendered(visibleBalls, selectedBall);
+  renderPrimarySurface();
+  syncPendingImportSurface();
+  uiHosts.renderTransient(renderSnoozedUrlPacketReminder(snoozedUrlPacket));
+  bindEvents(uiHosts.transient);
+  applyUiState();
+  applyBallFieldTextureSetting();
+  restorePendingCalendarDayListScroll();
+}
 
-  physicsStage?.destroy();
+function ensureBaseRendered(visibleBalls: HappyBall[], selectedBall: HappyBall | null): void {
+  const nextSignature = JSON.stringify({
+    balls: visibleBalls,
+    selectedBallId,
+    displayMode,
+    displayAnchorDate,
+    createPromptDismissed,
+    settings: appSettings,
+  });
+  if (nextSignature === baseRenderSignature) {
+    return;
+  }
+  baseRenderSignature = nextSignature;
+
+  capturePhysicsSnapshotsSafely();
+  physicsRuntime.destroy();
   physicsStage = null;
 
-  appRoot.innerHTML = `
+  uiHosts.renderBase(`
     <main class="app-shell ball-world-shell">
       <section class="stage ${appSettings.ballLabelMode !== "none" ? "show-ball-labels" : ""} label-mode-${appSettings.ballLabelMode}" aria-label="えもい玉">
         <div class="stage-topline">
@@ -316,7 +327,7 @@ function render(): void {
           <div class="world-actions" aria-label="操作">
             <button class="dock-symbol-button dock-create-button" type="button" data-open-panel="create" aria-label="玉を作る">＋</button>
             <span class="primary-screen-control-group" aria-label="主要3画面">
-              <button class="calendar-main-ball-button is-primary-active ${appSettings.ballLabelMode !== "none" ? "is-label-on" : ""}" type="button" data-cycle-ball-label-mode aria-label="${escapeHtml(renderBallLabelModeCycleAriaLabel(appSettings.ballLabelMode))}">
+              <button class="calendar-main-ball-button is-primary-active ${appSettings.ballLabelMode !== "none" ? "is-label-on" : ""}" type="button" data-cycle-ball-label-mode aria-current="page" aria-label="${escapeHtml(renderBallLabelModeCycleAriaLabel(appSettings.ballLabelMode))}">
                 ${renderNextBallLabelModeIcon(appSettings.ballLabelMode)}
               </button>
               <button class="calendar-screen-button" type="button" data-open-panel="calendar" aria-label="カレンダー">
@@ -331,19 +342,165 @@ function render(): void {
           </div>
         </div>
       </section>
-      ${renderActiveOverlay()}
-      ${renderSnoozedUrlPacketReminder(snoozedUrlPacket)}
-      ${renderPendingUrlPacketDialog(pendingUrlPacket, getImportDialogRenderContext())}
-      ${renderPendingJsonImportDialog(pendingJsonImport, appSettings.emotionEchoStrength)}
     </main>
-  `;
+  `);
 
-  applyBallFieldTextureSetting();
-  bindEvents();
-  if (shouldMountPlayStage({ activeOverlay, hasPendingDialog: Boolean(pendingUrlPacket || pendingJsonImport) })) {
+  bindEvents(uiHosts.base);
+  if (rapierReady) {
     mountRapierStage(visibleBalls);
   }
-  restorePendingCalendarDayListScroll();
+}
+
+function renderPrimarySurface(): void {
+  if (uiState.primary === "play") {
+    uiHosts.clearPrimary();
+    return;
+  }
+
+  if (isCalendarRoute(uiState.primary)) {
+    const context = getCalendarRenderContext();
+    const existing = uiHosts.primary.querySelector<HTMLElement>("[data-calendar-primary-shell]");
+    if (existing) {
+      updateCalendarPrimarySurface(existing, context);
+      return;
+    }
+    const surface = uiHosts.renderPrimary(uiState.primary, renderCalendarOverlay(context));
+    bindEvents(surface);
+    return;
+  }
+
+  const surface = uiHosts.renderPrimary(uiState.primary, renderActivePrimaryPanel());
+  bindEvents(surface);
+  bindModalKeyboardFocusAssist(surface);
+}
+
+function getCalendarRenderContext(): CalendarRenderContext {
+  return {
+    balls: getCalendarBalls(),
+    dayListBalls: getCalendarDayListBalls(),
+    calendarMonth,
+    calendarMode: uiState.primary === "calendar-day-list" ? "dayList" : "month",
+    displayMode,
+    selectedDate: displayAnchorDate,
+    selectedBallId,
+    emotionEchoStrength: appSettings.emotionEchoStrength,
+    calendarMarkerMode: appSettings.calendarMarkerMode,
+    activityLog,
+  };
+}
+
+function updateCalendarPrimarySurface(surface: HTMLElement, context: CalendarRenderContext): void {
+  const parts = renderCalendarPrimaryParts(context);
+  const header = surface.querySelector<HTMLElement>("[data-calendar-primary-header]");
+  const body = surface.querySelector<HTMLElement>("[data-calendar-primary-body]");
+  if (!header || !body) {
+    const replacement = uiHosts.renderPrimary(uiState.primary, renderCalendarOverlay(context));
+    bindEvents(replacement);
+    return;
+  }
+
+  header.innerHTML = parts.header;
+  body.innerHTML = parts.body;
+  body.className = `calendar-primary-scroll ${context.calendarMode === "dayList" ? "calendar-day-list-body" : "calendar-month-body"}`;
+  surface.setAttribute("aria-label", context.calendarMode === "month" ? "カレンダー" : context.selectedDate);
+  const monthButton = surface.querySelector<HTMLButtonElement>("[data-calendar-open-panel='calendar']");
+  const listButton = surface.querySelector<HTMLButtonElement>("[data-calendar-open-panel='dayList']");
+  setAriaCurrent(monthButton, context.calendarMode === "month");
+  setAriaCurrent(listButton, context.calendarMode === "dayList");
+
+  const template = document.createElement("template");
+  template.innerHTML = renderCalendarOverlay(context);
+  const nextState = template.content.querySelector<HTMLElement>("[data-calendar-marker-state]");
+  const currentState = surface.querySelector<HTMLElement>("[data-calendar-marker-state]");
+  if (currentState && nextState) {
+    currentState.hidden = nextState.hidden;
+    currentState.textContent = nextState.textContent;
+  }
+  const nextMarker = template.content.querySelector<HTMLButtonElement>("[data-calendar-cycle-marker-mode]");
+  const currentMarker = surface.querySelector<HTMLButtonElement>("[data-calendar-cycle-marker-mode]");
+  if (currentMarker && nextMarker) {
+    currentMarker.hidden = nextMarker.hidden;
+    currentMarker.innerHTML = nextMarker.innerHTML;
+    currentMarker.setAttribute("aria-label", nextMarker.getAttribute("aria-label") ?? "玉表示を切り替え");
+  }
+  bindEvents(header);
+  bindEvents(body);
+}
+
+function setAriaCurrent(button: HTMLButtonElement | null, current: boolean): void {
+  if (!button) {
+    return;
+  }
+  if (current) {
+    button.setAttribute("aria-current", "page");
+  } else {
+    button.removeAttribute("aria-current");
+  }
+}
+
+function renderActivePrimaryPanel(): string {
+  if (uiState.primary === "create") {
+    return renderPanelOverlay("玉を置く", renderCreateForm(draft, getFormRenderContext()), "create");
+  }
+  if (uiState.primary === "saved-list") {
+    const managedBalls = getManagedBalls();
+    const title = ledgerListDateFilter ? `${ledgerListDateFilter} の保存された玉` : "保存された玉";
+    return renderPanelOverlay(
+      title,
+      renderLedgerList(managedBalls, selectedBallId, { dateFilter: ledgerListDateFilter, activityLog }),
+      "list",
+    );
+  }
+  return renderPanelOverlay("設定とデータ", renderToolsPanel(getToolsPanelRenderContext()), "settings");
+}
+
+function syncPendingImportSurface(): void {
+  if (pendingUrlPacket) {
+    dispatchUi({ type: "replace-modal", route: "url-import" }, false);
+    const root = uiHosts.replaceModal("url-import", renderPendingUrlPacketDialog(pendingUrlPacket, getImportDialogRenderContext()));
+    bindEvents(root);
+    return;
+  }
+  if (pendingJsonImport) {
+    dispatchUi({ type: "replace-modal", route: "json-import" }, false);
+    const root = uiHosts.replaceModal("json-import", renderPendingJsonImportDialog(pendingJsonImport, appSettings.emotionEchoStrength));
+    bindEvents(root);
+  }
+}
+
+function dispatchUi(action: AppUiAction, apply = true): void {
+  uiState = reduceAppUiState(uiState, action);
+  if (apply) {
+    applyUiState();
+  }
+}
+
+function applyUiState(): void {
+  const snapshot = createAppUiSnapshot(uiState);
+  uiHosts.apply(snapshot);
+  physicsRuntime.sync(snapshot.pausesPhysics);
+  imeViewport.notifySurfaceChange();
+}
+
+function clearModalLayers(apply = true): void {
+  uiHosts.clearConfirm();
+  uiHosts.clearModals();
+  dispatchUi({ type: "clear-modals" }, apply);
+  document.removeEventListener("keydown", closeBallDialogOnEscape);
+  activeBallDialogEscapeHandler = null;
+}
+
+function capturePhysicsSnapshotsSafely(): void {
+  if (!physicsStage) {
+    return;
+  }
+  try {
+    for (const snapshot of physicsStage.captureSnapshots()) {
+      physicsSnapshots.set(snapshot.id, snapshot);
+    }
+  } catch (error) {
+    handlePhysicsFault(error);
+  }
 }
 
 function getVisibleBalls(): HappyBall[] {
@@ -548,43 +705,6 @@ function renderDisplayModeCycleIcon(mode: DisplayMode): string {
   `;
 }
 
-function renderActiveOverlay(): string {
-  if (activeOverlay === "none") {
-    return "";
-  }
-
-  if (activeOverlay === "calendar") {
-    return renderCalendarOverlay({
-      balls: getCalendarBalls(),
-      dayListBalls: getCalendarDayListBalls(),
-      calendarMonth,
-      calendarMode,
-      displayMode,
-      selectedDate: displayAnchorDate,
-      selectedBallId,
-      emotionEchoStrength: appSettings.emotionEchoStrength,
-      calendarMarkerMode: appSettings.calendarMarkerMode,
-      activityLog,
-    });
-  }
-
-  if (activeOverlay === "create") {
-    return renderPanelOverlay("玉を置く", renderCreateForm(draft, getFormRenderContext()), "create");
-  }
-
-  if (activeOverlay === "list") {
-    const managedBalls = getManagedBalls();
-    const title = ledgerListDateFilter ? `${ledgerListDateFilter} の保存された玉` : "保存された玉";
-    return renderPanelOverlay(
-      title,
-      renderLedgerList(managedBalls, selectedBallId, { dateFilter: ledgerListDateFilter, activityLog }),
-      "list",
-    );
-  }
-
-  return renderPanelOverlay("設定とデータ", renderToolsPanel(getToolsPanelRenderContext()), "settings");
-}
-
 function prepareCreateDraftForOpen(): void {
   draft = refreshCreateDraftForOpen(draft, displayAnchorDate);
 }
@@ -619,8 +739,8 @@ function shiftIsoDate(date: string, delta: number): string {
 
 function captureCurrentPrimaryScreen(): PrimaryScreenState {
   return capturePrimaryScreen({
-    activePrimarySurface: activeOverlay === "calendar" ? "calendar" : "main",
-    calendarMode,
+    activePrimarySurface: isCalendarRoute(uiState.primary) ? "calendar" : "main",
+    calendarMode: uiState.primary === "calendar-day-list" ? "dayList" : "month",
     calendarMonth,
     selectedDate: displayAnchorDate,
   });
@@ -636,12 +756,14 @@ function restoreSubfeatureReturnScreen(selectedDateOverride?: string): void {
   draft = { ...draft, date: nextDate };
 
   if (subfeatureReturnScreen.kind === "main") {
-    activeOverlay = "none";
+    dispatchUi({ type: "open-primary", route: "play" }, false);
     return;
   }
 
-  activeOverlay = "calendar";
-  calendarMode = subfeatureReturnScreen.kind === "calendarDayList" ? "dayList" : "month";
+  dispatchUi({
+    type: "open-primary",
+    route: subfeatureReturnScreen.kind === "calendarDayList" ? "calendar-day-list" : "calendar-month",
+  }, false);
   calendarMonth = selectedDateOverride ? nextDate.slice(0, 7) : subfeatureReturnScreen.calendarMonth;
 }
 
@@ -651,11 +773,10 @@ function showBallDialog(ballId: string): void {
     return;
   }
 
-  closeBallDialog();
-  const root = document.createElement("div");
-  root.id = BALL_DIALOG_ROOT_ID;
-  root.innerHTML = renderBallDialog(ball, getDialogRenderContext());
-  document.body.appendChild(root);
+  closeBallDialog(false);
+  dispatchUi({ type: "replace-modal", route: "ball-detail" }, false);
+  const root = uiHosts.replaceModal("ball-detail", renderBallDialog(ball, getDialogRenderContext()));
+  applyUiState();
 
   const backdrop = root.querySelector<HTMLElement>("[data-dialog-backdrop]");
   const closeButton = root.querySelector<HTMLButtonElement>("[data-dialog-close]");
@@ -664,7 +785,7 @@ function showBallDialog(ballId: string): void {
       closeBallDialog();
     }
   });
-  closeButton?.addEventListener("click", closeBallDialog);
+  closeButton?.addEventListener("click", () => closeBallDialog());
   root.querySelectorAll<HTMLButtonElement>("[data-dialog-edit-ball-id]").forEach((button) => {
     button.addEventListener("click", () => {
       showBallEditDialog(ballId);
@@ -692,11 +813,10 @@ function showReceiptDialog(ballId: string, sendMode: SendMode = "formal"): void 
     return;
   }
 
-  closeBallDialog();
-  const root = document.createElement("div");
-  root.id = BALL_DIALOG_ROOT_ID;
-  root.innerHTML = renderReceiptDialog(ball, getDialogRenderContext(), sendMode);
-  document.body.appendChild(root);
+  closeBallDialog(false);
+  dispatchUi({ type: "replace-modal", route: "receipt" }, false);
+  const root = uiHosts.replaceModal("receipt", renderReceiptDialog(ball, getDialogRenderContext(), sendMode));
+  applyUiState();
 
   const backdrop = root.querySelector<HTMLElement>("[data-dialog-backdrop]");
   const closeButton = root.querySelector<HTMLButtonElement>("[data-dialog-close]");
@@ -705,7 +825,7 @@ function showReceiptDialog(ballId: string, sendMode: SendMode = "formal"): void 
       closeBallDialog();
     }
   });
-  closeButton?.addEventListener("click", closeBallDialog);
+  closeButton?.addEventListener("click", () => closeBallDialog());
   root.querySelector<HTMLButtonElement>("[data-dialog-back-to-ball-id]")?.addEventListener("click", () => {
     showBallDialog(ballId);
   });
@@ -740,11 +860,10 @@ function showReceiptQrDialog(ballId: string, sendMode: SendMode = "formal"): voi
     sendMode,
   }));
 
-  closeBallDialog();
-  const root = document.createElement("div");
-  root.id = BALL_DIALOG_ROOT_ID;
-  root.innerHTML = renderReceiptQrDialog(ball, getDialogRenderContext(), sendMode);
-  document.body.appendChild(root);
+  closeBallDialog(false);
+  dispatchUi({ type: "replace-modal", route: "receipt-qr" }, false);
+  const root = uiHosts.replaceModal("receipt-qr", renderReceiptQrDialog(ball, getDialogRenderContext(), sendMode));
+  applyUiState();
 
   const backdrop = root.querySelector<HTMLElement>("[data-dialog-backdrop]");
   const closeButton = root.querySelector<HTMLButtonElement>("[data-dialog-close]");
@@ -753,7 +872,7 @@ function showReceiptQrDialog(ballId: string, sendMode: SendMode = "formal"): voi
       closeBallDialog();
     }
   });
-  closeButton?.addEventListener("click", closeBallDialog);
+  closeButton?.addEventListener("click", () => closeBallDialog());
   root.querySelector<HTMLButtonElement>("[data-dialog-receipt-ball-id]")?.addEventListener("click", (event) => {
     showReceiptDialog(ballId, readSendMode(event.currentTarget));
   });
@@ -770,11 +889,10 @@ function showBallEditDialog(ballId: string): void {
     return;
   }
 
-  closeBallDialog();
-  const root = document.createElement("div");
-  root.id = BALL_DIALOG_ROOT_ID;
-  root.innerHTML = renderBallEditDialog(ball, getFormRenderContext());
-  document.body.appendChild(root);
+  closeBallDialog(false);
+  dispatchUi({ type: "replace-modal", route: "ball-edit" }, false);
+  const root = uiHosts.replaceModal("ball-edit", renderBallEditDialog(ball, getFormRenderContext()));
+  applyUiState();
 
   const backdrop = root.querySelector<HTMLElement>("[data-dialog-backdrop]");
   const closeButtons = root.querySelectorAll<HTMLButtonElement>("[data-dialog-close]");
@@ -795,19 +913,24 @@ function showBallEditDialog(ballId: string): void {
   bindDescendBallEvents(root);
   bindNamePresetEvents(root);
   bindTimeControlEvents(root);
+  bindBallCountSliderControls(root);
   bindEditDescentEvents(root);
+  bindModalKeyboardFocusAssist(root);
   installBallDialogEscapeHandler(requestClose);
   root.querySelector<HTMLButtonElement>("[data-dialog-close]")?.focus({ preventScroll: true });
 }
 
-function closeBallDialog(): void {
-  document.querySelector(`#${BALL_DIALOG_ROOT_ID}`)?.remove();
-  document.removeEventListener("keydown", closeBallDialogOnEscape);
-  activeBallDialogEscapeHandler = null;
+function closeBallDialog(apply = true): void {
+  clearModalLayers(apply);
 }
 
 function closeBallDialogOnEscape(event: KeyboardEvent): void {
   if (event.key === "Escape") {
+    if (uiState.confirm) {
+      uiHosts.clearConfirm();
+      dispatchUi({ type: "close-confirm" });
+      return;
+    }
     activeBallDialogEscapeHandler?.();
   }
 }
@@ -862,28 +985,13 @@ function requestCloseBallEditDialog(root: HTMLElement, form: HTMLFormElement | n
 }
 
 function showEditSaveModeConfirm(root: HTMLElement, form: HTMLFormElement, reason: "save" | "close"): void {
-  const existing = root.querySelector<HTMLDivElement>("[data-edit-unsaved-confirm]");
-  if (existing) {
-    existing.remove();
-  }
-
-  const confirmRoot = document.createElement("div");
-  confirmRoot.className = "edit-unsaved-backdrop";
-  confirmRoot.dataset.editUnsavedConfirm = "true";
-  const isClose = reason === "close";
-  confirmRoot.innerHTML = `
-    <section class="edit-unsaved-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-unsaved-title">
-      <h3 id="edit-unsaved-title">${isClose ? "保存しますか？" : "保存方法を選んでください"}</h3>
-      <p>${isClose ? "変更した内容があります。" : "前の状態を余韻に残すか、訂正として保存できます。"}</p>
-      <div class="edit-unsaved-actions">
-        <button class="primary-action" type="button" data-edit-save-echo>${isClose ? "余韻として保存して閉じる" : "余韻として保存"}</button>
-        <button class="ghost-action" type="button" data-edit-save-correction>${isClose ? "訂正として保存して閉じる" : "訂正として保存"}</button>
-        <button class="ghost-action" type="button" data-edit-continue>編集を続ける</button>
-        ${isClose ? `<button class="ghost-action danger-action" type="button" data-edit-discard-close>保存せず閉じる</button>` : ""}
-      </div>
-    </section>
-  `;
-  root.appendChild(confirmRoot);
+  uiHosts.clearConfirm();
+  dispatchUi({ type: "open-confirm", route: "edit-save" }, false);
+  const confirmRoot = uiHosts.renderConfirm(
+    "edit-save",
+    `<div class="edit-unsaved-backdrop" data-edit-unsaved-confirm>${renderEditSaveModeConfirm(reason)}</div>`,
+  );
+  applyUiState();
   confirmRoot.querySelector<HTMLButtonElement>("[data-edit-save-echo]")?.addEventListener("click", () => {
     saveBallEditForm(form, "withEcho");
   });
@@ -891,10 +999,12 @@ function showEditSaveModeConfirm(root: HTMLElement, form: HTMLFormElement, reaso
     saveBallEditForm(form, "correction");
   });
   confirmRoot.querySelector<HTMLButtonElement>("[data-edit-continue]")?.addEventListener("click", () => {
-    confirmRoot.remove();
+    uiHosts.clearConfirm();
+    dispatchUi({ type: "close-confirm" });
+    root.querySelector<HTMLButtonElement>("[data-dialog-close]")?.focus({ preventScroll: true });
   });
-  confirmRoot.querySelector<HTMLButtonElement>("[data-edit-discard-close]")?.addEventListener("click", closeBallDialog);
-  confirmRoot.querySelector<HTMLButtonElement>("[data-edit-save-echo]")?.focus({ preventScroll: true });
+  confirmRoot.querySelector<HTMLButtonElement>("[data-edit-discard-close]")?.addEventListener("click", () => closeBallDialog());
+  confirmRoot.querySelector<HTMLButtonElement>("[data-edit-save-correction]")?.focus({ preventScroll: true });
 }
 
 function hasEditDraftChanged(ball: HappyBall, next: BallDraft): boolean {
@@ -921,7 +1031,7 @@ function haveDescentRecordsChanged(previous: NonNullable<HappyBall["descents"]>,
 }
 
 function mountRapierStage(balls: HappyBall[]): void {
-  const field = document.querySelector<HTMLDivElement>("#ball-field");
+  const field = uiHosts.base.querySelector<HTMLDivElement>("#ball-field");
   if (!field || !rapierReady) {
     return;
   }
@@ -942,9 +1052,10 @@ function mountRapierStage(balls: HappyBall[]): void {
     },
     appSettings,
     audioEngine,
+    handlePhysicsFault,
   );
+  physicsRuntime.attach(physicsStage);
   installPlayDebugEventLogging(field);
-  physicsStage.start();
 }
 
 function installPlayDebugEventLogging(field: HTMLElement): void {
@@ -1064,8 +1175,12 @@ function createDebugLogContext(): Record<string, unknown> {
       height: window.innerHeight,
       visualViewportWidth: window.visualViewport?.width ?? null,
       visualViewportHeight: window.visualViewport?.height ?? null,
+      visualViewportOffsetLeft: window.visualViewport?.offsetLeft ?? null,
       visualViewportOffsetTop: window.visualViewport?.offsetTop ?? null,
+      visualViewportScale: window.visualViewport?.scale ?? null,
     },
+    ui: createAppUiSnapshot(uiState),
+    imeActive: appRoot.dataset.imeActive === "true",
     screen: {
       width: screen.width,
       height: screen.height,
@@ -1153,21 +1268,21 @@ function updateSelectedSummary(): void {
   }
 }
 
-function bindEvents(): void {
-  document.querySelectorAll<HTMLButtonElement>("[data-open-panel]").forEach((button) => {
+function bindEvents(root: ParentNode): void {
+  root.querySelectorAll<HTMLButtonElement>("[data-open-panel]").forEach((button) => {
     button.addEventListener("click", () => {
       const panel = button.dataset.openPanel;
       if (panel === "none") {
-        activeOverlay = "none";
+        dispatchUi({ type: "open-primary", route: "play" }, false);
         render();
         return;
       }
-      if (!isActiveOverlay(panel)) {
+      const route = primaryRouteFromPanel(panel);
+      if (!route) {
         return;
       }
       if (panel === "calendar") {
         calendarMonth = displayAnchorDate.slice(0, 7);
-        calendarMode = "month";
       }
       if (panel === "create" || panel === "settings") {
         rememberSubfeatureReturnScreen();
@@ -1176,15 +1291,15 @@ function bindEvents(): void {
         createPromptDismissed = true;
         prepareCreateDraftForOpen();
       }
-      if (panel === "list" && activeOverlay !== "settings") {
+      if (panel === "list" && uiState.primary !== "settings") {
         rememberSubfeatureReturnScreen();
       }
-      activeOverlay = panel;
+      dispatchUi({ type: "open-primary", route }, false);
       render();
     });
   });
 
-  document.querySelectorAll<HTMLButtonElement>("[data-cycle-display-mode]").forEach((button) => {
+  root.querySelectorAll<HTMLButtonElement>("[data-cycle-display-mode]").forEach((button) => {
     button.addEventListener("click", () => {
       displayMode = nextDisplayMode(displayMode);
       draft = { ...draft, date: displayAnchorDate };
@@ -1192,106 +1307,105 @@ function bindEvents(): void {
     });
   });
 
-  document.querySelectorAll<HTMLButtonElement>("[data-shift-display-period]").forEach((button) => {
+  root.querySelectorAll<HTMLButtonElement>("[data-shift-display-period]").forEach((button) => {
     button.addEventListener("click", () => {
       navigateDisplayPeriod(button.dataset.shiftDisplayPeriod === "1" ? 1 : -1);
     });
   });
 
-  document.querySelectorAll<HTMLElement>("[data-close-panel]").forEach((element) => {
+  root.querySelectorAll<HTMLElement>("[data-close-panel]").forEach((element) => {
     element.addEventListener("click", (event) => {
       const isBackdrop = element.classList.contains("panel-backdrop");
       if (isBackdrop && event.target !== element) {
         return;
       }
-      if (activeOverlay === "create" || activeOverlay === "settings" || activeOverlay === "list") {
+      if (uiState.primary === "create" || uiState.primary === "settings" || uiState.primary === "saved-list") {
         restoreSubfeatureReturnScreen();
       } else {
-        activeOverlay = "none";
+        dispatchUi({ type: "open-primary", route: "play" }, false);
       }
       render();
     });
   });
 
-  document.querySelector("[data-cycle-ball-label-mode]")?.addEventListener("click", () => {
+  root.querySelector("[data-cycle-ball-label-mode]")?.addEventListener("click", () => {
     updateAppSettings({ ballLabelMode: nextBallLabelMode(appSettings.ballLabelMode) });
     render();
   });
 
-  document.querySelector("[data-toggle-activity-log-help]")?.addEventListener("click", () => {
+  root.querySelector("[data-toggle-activity-log-help]")?.addEventListener("click", () => {
     activityLogHelpOpen = !activityLogHelpOpen;
     openSettingsGroups = readOpenSettingsGroups();
     render();
   });
 
-  document.querySelector("[data-download-debug-log]")?.addEventListener("click", () => {
+  root.querySelector("[data-download-debug-log]")?.addEventListener("click", () => {
     downloadDebugLog();
   });
 
-  document.querySelector("[data-copy-debug-log]")?.addEventListener("click", () => {
+  root.querySelector("[data-copy-debug-log]")?.addEventListener("click", () => {
     void copyDebugLog();
   });
 
-  document.querySelector("[data-clear-debug-log]")?.addEventListener("click", () => {
+  root.querySelector("[data-clear-debug-log]")?.addEventListener("click", () => {
     debugLog.clear();
     debugLog.append("system", { message: "debug log cleared" });
     alert("デバッグログを消去しました。");
   });
 
-  document.querySelectorAll<HTMLButtonElement>("[data-calendar-month]").forEach((button) => {
+  root.querySelectorAll<HTMLButtonElement>("[data-calendar-month]").forEach((button) => {
     button.addEventListener("click", () => {
       const nextCalendarMonth = button.dataset.calendarMonth || calendarMonth;
       calendarMonth = nextCalendarMonth;
       displayAnchorDate = moveDisplayAnchorToCalendarMonth(displayAnchorDate, nextCalendarMonth);
       draft = { ...draft, date: displayAnchorDate };
-      calendarMode = "month";
+      dispatchUi({ type: "open-primary", route: "calendar-month" }, false);
       render();
     });
   });
 
-  document.querySelectorAll<HTMLButtonElement>("[data-calendar-shift-day]").forEach((button) => {
+  root.querySelectorAll<HTMLButtonElement>("[data-calendar-shift-day]").forEach((button) => {
     button.addEventListener("click", () => {
       const delta = button.dataset.calendarShiftDay === "1" ? 1 : -1;
       displayAnchorDate = shiftIsoDate(displayAnchorDate, delta);
       calendarMonth = displayAnchorDate.slice(0, 7);
       draft = { ...draft, date: displayAnchorDate };
-      calendarMode = "dayList";
+      dispatchUi({ type: "open-primary", route: "calendar-day-list" }, false);
       render();
     });
   });
 
-  document.querySelectorAll<HTMLButtonElement>("[data-open-calendar-day-list]").forEach((button) => {
+  root.querySelectorAll<HTMLButtonElement>("[data-open-calendar-day-list]").forEach((button) => {
     button.addEventListener("click", () => {
       calendarMonth = displayAnchorDate.slice(0, 7);
-      calendarMode = "dayList";
-      activeOverlay = "calendar";
+      dispatchUi({ type: "open-primary", route: "calendar-day-list" }, false);
       render();
     });
   });
 
-  document.querySelectorAll<HTMLButtonElement>("[data-filter-date]").forEach((button) => {
+  root.querySelectorAll<HTMLButtonElement>("[data-filter-date]").forEach((button) => {
     button.addEventListener("click", () => {
       displayAnchorDate = button.dataset.filterDate ?? displayAnchorDate;
       if (displayAnchorDate) {
         draft = { ...draft, date: displayAnchorDate };
         calendarMonth = displayAnchorDate.slice(0, 7);
       }
-      calendarMode = "dayList";
+      dispatchUi({ type: "open-primary", route: "calendar-day-list" }, false);
       render();
     });
   });
 
-  document.querySelectorAll<HTMLButtonElement>("[data-calendar-view]").forEach((button) => {
+  root.querySelectorAll<HTMLButtonElement>("[data-calendar-view]").forEach((button) => {
     button.addEventListener("click", () => {
       const view = button.dataset.calendarView;
       if (view === "month" || view === "dayList") {
-        calendarMode = view;
+        dispatchUi({ type: "open-primary", route: view === "month" ? "calendar-month" : "calendar-day-list" }, false);
         render();
       }
     });
   });
 
-  document.querySelectorAll<HTMLButtonElement>("[data-calendar-open-panel]").forEach((button) => {
+  root.querySelectorAll<HTMLButtonElement>("[data-calendar-open-panel]").forEach((button) => {
     button.addEventListener("click", () => {
       const panel = button.dataset.calendarOpenPanel;
       if (panel !== "create" && panel !== "settings" && panel !== "calendar" && panel !== "dayList") {
@@ -1299,8 +1413,7 @@ function bindEvents(): void {
       }
       if (panel === "calendar" || panel === "dayList") {
         calendarMonth = displayAnchorDate.slice(0, 7);
-        calendarMode = panel === "calendar" ? "month" : "dayList";
-        activeOverlay = "calendar";
+        dispatchUi({ type: "open-primary", route: panel === "calendar" ? "calendar-month" : "calendar-day-list" }, false);
         render();
         return;
       }
@@ -1312,31 +1425,31 @@ function bindEvents(): void {
       if (panel === "settings") {
         rememberSubfeatureReturnScreen();
       }
-      activeOverlay = panel;
+      dispatchUi({ type: "open-primary", route: panel === "create" ? "create" : "settings" }, false);
       render();
     });
   });
 
-  document.querySelectorAll<HTMLButtonElement>("[data-calendar-cycle-display-mode]").forEach((button) => {
+  root.querySelectorAll<HTMLButtonElement>("[data-calendar-cycle-display-mode]").forEach((button) => {
     button.addEventListener("click", () => {
       displayMode = nextDisplayMode(displayMode);
       draft = { ...draft, date: displayAnchorDate };
-      activeOverlay = "none";
+      dispatchUi({ type: "open-primary", route: "play" }, false);
       render();
     });
   });
 
-  document.querySelector("[data-calendar-cycle-marker-mode]")?.addEventListener("click", () => {
+  root.querySelector("[data-calendar-cycle-marker-mode]")?.addEventListener("click", () => {
     updateAppSettings({ calendarMarkerMode: nextCalendarMarkerMode(appSettings.calendarMarkerMode) });
     render();
   });
 
-  document.querySelector("[data-calendar-main]")?.addEventListener("click", () => {
-    activeOverlay = "none";
+  root.querySelector("[data-calendar-main]")?.addEventListener("click", () => {
+    dispatchUi({ type: "open-primary", route: "play" }, false);
     render();
   });
 
-  const form = document.querySelector<HTMLFormElement>("#ball-form");
+  const form = root.querySelector<HTMLFormElement>("#ball-form");
   form?.addEventListener("submit", (event) => {
     event.preventDefault();
     audioEngine.unlock();
@@ -1354,16 +1467,16 @@ function bindEvents(): void {
   });
   if (form) {
     bindTimeControlEvents(form);
+    bindBallCountSliderControls(form);
   }
 
-  bindEditKeyboardFocusAssist();
-
-  bindSettingsGroupDisclosureEvents();
-  bindPendingUrlPacketEvents();
-  bindNamePresetEvents();
+  bindSettingsGroupDisclosureEvents(root);
+  bindPendingUrlPacketEvents(root);
+  bindNamePresetEvents(root);
   bindSettingsPanelEvents({
     categories: editableCategories,
     maxNameBookEntries: MAX_NAME_BOOK_ENTRIES,
+    root,
     handlers: {
       unlockAudio: () => audioEngine.unlock(),
       toggleGravitySensor: () => {
@@ -1377,7 +1490,7 @@ function bindEvents(): void {
     },
   });
 
-  document.querySelector("#clear-ball-data")?.addEventListener("click", () => {
+  root.querySelector("#clear-ball-data")?.addEventListener("click", () => {
     if (!confirm("保存された玉データをすべて消します。名前帳、アプリ設定、カテゴリ設定は残ります。実行しますか？")) {
       return;
     }
@@ -1390,32 +1503,32 @@ function bindEvents(): void {
     render();
   });
 
-  document.querySelector("#export-json")?.addEventListener("click", () => {
+  root.querySelector("#export-json")?.addEventListener("click", () => {
     if (exportSelectedJson({ ledger, appSettings, categories: editableCategories, activityLog })) {
       appendActivity({ action: "json-export" });
     }
   });
 
-  document.querySelector("#import-json")?.addEventListener("click", () => {
-    document.querySelector<HTMLInputElement>("#import-json-file")?.click();
+  root.querySelector("#import-json")?.addEventListener("click", () => {
+    root.querySelector<HTMLInputElement>("#import-json-file")?.click();
   });
-  document.querySelector<HTMLInputElement>("#import-json-file")?.addEventListener("change", (event) => {
+  root.querySelector<HTMLInputElement>("#import-json-file")?.addEventListener("change", (event) => {
     const input = event.currentTarget;
     if (input instanceof HTMLInputElement) {
       void handleJsonImportFile(input);
     }
   });
 
-  bindJsonImportEvents();
+  bindJsonImportEvents(root);
 
-  document.querySelectorAll<HTMLButtonElement>("[data-select-ball-id]").forEach((button) => {
+  root.querySelectorAll<HTMLButtonElement>("[data-select-ball-id]").forEach((button) => {
     button.addEventListener("click", () => {
       selectedBallId = button.dataset.selectBallId ?? selectedBallId;
       render();
     });
   });
 
-  document.querySelectorAll<HTMLButtonElement>("[data-view-ball-id]").forEach((button) => {
+  root.querySelectorAll<HTMLButtonElement>("[data-view-ball-id]").forEach((button) => {
     button.addEventListener("click", () => {
       const id = button.dataset.viewBallId;
       if (!id) {
@@ -1428,7 +1541,7 @@ function bindEvents(): void {
     });
   });
 
-  document.querySelectorAll<HTMLButtonElement>("[data-edit-ball-id]").forEach((button) => {
+  root.querySelectorAll<HTMLButtonElement>("[data-edit-ball-id]").forEach((button) => {
     button.addEventListener("click", () => {
       const id = button.dataset.editBallId;
       if (!id) {
@@ -1441,7 +1554,7 @@ function bindEvents(): void {
     });
   });
 
-  document.querySelectorAll<HTMLButtonElement>("[data-copy-ball-url-id]").forEach((button) => {
+  root.querySelectorAll<HTMLButtonElement>("[data-copy-ball-url-id]").forEach((button) => {
     button.addEventListener("click", () => {
       const id = button.dataset.copyBallUrlId;
       if (id) {
@@ -1450,7 +1563,7 @@ function bindEvents(): void {
     });
   });
 
-  document.querySelectorAll<HTMLButtonElement>("[data-copy-ball-line-url-id]").forEach((button) => {
+  root.querySelectorAll<HTMLButtonElement>("[data-copy-ball-line-url-id]").forEach((button) => {
     button.addEventListener("click", () => {
       const id = button.dataset.copyBallLineUrlId;
       if (id) {
@@ -1459,14 +1572,22 @@ function bindEvents(): void {
     });
   });
 
-  document.querySelector("[data-clear-ledger-list-date]")?.addEventListener("click", () => {
+  root.querySelector("[data-clear-ledger-list-date]")?.addEventListener("click", () => {
     ledgerListDateFilter = null;
     render();
   });
 
-  bindLifecycleActionEvents();
-  bindDeleteBallEvents();
-  bindDescendBallEvents();
+  bindLifecycleActionEvents(root);
+  bindDeleteBallEvents(root);
+  bindDescendBallEvents(root);
+}
+
+function primaryRouteFromPanel(panel: string | undefined): PrimaryRoute | null {
+  if (panel === "calendar") return "calendar-month";
+  if (panel === "create") return "create";
+  if (panel === "list") return "saved-list";
+  if (panel === "settings") return "settings";
+  return null;
 }
 
 function bindLifecycleActionEvents(root: ParentNode = document): void {
@@ -1667,8 +1788,8 @@ function restorePendingCalendarDayListScroll(): void {
   requestAnimationFrame(restore);
 }
 
-function bindSettingsGroupDisclosureEvents(): void {
-  const groups = Array.from(document.querySelectorAll<HTMLDetailsElement>(".floating-panel-settings details.settings-group"));
+function bindSettingsGroupDisclosureEvents(root: ParentNode): void {
+  const groups = Array.from(root.querySelectorAll<HTMLDetailsElement>(".floating-panel-settings details.settings-group"));
   groups.forEach((group) => {
     group.addEventListener("toggle", () => {
       if (!group.open) {
@@ -1692,17 +1813,17 @@ async function handleJsonImportFile(input: HTMLInputElement): Promise<void> {
   }
 
   pendingJsonImport = review;
-  activeOverlay = "none";
+  dispatchUi({ type: "open-primary", route: "play" }, false);
   render();
 }
 
-function bindJsonImportEvents(): void {
-  document.querySelector("#dismiss-json-import")?.addEventListener("click", () => {
+function bindJsonImportEvents(root: ParentNode): void {
+  root.querySelector("#dismiss-json-import")?.addEventListener("click", () => {
     pendingJsonImport = null;
     render();
   });
 
-  document.querySelector("#confirm-json-import")?.addEventListener("click", () => {
+  root.querySelector("#confirm-json-import")?.addEventListener("click", () => {
     applyPendingJsonImport();
   });
 }
@@ -1737,7 +1858,7 @@ function applyPendingJsonImport(): void {
     message: selectedSections.join(","),
   });
   pendingJsonImport = null;
-  activeOverlay = "none";
+  dispatchUi({ type: "open-primary", route: "play" }, false);
   render();
 }
 
@@ -1843,8 +1964,8 @@ function downloadBlob(blob: Blob, fileName: string): void {
   URL.revokeObjectURL(url);
 }
 
-function bindPendingUrlPacketEvents(): void {
-  document.querySelector("#dismiss-url-packet")?.addEventListener("click", () => {
+function bindPendingUrlPacketEvents(root: ParentNode): void {
+  root.querySelector("#dismiss-url-packet")?.addEventListener("click", () => {
     if (pendingUrlPacket?.ok) {
       snoozedUrlPacket = pendingUrlPacket;
     }
@@ -1852,27 +1973,27 @@ function bindPendingUrlPacketEvents(): void {
     render();
   });
 
-  document.querySelector("#clear-url-packet")?.addEventListener("click", () => {
+  root.querySelector("#clear-url-packet")?.addEventListener("click", () => {
     pendingUrlPacket = null;
     snoozedUrlPacket = null;
     clearLocationPacketParams();
     render();
   });
 
-  document.querySelector("#show-snoozed-url-packet")?.addEventListener("click", () => {
+  root.querySelector("#show-snoozed-url-packet")?.addEventListener("click", () => {
     pendingUrlPacket = snoozedUrlPacket;
     snoozedUrlPacket = null;
     render();
   });
 
-  document.querySelector("#clear-snoozed-url-packet")?.addEventListener("click", () => {
+  root.querySelector("#clear-snoozed-url-packet")?.addEventListener("click", () => {
     pendingUrlPacket = null;
     snoozedUrlPacket = null;
     clearLocationPacketParams();
     render();
   });
 
-  document.querySelector("#confirm-url-import")?.addEventListener("click", () => {
+  root.querySelector("#confirm-url-import")?.addEventListener("click", () => {
     if (!pendingUrlPacket?.ok) {
       return;
     }
@@ -1887,14 +2008,14 @@ function bindPendingUrlPacketEvents(): void {
     selectedBallId = review.newItems[0]?.id ?? selectedBallId;
     displayAnchorDate = review.newItems[0]?.date ?? displayAnchorDate;
     displayMode = "day";
-    activeOverlay = "none";
+    dispatchUi({ type: "open-primary", route: "play" }, false);
     pendingUrlPacket = null;
     snoozedUrlPacket = null;
     clearLocationPacketParams();
     render();
   });
 
-  document.querySelector("#replace-url-import")?.addEventListener("click", () => {
+  root.querySelector("#replace-url-import")?.addEventListener("click", () => {
     if (!pendingUrlPacket?.ok) {
       return;
     }
@@ -1912,7 +2033,7 @@ function bindPendingUrlPacketEvents(): void {
     selectedBallId = review.newItems[0]?.id ?? review.conflicts[0]?.id ?? selectedBallId;
     displayAnchorDate = review.newItems[0]?.date ?? review.conflicts[0]?.date ?? displayAnchorDate;
     displayMode = "day";
-    activeOverlay = "none";
+    dispatchUi({ type: "open-primary", route: "play" }, false);
     pendingUrlPacket = null;
     snoozedUrlPacket = null;
     clearLocationPacketParams();
@@ -2021,12 +2142,14 @@ function copyTextWithLegacySelection(text: string): boolean {
 }
 
 function showManualCopyDialog(text: string): void {
-  const root = document.createElement("div");
-  root.id = "manual-copy-root";
-  root.innerHTML = renderManualCopyDialog(text);
-  document.body.appendChild(root);
+  dispatchUi({ type: "push-modal", route: "manual-copy" }, false);
+  const root = uiHosts.pushModal("manual-copy", renderManualCopyDialog(text));
+  applyUiState();
 
-  const close = () => root.remove();
+  const close = () => {
+    uiHosts.closeTopModal();
+    dispatchUi({ type: "close-top-modal" });
+  };
   const textarea = root.querySelector<HTMLTextAreaElement>(".manual-copy-text");
   root.querySelector("[data-manual-copy-close]")?.addEventListener("click", close);
   root.querySelector("[data-manual-copy-backdrop]")?.addEventListener("click", (event) => {
@@ -2051,7 +2174,7 @@ function handleDisplayNavigationKey(event: KeyboardEvent): void {
   if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
     return;
   }
-  if (activeOverlay !== "none" || document.querySelector(`#${BALL_DIALOG_ROOT_ID}`)) {
+  if (uiState.primary !== "play" || uiState.modals.length > 0) {
     return;
   }
   if (isEditableKeyboardTarget(event.target)) {
@@ -2062,7 +2185,7 @@ function handleDisplayNavigationKey(event: KeyboardEvent): void {
 }
 
 function navigateDisplayPeriod(delta: -1 | 1): void {
-  if (activeOverlay !== "none") {
+  if (uiState.primary !== "play") {
     return;
   }
   shiftCurrentDisplayAnchor(delta);
@@ -2074,10 +2197,6 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
     return false;
   }
   return Boolean(target.closest("input, textarea, select, button, [contenteditable='true']"));
-}
-
-function isActiveOverlay(value: string | undefined): value is ActiveOverlay {
-  return value === "create" || value === "list" || value === "settings" || value === "calendar";
 }
 
 function readLifecycleStatus(value: string | undefined): LifecycleStatus | null {
@@ -2368,29 +2487,33 @@ function resetNameBookSettings(): void {
 
 function bindNamePresetEvents(root: ParentNode = document): void {
   root.querySelectorAll<HTMLSelectElement>("[data-name-preset]").forEach((select) => {
+    const form = select.closest("form");
+    const subjectInput = form?.querySelector<HTMLInputElement>("input[name='subject']");
+    const issuerSelect = form?.querySelector<HTMLSelectElement>("select[name='issuerType']");
+
     select.addEventListener("change", () => {
       const selected = select.selectedOptions[0];
-      const name = select.value.trim();
-      const role = selected?.dataset.nameRole;
-      const form = select.closest("form");
-      const subjectInput = form?.querySelector<HTMLInputElement>("input[name='subject']");
-      const issuerSelect = form?.querySelector<HTMLSelectElement>("select[name='issuerType']");
-      if (!form || !subjectInput || !name) {
+      const resolution = resolveNamePresetSelection({
+        name: select.value,
+        role: selected?.dataset.nameRole === "proxy" ? "proxy" : "self",
+        issuerType: (issuerSelect?.value ?? "self") as IssuerType,
+      });
+      if (!form || !subjectInput || !resolution) {
         return;
       }
 
-      subjectInput.value = name;
-      if (role === "proxy") {
-        if (issuerSelect) {
-          issuerSelect.value = "proxy";
-        }
-      } else if (issuerSelect?.value === "proxy") {
-        issuerSelect.value = "self";
+      subjectInput.value = resolution.subject;
+      if (issuerSelect) {
+        issuerSelect.value = resolution.issuerType;
       }
 
       if (form.id === "ball-form") {
         draft = readDraft(form);
       }
+    });
+
+    subjectInput?.addEventListener("input", () => {
+      select.value = resolveManualSubjectPreset(subjectInput.value, select.value);
     });
   });
 }
@@ -2574,12 +2697,43 @@ function getAppRoot(): HTMLDivElement {
 
 function showFatalError(error: unknown): void {
   const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-  appRoot.innerHTML = `
+  uiHosts.clearPrimary();
+  uiHosts.clearModals();
+  uiHosts.clearConfirm();
+  uiHosts.renderBase(`
     <main class="loading-shell error-shell">
       <div>
         <strong>起動に失敗しました</strong>
         <pre>${escapeHtml(message)}</pre>
       </div>
     </main>
-  `;
+  `);
+}
+
+function handleApplicationError(error: unknown): void {
+  if (!bootComplete) {
+    showFatalError(error);
+    return;
+  }
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  debugLog.append("runtime-error", { message });
+  console.error("Application runtime error was contained.", error);
+  uiHosts.renderTransient(`
+    <aside class="runtime-fault-banner" role="status">
+      <strong>一部の処理を停止しました</strong>
+      <span>画面操作は継続できます。</span>
+    </aside>
+  `, true);
+}
+
+function handlePhysicsFault(error: unknown): void {
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  debugLog.append("physics-error", { message });
+  console.error("Physics was frozen after a contained fault.", error);
+  uiHosts.renderTransient(`
+    <aside class="runtime-fault-banner" role="status">
+      <strong>玉の動きを停止しました</strong>
+      <span>画面操作と保存データは継続して利用できます。</span>
+    </aside>
+  `, true);
 }

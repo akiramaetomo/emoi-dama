@@ -39,6 +39,7 @@ export interface LedgerListRenderOptions {
 
 export function renderToolsPanel(context: ToolsPanelRenderContext): string {
   const { appSettings } = context;
+  const officialVersion = context.appVersion.includes("-") ? "未付与" : context.appVersion;
   return `
     <div class="tools-panel">
       <div class="settings-brand-mark" aria-hidden="true">
@@ -223,7 +224,7 @@ export function renderToolsPanel(context: ToolsPanelRenderContext): string {
           </div>
           <div>
             <dt>公開版</dt>
-            <dd>未付与</dd>
+            <dd>${escapeHtml(officialVersion)}</dd>
           </div>
           <div>
             <dt>Pages参考</dt>

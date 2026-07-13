@@ -25,7 +25,7 @@ export function renderPendingUrlPacketDialog(
   if (!pendingUrlPacket.ok) {
     return `
       <div class="ball-dialog-backdrop import-dialog-backdrop">
-        <section class="ball-dialog import-dialog" role="dialog" aria-modal="true" aria-labelledby="import-dialog-title">
+        <section class="ball-dialog import-dialog app-modal-scroll" data-scroll-owner role="dialog" aria-modal="true" aria-labelledby="import-dialog-title">
           <h2 id="import-dialog-title">玉URLを読めませんでした</h2>
           <p class="dialog-detail">${escapeHtml(pendingUrlPacket.error)}</p>
           <div class="dialog-actions">
@@ -47,7 +47,7 @@ export function renderPendingUrlPacketDialog(
   const receiptTitle = previewBall ? getReceiptTitle(previewBall, sendMode) : "お預け状";
   return `
     <div class="ball-dialog-backdrop import-dialog-backdrop">
-      <section class="ball-dialog import-dialog receive-dialog" role="dialog" aria-modal="true" aria-label="届いたえもい玉 ${escapeAttribute(receiptTitle)}">
+      <section class="ball-dialog import-dialog receive-dialog app-modal-scroll" data-scroll-owner role="dialog" aria-modal="true" aria-label="届いたえもい玉 ${escapeAttribute(receiptTitle)}">
         <p class="receive-dialog-title">貴方に届いた${escapeHtml(receiptTitle)}です</p>
         ${previewBall ? renderReceiptPaper(previewBall, { idPrefix: "receive", showUrl: false, sendMode }, context.dialogContext) : ""}
         ${importStatus}
@@ -102,7 +102,7 @@ export function renderPendingJsonImportDialog(
   if (pendingJsonImport.error) {
     return `
       <div class="ball-dialog-backdrop import-dialog-backdrop">
-        <section class="ball-dialog import-dialog" role="dialog" aria-modal="true" aria-labelledby="json-import-title">
+        <section class="ball-dialog import-dialog app-modal-scroll" data-scroll-owner role="dialog" aria-modal="true" aria-labelledby="json-import-title">
           <div class="dialog-title-block">
             <span>${escapeHtml(pendingJsonImport.fileName)}</span>
             <h2 id="json-import-title">JSONを読めませんでした</h2>
@@ -122,7 +122,7 @@ export function renderPendingJsonImportDialog(
   );
   return `
     <div class="ball-dialog-backdrop import-dialog-backdrop">
-      <section class="ball-dialog import-dialog" role="dialog" aria-modal="true" aria-labelledby="json-import-title">
+      <section class="ball-dialog import-dialog app-modal-scroll" data-scroll-owner role="dialog" aria-modal="true" aria-labelledby="json-import-title">
         <div class="dialog-title-block">
           <span>${escapeHtml(pendingJsonImport.fileName)}</span>
           <h2 id="json-import-title">JSONを読み込みますか</h2>
