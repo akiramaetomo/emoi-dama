@@ -28,6 +28,7 @@ const normalized = normalizeAppSettings({
   startupScreen: "calendarDayList",
   calendarMarkerMode: "meter",
   descentMinDistanceMeters: 1200,
+  includeDescentGpsInHandoff: true,
 });
 assertEqual(normalized.wallRestitution, 1, "wall restitution should clamp to the maximum");
 assertEqual(normalized.contactRestitution, 0, "contact restitution should clamp to the minimum");
@@ -48,6 +49,7 @@ assertEqual(normalized.backgroundTexture, "random", "valid background texture sh
 assertEqual(normalized.startupScreen, "calendarDayList", "valid startup screen should be preserved");
 assertEqual(normalized.calendarMarkerMode, "meter", "valid calendar marker mode should be preserved");
 assertEqual(normalized.descentMinDistanceMeters, 1200, "valid descent distance should be preserved");
+assertEqual(normalized.includeDescentGpsInHandoff, true, "explicit handoff GPS sharing should be preserved");
 
 const booleanFallback = normalizeAppSettings({
   soundEnabled: "false",
@@ -59,6 +61,7 @@ const booleanFallback = normalizeAppSettings({
   startupScreen: "month",
   calendarMarkerMode: "bars",
   descentMinDistanceMeters: -1,
+  includeDescentGpsInHandoff: "true",
 });
 assertEqual(booleanFallback.soundEnabled, DEFAULT_APP_SETTINGS.soundEnabled, "string false should not become a truthy setting");
 assertEqual(booleanFallback.gravityEnabled, DEFAULT_APP_SETTINGS.gravityEnabled, "numeric booleans should not be accepted");
@@ -70,6 +73,7 @@ assertEqual(
   DEFAULT_APP_SETTINGS.backgroundTexture,
   "invalid background texture should fall back to defaults",
 );
+assertEqual(booleanFallback.includeDescentGpsInHandoff, false, "invalid handoff GPS setting should normalize to off");
 assertEqual(
   booleanFallback.startupScreen,
   DEFAULT_APP_SETTINGS.startupScreen,
@@ -104,11 +108,13 @@ assertEqual(defaults.backgroundTexture, DEFAULT_APP_SETTINGS.backgroundTexture, 
 assertEqual(defaults.startupScreen, "calendarMonth", "missing startup screen should default to calendar month");
 assertEqual(defaults.calendarMarkerMode, "spread", "missing calendar marker mode should default to spread");
 assertEqual(defaults.descentMinDistanceMeters, 500, "missing descent distance should default to 500m");
+assertEqual(defaults.includeDescentGpsInHandoff, false, "missing handoff GPS setting should default to off");
 
 assert(looksLikeAppSettings({ soundEnabled: false }), "settings-like objects should be recognized");
 assert(looksLikeAppSettings({ startupScreen: "main" }), "startup screen setting should be recognized");
 assert(looksLikeAppSettings({ calendarMarkerMode: "meter" }), "calendar marker mode setting should be recognized");
 assert(looksLikeAppSettings({ descentMinDistanceMeters: 500 }), "descent distance setting should be recognized");
+assert(looksLikeAppSettings({ includeDescentGpsInHandoff: true }), "handoff GPS setting should be recognized");
 assert(looksLikeAppSettings({ gravityDebugEnabled: true }), "gravity debug setting should be recognized");
 assert(!looksLikeAppSettings({ ledger: [] }), "unrelated objects should not be recognized as settings");
 assert(!looksLikeAppSettings(null), "null should not be recognized as settings");

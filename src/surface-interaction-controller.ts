@@ -26,7 +26,7 @@ export function shouldBlockSurfacePan(input: SurfacePanInput): boolean {
 }
 
 export class SurfaceInteractionController {
-  private touchStart: { x: number; y: number; scrollOwner: HTMLElement | null; nativeRange: boolean } | null = null;
+  private touchStart: { x: number; y: number; scrollOwner: HTMLElement | null; horizontalDragControl: boolean } | null = null;
 
   constructor(
     private readonly root: HTMLElement,
@@ -74,7 +74,7 @@ export class SurfaceInteractionController {
       x: touch.clientX,
       y: touch.clientY,
       scrollOwner: target?.closest<HTMLElement>("[data-scroll-owner]") ?? null,
-      nativeRange: Boolean(target?.closest("input[type='range']")),
+      horizontalDragControl: Boolean(target?.closest("input[type='range'], [data-horizontal-drag-control]")),
     };
   };
 
@@ -92,7 +92,7 @@ export class SurfaceInteractionController {
     const touch = event.touches[0];
     const deltaX = touch.clientX - this.touchStart.x;
     const deltaY = touch.clientY - this.touchStart.y;
-    if (this.touchStart.nativeRange && Math.abs(deltaX) > Math.abs(deltaY)) {
+    if (this.touchStart.horizontalDragControl && Math.abs(deltaX) > Math.abs(deltaY)) {
       return;
     }
     const owner = this.touchStart.scrollOwner;

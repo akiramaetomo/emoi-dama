@@ -1,6 +1,6 @@
 import { isKnownVisibility, normalizeBallTime, normalizeVisibilityValue } from "./models.js";
-import type { HappyBall, SendMode } from "./models";
-import { normalizeDescentBadgeCount } from "./descent.js";
+import type { HappyBall, HappyBallDescentRecord, SendMode } from "./models";
+import { normalizeDescentBadgeCount, normalizeDescentRecords } from "./descent.js";
 
 export const PACKET_TYPE = "happy-ball-packet";
 
@@ -12,6 +12,16 @@ export interface HappyBallPacket {
   exportedAt: string;
   items: HappyBall[];
 }
+
+export interface HandoffOptions {
+  sendMode: SendMode;
+  includeDescentGps: boolean;
+}
+
+export const DEFAULT_HANDOFF_OPTIONS: HandoffOptions = {
+  sendMode: "formal",
+  includeDescentGps: false,
+};
 
 export interface PacketImportReview {
   newItems: HappyBall[];
@@ -37,36 +47,38 @@ export type UrlPacketParseResult =
 export function createBallPacket(
   ball: HappyBall,
   exportedAt = new Date().toISOString(),
-  sendMode: SendMode = "formal",
+  options: HandoffOptions = DEFAULT_HANDOFF_OPTIONS,
 ): HappyBallPacket {
   const packet: HappyBallPacket = {
     v: 1,
     type: PACKET_TYPE,
     mode: "append",
     exportedAt,
-    items: [sanitizeBallForPacket(ball)],
+    items: [sanitizeBallForPacket(ball, options.includeDescentGps)],
   };
-  if (sendMode === "casual") {
-    packet.sendMode = sendMode;
+  if (options.sendMode === "casual") {
+    packet.sendMode = options.sendMode;
   }
   return packet;
 }
 
-export function createPacketImportUrl(ball: HappyBall, baseHref: string, sendMode: SendMode = "formal"): string {
+export function createPacketImportUrl(ball: HappyBall, baseHref: string, options: HandoffOptions = DEFAULT_HANDOFF_OPTIONS): string {
   const url = new URL(baseHref);
   url.searchParams.delete("import");
   url.searchParams.delete("ball");
   url.searchParams.delete("openExternalBrowser");
-  url.hash = `import=${encodePacket(createBallPacket(ball, new Date().toISOString(), sendMode))}`;
+  url.searchParams.delete("handoffDebug");
+  url.hash = `import=${encodePacket(createBallPacket(ball, new Date().toISOString(), options))}`;
   return url.toString();
 }
 
-export function createLinePacketImportUrl(ball: HappyBall, baseHref: string, sendMode: SendMode = "formal"): string {
+export function createLinePacketImportUrl(ball: HappyBall, baseHref: string, options: HandoffOptions = DEFAULT_HANDOFF_OPTIONS): string {
   const url = new URL(baseHref);
   url.hash = "";
   url.searchParams.delete("ball");
+  url.searchParams.delete("handoffDebug");
   url.searchParams.set("openExternalBrowser", "1");
-  url.searchParams.set("import", encodePacket(createBallPacket(ball, new Date().toISOString(), sendMode)));
+  url.searchParams.set("import", encodePacket(createBallPacket(ball, new Date().toISOString(), options)));
   return url.toString();
 }
 
@@ -247,6 +259,7 @@ export function normalizePacketBall(value: unknown): HappyBall | null {
       label: Array.from(label).slice(0, 4).join(""),
     },
     lifecycleStatus,
+    descents: normalizeDescentRecords(value.descents),
     descentBadgeCount: normalizeDescentBadgeCount(value.descentBadgeCount),
     isKamiBall: value.isKamiBall === true || normalizeDescentBadgeCount(value.descentBadgeCount) >= 20,
     createdAt,
@@ -267,19 +280,40 @@ export function normalizePacketBall(value: unknown): HappyBall | null {
 }
 
 function toComparableBall(ball: HappyBall): Omit<HappyBall, "receiptCreatedAt"> {
-  const comparable: HappyBall = sanitizeBallForPacket(ball);
+  const comparable: HappyBall = sanitizeBallForPacket(ball, true);
   delete comparable.receiptCreatedAt;
   return comparable;
 }
 
-function sanitizeBallForPacket(ball: HappyBall): HappyBall {
+function sanitizeBallForPacket(ball: HappyBall, includeDescentGps: boolean): HappyBall {
   const sanitized: HappyBall = {
     ...ball,
-    descents: [],
+    descents: normalizeDescentRecords(ball.descents).map((record) => projectDescentForHandoff(record, includeDescentGps)),
     descentBadgeCount: normalizeDescentBadgeCount(ball.descentBadgeCount),
     isKamiBall: ball.isKamiBall === true || normalizeDescentBadgeCount(ball.descentBadgeCount) >= 20,
   };
   return sanitized;
+}
+
+function projectDescentForHandoff(record: HappyBallDescentRecord, includeGps: boolean): HappyBallDescentRecord {
+  const projected: HappyBallDescentRecord = {
+    id: record.id,
+    sequence: record.sequence,
+    recordedAt: record.recordedAt,
+    badgeAwarded: record.badgeAwarded,
+    memo: record.memo,
+  };
+  if (includeGps && typeof record.latitude === "number" && typeof record.longitude === "number") {
+    projected.latitude = record.latitude;
+    projected.longitude = record.longitude;
+    if (typeof record.accuracyMeters === "number") {
+      projected.accuracyMeters = record.accuracyMeters;
+    }
+    if (typeof record.distanceFromPreviousMeters === "number") {
+      projected.distanceFromPreviousMeters = record.distanceFromPreviousMeters;
+    }
+  }
+  return projected;
 }
 
 function normalizePacketEmotionEcho(value: unknown): HappyBall["emotionEcho"] | undefined {

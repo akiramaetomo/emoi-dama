@@ -46,6 +46,7 @@ assertEqual(parsed.packet.items[0].visual.label, "夕方の空", "packet should 
 assertEqual(parsed.packet.items[0].visual.kind, "filled", "packet should preserve visual kind");
 assert(new URL(importUrl).hash.startsWith("#import="), "standard import URL should use a fragment payload");
 assert(!new URL(importUrl).searchParams.has("openExternalBrowser"), "standard import URL should not keep LINE query parameters");
+assert(!new URL(createPacketImportUrl(sampleBall, "https://example.test/happy-ball/?handoffDebug=1")).searchParams.has("handoffDebug"), "generated import URL should strip local handoff debug state");
 
 const lineImportUrl = createLinePacketImportUrl(sampleBall, "https://example.test/happy-ball/?view=toy#import=old");
 const lineUrl = new URL(lineImportUrl);
@@ -58,13 +59,13 @@ assertOk(parsedLineQuery, "LINE query import URL should parse");
 assertEqual(parsedLineQuery.packet.items[0].title, sampleBall.title, "query import should preserve Japanese title text");
 assertEqual(parsedLineQuery.packet.sendMode, undefined, "default LINE import URL should not require a send mode field");
 
-const casualImportUrl = createPacketImportUrl(sampleBall, "https://example.test/happy-ball/", "casual");
+const casualImportUrl = createPacketImportUrl(sampleBall, "https://example.test/happy-ball/", { sendMode: "casual", includeDescentGps: false });
 const parsedCasual = parsePacketHash(new URL(casualImportUrl).hash);
 assertOk(parsedCasual, "casual import URL should parse");
 assertEqual(parsedCasual.packet.sendMode, "casual", "casual import URL should preserve send mode");
 assertEqual("activityLog" in parsedCasual.packet, false, "packet payloads should not include local activity logs");
 
-const casualLineImportUrl = createLinePacketImportUrl(sampleBall, "https://example.test/happy-ball/", "casual");
+const casualLineImportUrl = createLinePacketImportUrl(sampleBall, "https://example.test/happy-ball/", { sendMode: "casual", includeDescentGps: false });
 const parsedCasualLine = parsePacketQuery(new URL(casualLineImportUrl).search);
 assertOk(parsedCasualLine, "casual LINE query import URL should parse");
 assertEqual(parsedCasualLine.packet.sendMode, "casual", "casual LINE URL should preserve send mode");
@@ -89,9 +90,39 @@ const descentPacket = createBallPacket({
   descentBadgeCount: 1,
   isKamiBall: false,
 });
-assertEqual(descentPacket.items[0].descents?.length, 0, "packet should omit exact GPS descent records");
+assertEqual(descentPacket.items[0].descents?.length, 1, "GPS-off packet should retain non-location descent history");
+assertEqual(descentPacket.items[0].descents?.[0].memo, "駅前で降臨", "GPS-off packet should retain descent memo");
+assertEqual(descentPacket.items[0].descents?.[0].latitude, undefined, "GPS-off packet should omit latitude");
+assertEqual(descentPacket.items[0].descents?.[0].longitude, undefined, "GPS-off packet should omit longitude");
+assertEqual(descentPacket.items[0].descents?.[0].accuracyMeters, undefined, "GPS-off packet should omit accuracy");
 assertEqual(descentPacket.items[0].descentBadgeCount, 1, "packet may preserve non-location descent badge count");
 assertEqual(descentPacket.items[0].isKamiBall, false, "packet may preserve non-location kami state");
+
+const descentGpsPacket = createBallPacket(descentPacket.items[0], new Date().toISOString(), {
+  sendMode: "formal",
+  includeDescentGps: true,
+});
+const originalGpsPacket = createBallPacket({
+  ...sampleBall,
+  descents: [{
+    id: "descent_gps",
+    sequence: 1,
+    recordedAt: "2026-06-26T11:00:00.000Z",
+    latitude: 35.681236,
+    longitude: 139.767125,
+    accuracyMeters: 12,
+    distanceFromPreviousMeters: 640,
+    badgeAwarded: true,
+    memo: "駅前で降臨",
+  }],
+}, new Date().toISOString(), { sendMode: "formal", includeDescentGps: true });
+assertEqual(descentGpsPacket.items[0].descents?.[0].latitude, undefined, "GPS data omitted from an earlier packet must not be inferred");
+assertEqual(originalGpsPacket.items[0].descents?.[0].latitude, 35.681236, "GPS-on packet should preserve latitude");
+assertEqual(originalGpsPacket.items[0].descents?.[0].distanceFromPreviousMeters, 640, "GPS-on packet should preserve distance");
+const originalGpsUrl = createPacketImportUrl({ ...sampleBall, descents: originalGpsPacket.items[0].descents }, "https://example.test/happy-ball/", { sendMode: "formal", includeDescentGps: true });
+const parsedOriginalGps = parsePacketHash(new URL(originalGpsUrl).hash);
+assertOk(parsedOriginalGps, "GPS-on packet URL should parse");
+assertEqual(parsedOriginalGps.packet.items[0].descents?.[0].latitude, 35.681236, "receiver should restore only transmitted latitude");
 
 const legacyHiddenPacket = createBallPacket({ ...sampleBall, visibility: "hidden" as unknown as HappyBall["visibility"] });
 const legacyHiddenUrl = createPacketImportUrl(legacyHiddenPacket.items[0], "https://example.test/happy-ball/");

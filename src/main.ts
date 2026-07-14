@@ -81,6 +81,7 @@ import {
   createPacketImportUrl,
   parsePacketLocation,
   reviewPacketImport,
+  type HandoffOptions,
   type UrlPacketParseResult,
 } from "./packet";
 import { renderPanelOverlay } from "./overlay-renderers";
@@ -591,7 +592,68 @@ function getDialogRenderContext(): DialogRenderContext {
     currentUrl: window.location.href,
     showMemoField: appSettings.showMemoField,
     emotionEchoStrength: appSettings.emotionEchoStrength,
+    includeDescentGpsInHandoff: appSettings.includeDescentGpsInHandoff,
+    handoffDebugEnabled: new URLSearchParams(window.location.search).get("handoffDebug") === "1",
   };
+}
+
+function getHandoffOptions(sendMode: SendMode): HandoffOptions {
+  return {
+    sendMode,
+    includeDescentGps: appSettings.includeDescentGpsInHandoff,
+  };
+}
+
+function bindReceiptScrollAffordance(root: ParentNode): void {
+  const scrollOwner = root.querySelector<HTMLElement>("[data-receipt-scroll-owner]");
+  const cue = root.querySelector<HTMLElement>("[data-receipt-scroll-cue]");
+  if (!scrollOwner || !cue) {
+    return;
+  }
+  const update = () => {
+    const overflows = scrollOwner.scrollHeight > scrollOwner.clientHeight + 2;
+    const atBottom = scrollOwner.scrollTop + scrollOwner.clientHeight >= scrollOwner.scrollHeight - 3;
+    cue.hidden = !overflows || atBottom;
+  };
+  scrollOwner.addEventListener("scroll", update, { passive: true });
+  if (typeof ResizeObserver !== "undefined") {
+    const observer = new ResizeObserver(update);
+    observer.observe(scrollOwner);
+  }
+  requestAnimationFrame(update);
+  window.setTimeout(update, 120);
+}
+
+function bindQrFailureDiagnostics(root: ParentNode, ball: HappyBall, sendMode: SendMode): void {
+  root.querySelectorAll<HTMLElement>("[data-qr-generation-error]").forEach((failure) => {
+    const diagnostic = {
+      appVersion: __APP_VERSION__,
+      timestamp: new Date().toISOString(),
+      sendMode,
+      includeDescentGps: appSettings.includeDescentGpsInHandoff,
+      descentCount: ball.descents?.length ?? 0,
+      inputCharacterCount: Number(failure.dataset.qrCharCount ?? 0),
+      inputByteCount: Number(failure.dataset.qrByteCount ?? 0),
+      stage: failure.dataset.qrStage ?? "unknown",
+      errorCode: failure.dataset.qrErrorCode ?? "QR_GENERATION_FAILED",
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        devicePixelRatio: window.devicePixelRatio,
+      },
+      browser: navigator.userAgent,
+    };
+    debugLog.append("handoff-qr-error", diagnostic);
+    appendActivity(createBallActivityInput(ball, {
+      action: "send-qr",
+      sendMode,
+      status: "failure",
+      message: `${diagnostic.errorCode} ${diagnostic.stage}`,
+    }));
+    failure.querySelector<HTMLButtonElement>("[data-copy-qr-error]")?.addEventListener("click", () => {
+      void copyTextWithFallback(JSON.stringify(diagnostic, null, 2), "エラー情報をコピーしました。");
+    });
+  });
 }
 
 function getFormRenderContext(): FormRenderContext {
@@ -835,15 +897,14 @@ function showReceiptDialog(ballId: string, sendMode: SendMode = "formal"): void 
   root.querySelector<HTMLButtonElement>("[data-share-receipt-image-id]")?.addEventListener("click", (event) => {
     void shareReceiptImage(ballId, readSendMode(event.currentTarget));
   });
-  root.querySelector<HTMLButtonElement>("[data-download-receipt-image-id]")?.addEventListener("click", (event) => {
-    void downloadReceiptImage(ballId, readSendMode(event.currentTarget));
-  });
   root.querySelector<HTMLButtonElement>("[data-copy-ball-url-id]")?.addEventListener("click", (event) => {
     void copyBallUrl(ballId, readSendMode(event.currentTarget));
   });
   root.querySelector<HTMLButtonElement>("[data-copy-ball-line-url-id]")?.addEventListener("click", (event) => {
     void copyBallLineUrl(ballId, readSendMode(event.currentTarget));
   });
+  bindQrFailureDiagnostics(root, ball, sendMode);
+  bindReceiptScrollAffordance(root);
   installBallDialogEscapeHandler(closeBallDialog);
   closeButton?.focus({ preventScroll: true });
 }
@@ -855,11 +916,6 @@ function showReceiptQrDialog(ballId: string, sendMode: SendMode = "formal"): voi
     return;
   }
   updateReceiptCreatedIndicators(ball);
-  appendActivity(createBallActivityInput(ball, {
-    action: "send-qr",
-    sendMode,
-  }));
-
   closeBallDialog(false);
   dispatchUi({ type: "replace-modal", route: "receipt-qr" }, false);
   const root = uiHosts.replaceModal("receipt-qr", renderReceiptQrDialog(ball, getDialogRenderContext(), sendMode));
@@ -879,6 +935,14 @@ function showReceiptQrDialog(ballId: string, sendMode: SendMode = "formal"): voi
   root.querySelector<HTMLButtonElement>("[data-copy-ball-url-id]")?.addEventListener("click", (event) => {
     void copyBallUrl(ballId, readSendMode(event.currentTarget));
   });
+  root.querySelector<HTMLButtonElement>("[data-copy-ball-line-url-id]")?.addEventListener("click", (event) => {
+    void copyBallLineUrl(ballId, readSendMode(event.currentTarget));
+  });
+  if (root.querySelector("[data-qr-generation-error]")) {
+    bindQrFailureDiagnostics(root, ball, sendMode);
+  } else {
+    appendActivity(createBallActivityInput(ball, { action: "send-qr", sendMode }));
+  }
   installBallDialogEscapeHandler(closeBallDialog);
   closeButton?.focus({ preventScroll: true });
 }
@@ -1714,16 +1778,19 @@ async function updateEditDescentGps(item: HTMLElement, button: HTMLButtonElement
 function updateEditDescentGpsUi(item: HTMLElement, position: DescentPositionInput | null): void {
   const status = item.querySelector<HTMLElement>("[data-descent-gps-status]");
   const mapSlot = item.querySelector<HTMLElement>("[data-descent-map-link]");
+  const locationRow = item.querySelector<HTMLElement>(".edit-descent-location-row");
   const clearButton = item.querySelector<HTMLButtonElement>("[data-descent-clear-gps-record-id]");
   const gpsButton = item.querySelector<HTMLButtonElement>("[data-descent-gps-record-id]");
   if (position) {
+    locationRow?.classList.add("has-position");
+    locationRow?.classList.remove("is-empty-position");
     const mapRecord = { latitude: position.latitude, longitude: position.longitude };
     if (status) {
       status.textContent = formatCoordinatesForUi(position.latitude, position.longitude);
     }
     if (mapSlot) {
       const href = createGoogleMapsUrl(mapRecord);
-      mapSlot.outerHTML = `<a class="ghost-action detail-map-link" data-descent-map-link href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">Google Maps</a>`;
+      mapSlot.outerHTML = `<a class="ghost-action quiet-accent-action detail-map-link" data-descent-map-link href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">Google Maps</a>`;
     }
     if (clearButton) {
       clearButton.disabled = false;
@@ -1733,6 +1800,8 @@ function updateEditDescentGpsUi(item: HTMLElement, position: DescentPositionInpu
     }
     return;
   }
+  locationRow?.classList.add("is-empty-position");
+  locationRow?.classList.remove("has-position");
   if (status) {
     status.textContent = "位置未取得";
   }
@@ -1870,11 +1939,10 @@ async function shareReceiptImage(ballId: string, sendMode: SendMode = "formal"):
 
   const { ball } = prepared;
   const receiptTitle = getReceiptTitle(ball, sendMode);
-  const fileName = createReceiptImageFileName(ball, sendMode);
-  const blob = await createReceiptImageBlob(ball, getReceiptImageContext(), sendMode);
-  const file = new File([blob], fileName, { type: "image/png" });
-
   try {
+    const fileName = createReceiptImageFileName(ball, sendMode);
+    const blob = await createReceiptImageBlob(ball, getReceiptImageContext(), sendMode);
+    const file = new File([blob], fileName, { type: "image/png" });
     if (!navigator.share || !navigator.canShare?.({ files: [file] })) {
       throw new Error("File sharing is unavailable.");
     }
@@ -1891,13 +1959,18 @@ async function shareReceiptImage(ballId: string, sendMode: SendMode = "formal"):
     if (error instanceof DOMException && error.name === "AbortError") {
       return;
     }
-    downloadBlob(blob, fileName);
     appendActivity(createBallActivityInput(ball, {
-      action: "send-image-download",
+      action: "send-image-share",
       sendMode,
-      message: "共有不可のため画像保存",
+      status: "failure",
+      message: "画像共有を利用できませんでした",
     }));
-    alert("この端末では直接共有できなかったため、画像として保存しました。LINEで画像添付してください。");
+    const feedback = document.querySelector<HTMLElement>("[data-receipt-action-feedback]");
+    if (feedback) {
+      feedback.textContent = "この端末では画像共有を利用できません。端末の画面キャプチャをご利用ください。";
+    } else {
+      alert("この端末では画像共有を利用できません。端末の画面キャプチャをご利用ください。");
+    }
   }
 }
 
@@ -1922,24 +1995,11 @@ function recordEditDescentGpsActivity(item: HTMLElement, action: "descent-gps-up
   }));
 }
 
-async function downloadReceiptImage(ballId: string, sendMode: SendMode = "formal"): Promise<void> {
-  const prepared = prepareReceiptImageBall(ballId);
-  if (!prepared) {
-    return;
-  }
-
-  const blob = await createReceiptImageBlob(prepared.ball, getReceiptImageContext(), sendMode);
-  downloadBlob(blob, createReceiptImageFileName(prepared.ball, sendMode));
-  appendActivity(createBallActivityInput(prepared.ball, {
-    action: "send-image-download",
-    sendMode,
-  }));
-}
-
 function getReceiptImageContext() {
   return {
     currentUrl: window.location.href,
     showMemoField: appSettings.showMemoField,
+    includeDescentGpsInHandoff: appSettings.includeDescentGpsInHandoff,
   };
 }
 
@@ -1951,17 +2011,6 @@ function prepareReceiptImageBall(ballId: string): { ball: HappyBall } | null {
   }
   updateReceiptCreatedIndicators(ball);
   return { ball };
-}
-
-function downloadBlob(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
 }
 
 function bindPendingUrlPacketEvents(root: ParentNode): void {
@@ -2049,7 +2098,7 @@ async function copyBallUrl(ballId: string, sendMode: SendMode = "formal"): Promi
   }
   updateReceiptCreatedIndicators(ball);
 
-  const url = createPacketImportUrl(ball, window.location.href, sendMode);
+  const url = createPacketImportUrl(ball, window.location.href, getHandoffOptions(sendMode));
   await copyTextWithFallback(url, "玉URLをコピーしました。");
   appendActivity(createBallActivityInput(ball, {
     action: "send-url",
@@ -2065,7 +2114,7 @@ async function copyBallLineUrl(ballId: string, sendMode: SendMode = "formal"): P
   }
   updateReceiptCreatedIndicators(ball);
 
-  const url = createLinePacketImportUrl(ball, window.location.href, sendMode);
+  const url = createLinePacketImportUrl(ball, window.location.href, getHandoffOptions(sendMode));
   await copyTextWithFallback(url, "LINE用の玉URLをコピーしました。");
   appendActivity(createBallActivityInput(ball, {
     action: "send-line-url",

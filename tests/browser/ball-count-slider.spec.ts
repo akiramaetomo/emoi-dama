@@ -37,28 +37,60 @@ test("create slider uses nine equal intervals and saves 1 2 5 10", async ({ page
 
   await setRangeValue(range, 5);
   const alignment = await form.evaluate((node) => {
-    const input = node.querySelector<HTMLElement>("[data-ball-count-range]")!.getBoundingClientRect();
+    const track = node.querySelector<HTMLElement>("[data-ball-count-track]")!.getBoundingClientRect();
     const tick = node.querySelector<HTMLElement>("[data-ball-count-tick='5']")!.getBoundingClientRect();
     const output = node.querySelector<HTMLElement>("[data-ball-count-output]")!.getBoundingClientRect();
-    const thumbInset = 17;
     return {
-      expectedTickCenter: input.left + thumbInset + (input.width - thumbInset * 2) * (4 / 9),
+      expectedTickCenter: track.left + track.width * (4 / 9),
       tickCenter: tick.left + tick.width / 2,
       outputRight: output.right,
-      inputLeft: input.left,
+      trackLeft: track.left,
       outputCenterY: output.top + output.height / 2,
-      inputCenterY: input.top + input.height / 2,
+      trackCenterY: track.top + track.height / 2,
     };
   });
   expect(Math.abs(alignment.expectedTickCenter - alignment.tickCenter)).toBeLessThanOrEqual(2);
-  expect(alignment.outputRight).toBeLessThan(alignment.inputLeft);
-  expect(Math.abs(alignment.outputCenterY - alignment.inputCenterY)).toBeLessThanOrEqual(8);
+  expect(alignment.outputRight).toBeLessThan(alignment.trackLeft);
+  expect(Math.abs(alignment.outputCenterY - alignment.trackCenterY)).toBeLessThanOrEqual(8);
+  expect(await range.evaluate((node) => getComputedStyle(node).pointerEvents)).toBe("none");
+  const visualStyle = await form.evaluate((node) => {
+    const output = node.querySelector<HTMLElement>("[data-ball-count-output]")!;
+    const track = node.querySelector<HTMLElement>("[data-ball-count-track]")!;
+    const rail = node.querySelector<HTMLElement>(".ball-count-rail")!;
+    const thumb = node.querySelector<HTMLElement>(".ball-count-thumb-core")!;
+    const tick = node.querySelector<HTMLElement>("[data-ball-count-tick='1']")!;
+    const emphasizedTick = node.querySelector<HTMLElement>("[data-ball-count-tick='5']")!;
+    return {
+      outputColor: getComputedStyle(output).color,
+      trackTouchAction: getComputedStyle(track).touchAction,
+      railHeight: getComputedStyle(rail).height,
+      railBackground: getComputedStyle(rail).backgroundColor,
+      thumbWidth: getComputedStyle(thumb).width,
+      thumbBackground: getComputedStyle(thumb).backgroundColor,
+      tickColor: getComputedStyle(tick).color,
+      emphasizedTickColor: getComputedStyle(emphasizedTick).color,
+    };
+  });
+  expect(visualStyle).toEqual({
+    outputColor: "rgb(255, 244, 222)",
+    trackTouchAction: "pan-y",
+    railHeight: "6px",
+    railBackground: "rgba(145, 170, 162, 0.28)",
+    thumbWidth: "24px",
+    thumbBackground: "rgb(111, 141, 131)",
+    tickColor: "rgba(184, 216, 206, 0.72)",
+    emphasizedTickColor: "rgba(214, 231, 223, 0.88)",
+  });
 
   await range.focus();
   await page.keyboard.press("ArrowRight");
   await expect(form.locator("input[name='count']")).toHaveValue("6");
-  await tapRangeAtFraction(page, range, 1);
-  await expect(form.locator("input[name='count']")).toHaveValue("10");
+  await tapTrackAtFraction(page, form.locator("[data-ball-count-track]"), 1);
+  await expect(form.locator("input[name='count']")).toHaveValue("6");
+  await dragTrackAcross(page, form.locator("[data-ball-count-track]"));
+  await expect(form.locator("input[name='count']")).toHaveValue("6");
+  await form.locator("[data-ball-count-tick='10']").click();
+  await expect(form.locator("input[name='count']")).toHaveValue("6");
   await expect(page.locator("html")).toHaveJSProperty("scrollTop", 0);
 });
 
@@ -66,7 +98,12 @@ test("create and edit sliders change count without root scroll", async ({ page }
   await page.locator("[data-calendar-open-panel='create']").click();
   const createForm = page.locator("#ball-form");
   await createForm.locator("input[name='title']").fill("slider drag");
-  await dragRangeToFraction(page, createForm.locator("[data-ball-count-range]"), 4 / 9);
+  await dragThumbToFraction(
+    page,
+    createForm.locator("[data-ball-count-thumb]"),
+    createForm.locator("[data-ball-count-track]"),
+    4 / 9,
+  );
   await expect(createForm.locator("input[name='count']")).toHaveValue("5");
   await expectRootScrollZero(page);
   await createForm.evaluate((node: HTMLFormElement) => node.requestSubmit());
@@ -76,7 +113,14 @@ test("create and edit sliders change count without root scroll", async ({ page }
   await page.locator("[data-edit-ball-id]").first().click();
   const editForm = page.locator("#ball-edit-form");
   await expect(editForm.locator("[data-ball-count-range]")).toHaveValue("5");
-  await dragRangeToFraction(page, editForm.locator("[data-ball-count-range]"), 1 / 9);
+  await tapTrackAtFraction(page, editForm.locator("[data-ball-count-track]"), 0.9);
+  await expect(editForm.locator("input[name='count']")).toHaveValue("5");
+  await dragThumbToFraction(
+    page,
+    editForm.locator("[data-ball-count-thumb]"),
+    editForm.locator("[data-ball-count-track]"),
+    1 / 9,
+  );
   await expect(editForm.locator("input[name='count']")).toHaveValue("2");
   await expect.poll(() => editForm.evaluate((node: HTMLFormElement) => new FormData(node).get("count"))).toBe("2");
   await expectRootScrollZero(page);
@@ -125,28 +169,39 @@ async function setRangeValue(range: Locator, raw: number): Promise<void> {
   }, raw);
 }
 
-async function dragRangeToFraction(page: Page, range: Locator, fraction: number): Promise<void> {
-  await range.scrollIntoViewIfNeeded();
-  const box = await range.boundingBox();
-  expect(box).not.toBeNull();
-  const thumbInset = 17;
-  const startX = box!.x + thumbInset;
-  const targetX = startX + (box!.width - thumbInset * 2) * fraction;
-  const y = box!.y + box!.height / 2;
-  await page.mouse.move(startX, y);
+async function dragThumbToFraction(page: Page, thumb: Locator, track: Locator, fraction: number): Promise<void> {
+  await thumb.scrollIntoViewIfNeeded();
+  const thumbBox = await thumb.boundingBox();
+  const trackBox = await track.boundingBox();
+  expect(thumbBox).not.toBeNull();
+  expect(trackBox).not.toBeNull();
+  const startX = thumbBox!.x + thumbBox!.width / 2;
+  const startY = thumbBox!.y + thumbBox!.height / 2;
+  const targetX = trackBox!.x + trackBox!.width * fraction;
+  await page.mouse.move(startX, startY);
   await page.mouse.down();
-  await page.mouse.move(targetX, y, { steps: 8 });
+  await page.mouse.move(targetX, startY, { steps: 8 });
   await page.mouse.up();
 }
 
-async function tapRangeAtFraction(page: Page, range: Locator, fraction: number): Promise<void> {
-  await range.scrollIntoViewIfNeeded();
-  const box = await range.boundingBox();
+async function tapTrackAtFraction(page: Page, track: Locator, fraction: number): Promise<void> {
+  await track.scrollIntoViewIfNeeded();
+  const box = await track.boundingBox();
   expect(box).not.toBeNull();
-  const thumbInset = 17;
-  const x = box!.x + thumbInset + (box!.width - thumbInset * 2) * fraction;
+  const x = box!.x + box!.width * fraction;
   const y = box!.y + box!.height / 2;
   await page.mouse.click(x, y);
+}
+
+async function dragTrackAcross(page: Page, track: Locator): Promise<void> {
+  await track.scrollIntoViewIfNeeded();
+  const box = await track.boundingBox();
+  expect(box).not.toBeNull();
+  const y = box!.y + box!.height / 2;
+  await page.mouse.move(box!.x + box!.width * 0.7, y);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + box!.width * 0.9, y + 30, { steps: 6 });
+  await page.mouse.up();
 }
 
 async function expectRootScrollZero(page: Page): Promise<void> {

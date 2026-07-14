@@ -6,7 +6,7 @@ import {
   reviewJsonImport,
 } from "./json-transfer.js";
 import type { HappyBall, HappyBallLedger } from "./models";
-import { DEFAULT_APP_SETTINGS } from "./settings.js";
+import { DEFAULT_APP_SETTINGS, type AppSettings } from "./settings.js";
 
 const sampleBall: HappyBall = {
   id: "ball_20260626_self_ab12",
@@ -70,7 +70,7 @@ const exportPayload = createExportPayload(
   ["ledger", "appSettings", "activityLog"],
   {
     ledger: existingLedger,
-    appSettings: DEFAULT_APP_SETTINGS,
+    appSettings: { ...DEFAULT_APP_SETTINGS, includeDescentGpsInHandoff: true },
     categories: categoryColorPresets,
     activityLog: [
       {
@@ -90,6 +90,7 @@ assertEqual(exportPayload.type, "happy-ball-export", "export payload should use 
 assertEqual(exportPayload.exportedAt, "2026-06-29T12:34:56.000Z", "export payload should accept deterministic timestamps");
 assertEqual(Boolean(exportPayload.ledger), true, "export payload should include selected ledger data");
 assertEqual(Boolean(exportPayload.appSettings), true, "export payload should include selected settings data");
+assertEqual((exportPayload.appSettings as AppSettings | undefined)?.includeDescentGpsInHandoff, true, "export should preserve handoff GPS sharing state");
 assertEqual(Boolean(exportPayload.categories), false, "export payload should omit unselected category data");
 assertEqual(Boolean(exportPayload.activityLog), true, "export payload should include selected activity log data");
 
@@ -122,6 +123,7 @@ const importReview = reviewJsonImport({
     ...DEFAULT_APP_SETTINGS,
     soundEnabled: "false",
     gravityEnabled: true,
+    includeDescentGpsInHandoff: true,
   },
   categories: [
     { ...categoryColorPresets[0], name: "新よろこび" },
@@ -135,6 +137,7 @@ assertEqual(importReview.ledger?.rejectedItemCount, 1, "ledger review should cou
 assertEqual(importReview.ledger?.nameBookToAdd[0]?.name, "友人", "ledger review should collect importable name book entries");
 assertEqual(importReview.appSettings?.soundEnabled, DEFAULT_APP_SETTINGS.soundEnabled, "settings review should reject string boolean values");
 assertEqual(importReview.appSettings?.gravityEnabled, true, "settings review should preserve real boolean values");
+assertEqual(importReview.appSettings?.includeDescentGpsInHandoff, true, "settings review should preserve handoff GPS sharing state");
 assertEqual(importReview.categories?.[0]?.name, "新よろこび", "category review should normalize imported category names");
 
 const legacySettingsReview = reviewJsonImport({ soundEnabled: false }, "settings.json", existingLedger);

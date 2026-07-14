@@ -12,6 +12,48 @@ This project follows a lightweight changelog discipline:
 
 ## Unreleased
 
+## 0.6.0 - 2026-07-15
+
+- Added a default-OFF, settings-only privacy control for including descent GPS
+  in outbound QR/image handoffs. Handoffs now retain descent time, memo, badge,
+  and sequence history while stripping coordinates, accuracy, and distance
+  unless the user explicitly enables GPS sharing.
+- Simplified the send paper to `QRを大きく` and `画像で送る`, moved URL tools
+  behind `?handoffDebug=1`, removed automatic image-download fallback, and
+  added paper GPS-state labeling plus a conditional `↓ 続く` scroll cue.
+- Added privacy-safe QR generation diagnostics with no normal URL fallback.
+- Fixed the narrow-phone send-paper header regression found through SC-52E USB
+  inspection, shortened the shell header to `戻る` and close, removed the
+  redundant QR explanation, and replaced the checkbox-like GPS status with
+  compact read-only `降臨GPS情報：ON/OFF` text whose ON state is yellow.
+- Made `玉の中身` fill portrait and touch-landscape phone viewports while
+  retaining its translucent fixed-header shell. The edit and close controls now
+  share one row, long memos expand inside their frame, titles use the recovered
+  width, date/time stays together, and category/echo spacing is tighter across
+  phone, iPad, and desktop. The
+  detail hero ball now has enough top-left inset on phone, iPad, and desktop for
+  a readable two-digit descent badge while preserving badge/count text sizes
+  and more of the echo glow.
+- Renamed the Ball Detail send card to `玉を送る`, tightened its GPS-status row
+  spacing on PC and iPad, and enlarged the settings hint across all devices.
+- Made `玉を置く` and `玉を編集` share a dark translucent full-screen authoring
+  shell on portrait and touch-landscape phones, with a centered one-line header
+  and contained form scrolling. Reworked ball count so only a drag beginning on
+  its subdued blue-green-gray thumb can change the value; track/tick touches are
+  inert, keyboard access remains, and the live count now uses the normal white
+  value color.
+- Unified the authoring hierarchy with 2px pale-yellow primary borders, tighter
+  title/memo grouping, consistent memo labels, and a stronger datetime divider.
+  Editable descent records now have clearer nested frames and horizontal memo
+  fields, handoff/descent actions share the quiet `現在時刻` palette, Ball
+  Detail keeps its header controls on one desktop/iPad row, and iPad time input
+  no longer clips at the right edge.
+- Reclaimed authoring space with accessible inset labels for title, memo, and
+  descent memo. The iPad date control now uses a narrower label column and an
+  auto-width grid stretch that avoids iOS WebKit's padded `width: 100%`
+  overflow, descent memo starts at title height, and GPS-less descent
+  status/actions stay on one compact row.
+
 ## 0.5.1 - 2026-07-14
 
 - Aligned `玉を置く` and `玉を編集` around one authoring flow: title, memo,

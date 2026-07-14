@@ -1,6 +1,8 @@
 import type { HappyBall } from "./models";
 import {
   renderBallDialog,
+  renderReceiptDialog,
+  renderReceiptQrDialog,
   renderReceiptPaper,
   type DialogRenderContext,
 } from "./dialog-renderers.js";
@@ -63,12 +65,21 @@ const detailHtml = renderBallDialog(sampleBall, context);
 assertIncludes(detailHtml, "app-modal-backdrop", "ball detail should use the shared fixed modal backdrop");
 assertIncludes(detailHtml, "app-modal-scroll", "ball detail should expose one shared modal scroll region");
 assertOrder(detailHtml, "surface-fixed-header", "surface-scroll-body", "ball detail header should remain outside its scroll owner");
+assertOrder(detailHtml, "detail-screen-name", "detail-edit-top", "detail header should place its name before the edit action");
+assertOrder(detailHtml, "detail-edit-top", "data-dialog-close", "detail header should place edit before close in visual and tab order");
 
-assertIncludes(detailHtml, "送る", "detail card should be titled send");
+assertIncludes(detailHtml, 'detail-card-label">玉を送る</span>', "detail card should use the explicit send-ball title");
 assertIncludes(detailHtml, "お配り", "detail card should offer casual send");
 assertIncludes(detailHtml, "お預け", "detail card should offer formal send");
 assertIncludes(detailHtml, 'data-send-mode="casual"', "casual send button should expose send mode");
 assertIncludes(detailHtml, 'data-send-mode="formal"', "formal send button should expose send mode");
+assertIncludes(detailHtml, "ghost-action quiet-accent-action detail-card-action", "send buttons should share the quiet current-time palette");
+assertIncludes(detailHtml, "降臨GPS情報：", "send card should use the explicit GPS privacy label");
+assertIncludes(detailHtml, ">OFF</strong>", "GPS-off send card should show its state as text");
+assertNotIncludes(detailHtml, "handoff-privacy-switch", "send card should not resemble an editable switch");
+assertNotIncludes(detailHtml, "handoff-privacy-input", "send card GPS state should not expose a form control");
+assertIncludes(detailHtml, "⚙「降臨」で設定可", "send card should point to settings");
+assertNotIncludes(detailHtml, "降臨GPSを含めない", "send card should not resemble an unchecked error state");
 assertNotIncludes(detailHtml, "準備済み", "detail send card should not show prepared status");
 assertNotIncludes(detailHtml, "未準備", "detail send card should not show unprepared status");
 assertNotIncludes(detailHtml, "data-receipt-status-ball-id", "detail send card should not expose receipt status marker");
@@ -154,6 +165,7 @@ assertIncludes(casualPaper, "<dt>発行者</dt>", "casual paper should show issu
 assertIncludes(casualPaper, "真帆", "casual paper should include issuer value");
 assertIncludes(casualPaper, "<dt>カテゴリ／余韻</dt>", "casual paper should show category and echo");
 assertIncludes(casualPaper, "receipt-qr-code", "casual paper should render a QR block");
+assertNotIncludes(casualPaper, "相手のスマホで読み取ると", "paper should omit the redundant QR explanation");
 assertNotIncludes(casualPaper, "<dt>預け先</dt>", "casual paper should not show keeper target");
 assertNotIncludes(casualPaper, "<dt>預かり者</dt>", "casual paper should not show keeper person");
 assertNotIncludes(casualPaper, "<dt>メモ</dt>", "casual paper should not show memo");
@@ -166,6 +178,43 @@ assertIncludes(formalPaper, "<dt>メモ</dt>", "formal paper should keep visible
 assertNotIncludes(formalPaper, "<dt>タイトル</dt>", "formal paper should remove duplicate title row");
 assertNotIncludes(formalPaper, "<dt>預け先</dt>", "formal paper should remove keeper target row");
 assertNotIncludes(formalPaper, "<dt>預かり者</dt>", "formal paper should remove keeper person row");
+assertIncludes(formalPaper, "降臨GPS なし", "paper should show GPS sharing state without coordinates");
+assertOrder(formalPaper, "receipt-url", "receipt-hero", "paper should place QR before ball details");
+
+const receiptDialog = renderReceiptDialog(sampleBall, context, "formal");
+assertIncludes(receiptDialog, ">戻る</button>", "receipt should provide a concise back action");
+assertNotIncludes(receiptDialog, "← 詳細へ戻る", "receipt should remove the old long back wording");
+const receiptHeaderStart = receiptDialog.indexOf("receipt-surface-header");
+const receiptHeaderEnd = receiptDialog.indexOf("</div>", receiptHeaderStart);
+const receiptHeaderHtml = receiptDialog.slice(receiptHeaderStart, receiptHeaderEnd);
+assertNotIncludes(receiptHeaderHtml, "お預け状", "receipt fixed header should not repeat the paper title");
+assertNotIncludes(receiptHeaderHtml, "detail-screen-name", "receipt fixed header should not use the tall generic screen-name layout");
+assertIncludes(receiptDialog, "QRを大きく", "receipt should expose enlarged QR as its main action");
+assertIncludes(receiptDialog, "画像で送る", "receipt should expose image sharing");
+assertIncludes(receiptDialog, "↓ 続く", "receipt should include a conditional scroll cue");
+assertNotIncludes(receiptDialog, "画像保存", "receipt should not expose image download");
+assertNotIncludes(receiptDialog, "URLコピー", "normal receipt should hide URL debug actions");
+assertNotIncludes(receiptDialog, "LINE用URL", "normal receipt should hide LINE URL debug actions");
+
+const debugContext = { ...context, handoffDebugEnabled: true, includeDescentGpsInHandoff: true };
+const gpsOnDetailHtml = renderBallDialog(sampleBall, debugContext);
+assertIncludes(gpsOnDetailHtml, "handoff-privacy-value is-on\">ON</strong>", "GPS-on send card should show a highlighted ON state");
+const debugReceiptDialog = renderReceiptDialog(sampleBall, debugContext, "formal");
+assertIncludes(debugReceiptDialog, "受け渡しデバッグ", "debug query state should expose collapsible URL tools");
+assertIncludes(debugReceiptDialog, "URLコピー", "debug receipt should expose URL copy");
+assertIncludes(debugReceiptDialog, "LINE用URL", "debug receipt should expose LINE URL copy");
+assertIncludes(debugReceiptDialog, "降臨GPS あり", "GPS-on paper should show its sharing state");
+const debugQrDialog = renderReceiptQrDialog(sampleBall, debugContext, "formal");
+assertIncludes(debugQrDialog, "受け渡しデバッグ", "large QR should keep debug tools behind debug state");
+
+const oversizedReceipt = renderReceiptDialog({ ...sampleBall, note: "private-location-note".repeat(5000) }, context, "formal");
+assertIncludes(oversizedReceipt, "受け渡し用QRの生成異常", "oversized handoff should show a specific QR failure");
+assertIncludes(oversizedReceipt, "エラー情報をコピー", "QR failure should offer diagnostic copying");
+const qrFailureStart = oversizedReceipt.indexOf("data-qr-generation-error");
+const qrFailureEnd = oversizedReceipt.indexOf("</div>", qrFailureStart);
+const qrFailureHtml = oversizedReceipt.slice(qrFailureStart, qrFailureEnd);
+assertNotIncludes(qrFailureHtml, "private-location-note", "QR diagnostic markup must not expose memo text");
+assertNotIncludes(qrFailureHtml, "https://", "QR diagnostic markup must not expose the handoff URL");
 
 const proxyPaper = renderReceiptPaper(
   { ...sampleBall, issuerType: "proxy", issuedBy: "祖母", enteredBy: "真帆", keepers: ["叔父"] },

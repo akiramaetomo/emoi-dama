@@ -5,6 +5,8 @@ node_modules/
 dist/
 .test-build/
 coverage/
+playwright-report/
+test-results/
 *.tsbuildinfo
 
 # Logs

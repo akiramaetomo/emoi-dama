@@ -12,6 +12,7 @@ import { createQrCode, type QrCodeMatrix } from "./qr-code";
 export interface ReceiptImageContext {
   currentUrl: string;
   showMemoField: boolean;
+  includeDescentGpsInHandoff: boolean;
 }
 
 export function createReceiptImageFileName(ball: HappyBall, sendMode: SendMode = "formal"): string {
@@ -63,7 +64,10 @@ function drawReceiptImage(
   const receiptTitle = getReceiptTitle(ball, sendMode);
   const stamp = sendMode === "casual" ? "配" : ball.issuerType === "proxy" ? "預" : "託";
   const eyebrow = sendMode === "casual" ? "Emoi Dama Cover Note" : "emoi dama app";
-  const packetUrl = createPacketImportUrl(ball, receiptContext.currentUrl, sendMode);
+  const packetUrl = createPacketImportUrl(ball, receiptContext.currentUrl, {
+    sendMode,
+    includeDescentGps: receiptContext.includeDescentGpsInHandoff,
+  });
   const margin = 72;
   const contentWidth = width - margin * 2;
   let y = 86;
@@ -90,14 +94,7 @@ function drawReceiptImage(
 
   drawReceiptStamp(context, width - margin - 92, 86, 92, stamp);
 
-  y += 82;
-  drawReceiptHero(context, ball, margin, y, contentWidth, sendMode);
-  y += 174;
-
-  const rows = createReceiptImageRows(ball, receiptContext.showMemoField, sendMode);
-  y = drawReceiptRows(context, rows, margin, y, contentWidth);
-  y += 34;
-
+  y += 62;
   context.fillStyle = "#6b5638";
   context.font = "900 28px sans-serif";
   context.textAlign = "center";
@@ -110,8 +107,15 @@ function drawReceiptImage(
 
   context.fillStyle = "#5e4a2f";
   context.font = "900 28px sans-serif";
-  drawCenteredWrappedText(context, `相手のスマホで読み取ると、届いた${receiptTitle}が開きます。`, width / 2, y, contentWidth, 36);
+  context.fillText(`降臨GPS ${receiptContext.includeDescentGpsInHandoff ? "あり" : "なし"}`, width / 2, y);
   context.textAlign = "left";
+  y += 52;
+
+  drawReceiptHero(context, ball, margin, y, contentWidth, sendMode);
+  y += 174;
+
+  const rows = createReceiptImageRows(ball, receiptContext.showMemoField, sendMode);
+  drawReceiptRows(context, rows, margin, y, contentWidth);
 }
 
 function drawReceiptStamp(context: CanvasRenderingContext2D, x: number, y: number, size: number, text: string): void {
@@ -304,18 +308,6 @@ function drawWrappedText(
   const lines = wrapCanvasText(context, text, maxWidth, maxLines);
   lines.forEach((line, index) => context.fillText(line, x, y + index * lineHeight));
   return y + lines.length * lineHeight;
-}
-
-function drawCenteredWrappedText(
-  context: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  maxWidth: number,
-  lineHeight: number,
-): void {
-  const lines = wrapCanvasText(context, text, maxWidth, 3);
-  lines.forEach((line, index) => context.fillText(line, x, y + index * lineHeight));
 }
 
 function estimateWrappedLineCount(context: CanvasRenderingContext2D, text: string, maxWidth: number): number {

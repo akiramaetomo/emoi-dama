@@ -46,15 +46,11 @@ export function renderCreateForm(draft: BallDraft, context: FormRenderContext): 
 
 export function renderBallEditDialog(ball: HappyBall, context: FormRenderContext): string {
   return `
-    <div class="ball-dialog-backdrop ball-edit-dialog-backdrop app-modal-backdrop" data-dialog-backdrop>
-      <section class="ball-dialog ball-edit-dialog surface-shell" role="dialog" aria-modal="true" aria-labelledby="ball-edit-title">
-        <div class="surface-fixed-header edit-surface-header">
+    <div class="ball-dialog-backdrop ball-edit-dialog-backdrop app-modal-backdrop authoring-surface-backdrop" data-dialog-backdrop>
+      <section class="ball-dialog ball-edit-dialog surface-shell authoring-surface" role="dialog" aria-modal="true" aria-labelledby="ball-edit-title">
+        <div class="surface-fixed-header edit-surface-header authoring-surface-header">
+          <h2 id="ball-edit-title">玉を編集</h2>
           <button class="dialog-close" type="button" data-dialog-close aria-label="閉じる">&times;</button>
-          <div class="dialog-title-block">
-            <div class="edit-dialog-title-row">
-              <h2 id="ball-edit-title">玉を編集</h2>
-            </div>
-          </div>
         </div>
         <div class="surface-scroll-body app-modal-scroll" data-scroll-owner>
           <form id="ball-edit-form" class="edit-form" autocomplete="off" data-editing-ball-id="${escapeAttribute(ball.id)}">
@@ -89,17 +85,18 @@ function renderBallAuthoringFields(
   const timeField = mode === "create"
     ? renderCreateTimeField(value.time)
     : renderTimeField(value.time, "edit-timestamp-field edit-inline-field timestamp-field-wide");
-  const titlePlaceholder = mode === "create" ? ' placeholder="小さなえもいゴト"' : "";
   return `
-      <label class="${inlineClass}">
-        <span>タイトル</span>
-        <input name="title" type="text" maxlength="48" value="${escapeAttribute(value.title)}"${titlePlaceholder} />
-      </label>
+      <div class="authoring-primary-fields" data-authoring-primary-fields>
+        <label class="authoring-inset-field authoring-title-field ${mode}-inset-field" data-ball-authoring-title-field>
+          <span class="authoring-inset-label">タイトル</span>
+          <input name="title" type="text" maxlength="48" value="${escapeAttribute(value.title)}" placeholder="タイトル" />
+        </label>
 
-      <label class="inline-field textarea-field" data-ball-authoring-memo-field>
-        <span>メモ</span>
-        <textarea name="note" rows="4" maxlength="180" autocomplete="off">${escapeHtml(value.note)}</textarea>
-      </label>
+        <label class="authoring-inset-field authoring-memo-field ${mode}-inset-field" data-ball-authoring-memo-field>
+          <span class="authoring-inset-label">メモ</span>
+          <textarea name="note" rows="4" maxlength="180" placeholder="メモ" autocomplete="off">${escapeHtml(value.note)}</textarea>
+        </label>
+      </div>
 
       <details class="authoring-category-fold ${mode}-category-fold" data-authoring-category-fold>
         <summary>
@@ -144,6 +141,7 @@ export function renderBallCountControl(count: number, mode: "create" | "edit"): 
   const preserveLegacy = mode === "edit" && isLegacyBallCount(count);
   const initialCount = preserveLegacy ? Math.round(count) : Math.min(BALL_COUNT_SLIDER_MAX, Math.max(1, Math.round(count)));
   const position = preserveLegacy ? BALL_COUNT_SLIDER_MAX : ballCountToSliderPosition(initialCount);
+  const positionPercent = ballCountToTrackPercent(sliderPositionToBallCount(position));
   const inputId = `${mode}-ball-count-range`;
   return `
     <div class="ball-count-field ${mode}-ball-count-field" data-ball-count-control>
@@ -170,6 +168,12 @@ export function renderBallCountControl(count: number, mode: "create" | "edit"): 
               aria-valuetext="${formatBallCount(sliderPositionToBallCount(position))}"
               data-ball-count-range
             />
+            <div class="ball-count-visual-control" data-ball-count-track style="--ball-count-position: ${positionPercent}%" aria-hidden="true">
+              <span class="ball-count-rail"></span>
+              <span class="ball-count-thumb-hit" data-ball-count-thumb data-horizontal-drag-control>
+                <span class="ball-count-thumb-core"></span>
+              </span>
+            </div>
             <div class="ball-count-ticks" aria-hidden="true">
               ${renderBallCountTicks()}
             </div>
@@ -202,7 +206,7 @@ function renderCreateTimeField(time: string | undefined): string {
         <label class="timestamp-toggle" aria-label="時刻を記録">
           <input type="checkbox" name="timeEnabled"${checked} />
         </label>
-        <button class="timestamp-now-button" type="button" data-current-time-button>現在時刻</button>
+        <button class="timestamp-now-button quiet-accent-action" type="button" data-current-time-button>現在時刻</button>
         <input name="time" type="time" value="${escapeAttribute(normalizedTime ?? "")}"${disabled} />
       </div>
     </div>
@@ -252,7 +256,7 @@ function renderTimeField(time: string | undefined, className = ""): string {
         <label class="timestamp-toggle" aria-label="時刻を記録">
           <input type="checkbox" name="timeEnabled"${checked} />
         </label>
-        <button class="timestamp-now-button" type="button" data-current-time-button>現在時刻</button>
+        <button class="timestamp-now-button quiet-accent-action" type="button" data-current-time-button>現在時刻</button>
         <input name="time" type="time" value="${escapeAttribute(normalizedTime ?? "")}"${disabled} />
       </div>
     </div>
@@ -311,17 +315,15 @@ export function renderEditableDescentItem(record: NonNullable<HappyBall["descent
         <strong>No.${record.sequence}</strong>
         <span>${escapeHtml(formatDescentDateTime(record.recordedAt))}</span>
       </div>
-      <label class="inline-field textarea-field edit-descent-memo">
-        <span>降臨メモ</span>
-        <textarea data-descent-field="memo" rows="2" maxlength="80" autocomplete="off">${escapeHtml(record.memo)}</textarea>
+      <label class="authoring-inset-field edit-descent-memo">
+        <span class="authoring-inset-label">降臨メモ</span>
+        <textarea data-descent-field="memo" rows="1" maxlength="80" placeholder="降臨メモ" autocomplete="off">${escapeHtml(record.memo)}</textarea>
       </label>
-      <div class="edit-descent-gps-row">
+      <div class="edit-descent-location-row${hasPosition ? " has-position" : " is-empty-position"}">
         <span data-descent-gps-status>${hasPosition ? escapeHtml(formatCoordinates(record.latitude, record.longitude)) : "位置未取得"}</span>
-        ${hasPosition ? `<a class="ghost-action detail-map-link" data-descent-map-link href="${escapeAttribute(createGoogleMapsUrl(record))}" target="_blank" rel="noopener noreferrer">Google Maps</a>` : `<span data-descent-map-link></span>`}
-      </div>
-      <div class="edit-descent-actions">
-        <button class="ghost-action" type="button" data-descent-gps-record-id="${escapeAttribute(record.id)}">${hasPosition ? "GPS再取得" : "GPS取得"}</button>
-        <button class="ghost-action" type="button" data-descent-clear-gps-record-id="${escapeAttribute(record.id)}"${hasPosition ? "" : " disabled"}>GPS削除</button>
+        ${hasPosition ? `<a class="ghost-action quiet-accent-action detail-map-link" data-descent-map-link href="${escapeAttribute(createGoogleMapsUrl(record))}" target="_blank" rel="noopener noreferrer">Google Maps</a>` : `<span data-descent-map-link></span>`}
+        <button class="ghost-action quiet-accent-action" type="button" data-descent-gps-record-id="${escapeAttribute(record.id)}">${hasPosition ? "GPS再取得" : "GPS取得"}</button>
+        <button class="ghost-action quiet-accent-action" type="button" data-descent-clear-gps-record-id="${escapeAttribute(record.id)}"${hasPosition ? "" : " disabled"}>GPS削除</button>
         <span class="edit-descent-action-feedback" data-descent-action-feedback role="status" aria-live="polite"></span>
       </div>
     </article>

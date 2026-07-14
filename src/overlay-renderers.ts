@@ -1,8 +1,11 @@
 export function renderPanelOverlay(title: string, body: string, kind: string): string {
+  const authoringSurfaceClass = kind === "create" ? " authoring-surface" : "";
+  const authoringBackdropClass = kind === "create" ? " authoring-surface-backdrop" : "";
+  const authoringHeaderClass = kind === "create" ? " authoring-surface-header" : "";
   return `
-    <div class="panel-backdrop panel-backdrop-${kind} app-modal-backdrop" data-close-panel>
-      <aside class="floating-panel floating-panel-${kind} surface-shell" aria-label="${escapeAttribute(title)}">
-        <div class="floating-panel-head surface-fixed-header">
+    <div class="panel-backdrop panel-backdrop-${kind} app-modal-backdrop${authoringBackdropClass}" data-close-panel>
+      <aside class="floating-panel floating-panel-${kind} surface-shell${authoringSurfaceClass}" aria-label="${escapeAttribute(title)}">
+        <div class="floating-panel-head surface-fixed-header${authoringHeaderClass}">
           <h2>${escapeHtml(title)}</h2>
           <button class="dialog-close" type="button" data-close-panel aria-label="閉じる">&times;</button>
         </div>

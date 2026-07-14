@@ -125,6 +125,11 @@ export function renderToolsPanel(context: ToolsPanelRenderContext): string {
         <p class="settings-copy">直近の降臨地からこの距離以上離れると、同じ玉を再び降臨できます。</p>
         <div class="tuning-section">
           ${renderRange("setting-descent-distance", "再降臨距離 m", appSettings.descentMinDistanceMeters, 10, 5000, 10)}
+          <label class="inline-toggle privacy-setting-toggle">
+            <input id="setting-handoff-descent-gps" type="checkbox" ${appSettings.includeDescentGpsInHandoff ? "checked" : ""} />
+            <span>送るQRに降臨GPSを含める</span>
+          </label>
+          <p class="settings-copy privacy-setting-note">初期値はOFFです。「送る」で作るQRと共有画像だけに適用され、台帳や地図には影響しません。</p>
         </div>
       </details>
 

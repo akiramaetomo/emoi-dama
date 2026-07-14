@@ -16,6 +16,16 @@ export function ballCountToTrackPercent(count: number): number {
   return ((position - BALL_COUNT_SLIDER_MIN) / (BALL_COUNT_SLIDER_MAX - BALL_COUNT_SLIDER_MIN)) * 100;
 }
 
+export function pointerClientXToSliderPosition(clientX: number, trackLeft: number, trackWidth: number): number {
+  if (!Number.isFinite(clientX) || !Number.isFinite(trackLeft) || !Number.isFinite(trackWidth) || trackWidth <= 0) {
+    return BALL_COUNT_SLIDER_MIN;
+  }
+  const fraction = Math.max(0, Math.min(1, (clientX - trackLeft) / trackWidth));
+  return sliderPositionToBallCount(
+    BALL_COUNT_SLIDER_MIN + fraction * (BALL_COUNT_SLIDER_MAX - BALL_COUNT_SLIDER_MIN),
+  );
+}
+
 export function isLegacyBallCount(count: number): boolean {
   return Number.isFinite(count) && Math.round(count) > BALL_COUNT_NORMAL_MAX;
 }
@@ -32,9 +42,14 @@ export function bindBallCountSliderControls(root: ParentNode): void {
     const convert = control.querySelector<HTMLButtonElement>("[data-ball-count-convert]");
     const legacy = control.querySelector<HTMLElement>("[data-ball-count-legacy]");
     const slider = control.querySelector<HTMLElement>("[data-ball-count-slider]");
+    const visualTrack = control.querySelector<HTMLElement>("[data-ball-count-track]");
+    const thumb = control.querySelector<HTMLElement>("[data-ball-count-thumb]");
     if (!range || !hidden || !output) {
       return;
     }
+
+    let activePointerId: number | null = null;
+    let pointerValueChanged = false;
 
     const sync = () => {
       const count = sliderPositionToBallCount(Number(range.value));
@@ -43,10 +58,56 @@ export function bindBallCountSliderControls(root: ParentNode): void {
       output.value = label;
       output.textContent = label;
       range.setAttribute("aria-valuetext", label);
+      visualTrack?.style.setProperty("--ball-count-position", `${ballCountToTrackPercent(count)}%`);
     };
 
     range.addEventListener("input", sync);
     range.addEventListener("change", sync);
+    thumb?.addEventListener("pointerdown", (event) => {
+      if (!event.isPrimary || (event.pointerType === "mouse" && event.button !== 0)) {
+        return;
+      }
+      activePointerId = event.pointerId;
+      pointerValueChanged = false;
+      event.preventDefault();
+      range.focus({ preventScroll: true });
+      try {
+        thumb.setPointerCapture(event.pointerId);
+      } catch {
+        // Pointer capture can be unavailable in synthetic environments.
+      }
+    });
+    thumb?.addEventListener("pointermove", (event) => {
+      if (activePointerId !== event.pointerId || !visualTrack) {
+        return;
+      }
+      event.preventDefault();
+      const trackRect = visualTrack.getBoundingClientRect();
+      const nextPosition = pointerClientXToSliderPosition(event.clientX, trackRect.left, trackRect.width);
+      if (range.value === String(nextPosition)) {
+        return;
+      }
+      range.value = String(nextPosition);
+      pointerValueChanged = true;
+      range.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const finishPointerDrag = (event: PointerEvent) => {
+      if (activePointerId !== event.pointerId) {
+        return;
+      }
+      if (pointerValueChanged) {
+        range.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      try {
+        thumb?.releasePointerCapture(event.pointerId);
+      } catch {
+        // A cancelled pointer may already have released capture.
+      }
+      activePointerId = null;
+      pointerValueChanged = false;
+    };
+    thumb?.addEventListener("pointerup", finishPointerDrag);
+    thumb?.addEventListener("pointercancel", finishPointerDrag);
     convert?.addEventListener("click", () => {
       legacy?.setAttribute("hidden", "");
       slider?.removeAttribute("hidden");
@@ -54,6 +115,9 @@ export function bindBallCountSliderControls(root: ParentNode): void {
       sync();
       range.focus({ preventScroll: true });
     });
+    if (!slider?.hasAttribute("hidden")) {
+      sync();
+    }
   });
 }
 

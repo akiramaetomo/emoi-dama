@@ -63,6 +63,20 @@ function bindTuningEvents(root: ParentNode, handlers: SettingsPanelEventHandlers
     handlers.updateAppSettings({ showMemoField: memoField.checked });
   });
 
+  const handoffDescentGps = root.querySelector<HTMLInputElement>("#setting-handoff-descent-gps");
+  handoffDescentGps?.addEventListener("change", () => {
+    if (handoffDescentGps.checked) {
+      const confirmed = window.confirm(
+        "今後「送る」で作るQRと共有画像に、降臨の緯度・経度が含まれます。仲間内で場所を共有するときだけ有効にしてください。",
+      );
+      if (!confirmed) {
+        handoffDescentGps.checked = false;
+        return;
+      }
+    }
+    handlers.updateAppSettings({ includeDescentGpsInHandoff: handoffDescentGps.checked });
+  });
+
   const echoStrength = root.querySelector<HTMLSelectElement>("#setting-echo-strength");
   echoStrength?.addEventListener("change", () => {
     handlers.updateAppSettings({ emotionEchoStrength: readEchoStrength(echoStrength.value) });

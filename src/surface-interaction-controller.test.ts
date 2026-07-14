@@ -16,15 +16,15 @@ class FakeElement {
     private readonly editable = false,
     private readonly interactionSurface = false,
     private readonly owner: HTMLElement | null = null,
-    private readonly nativeRange = false,
+    private readonly horizontalDragControl = false,
   ) {}
 
   closest(selectors: string): Element | null {
     if (selectors === "[data-scroll-owner]") {
       return this.owner;
     }
-    if (selectors === "input[type='range']") {
-      return this.nativeRange ? this as unknown as Element : null;
+    if (selectors === "input[type='range'], [data-horizontal-drag-control]") {
+      return this.horizontalDragControl ? this as unknown as Element : null;
     }
     if (selectors.startsWith("input, textarea")) {
       return this.editable ? this as unknown as Element : null;
@@ -93,7 +93,7 @@ listener("touchmove")({
   touches: [{ clientX: 80, clientY: 22 }],
   preventDefault: () => { prevented = true; },
 } as unknown as Event);
-assert(!prevented, "native range drag should bypass one-finger surface pan suppression");
+assert(!prevented, "horizontal drag controls should bypass one-finger surface pan suppression");
 
 listener("touchstart")({
   target: new FakeElement(false, true, null, true),
@@ -105,7 +105,7 @@ listener("touchmove")({
   touches: [{ clientX: 22, clientY: 80 }],
   preventDefault: () => { prevented = true; },
 } as unknown as Event);
-assert(prevented, "vertical movement from a native range should retain surface pan suppression");
+assert(prevented, "vertical movement from a horizontal drag control should retain surface pan suppression");
 
 listener("touchstart")({
   target: new FakeElement(false, true),

@@ -46,7 +46,14 @@ assert(!createHtml.includes("<span>だれの玉？</span>"), "create form should
 assert(!createHtml.includes("<span>自由入力</span>"), "create form should not render a separate free-input row");
 assert(createHtml.includes('placeholder="名前を自由に入力"'), "create form should make free subject entry explicit");
 assert(createHtml.includes("<span>作り方</span>"), "create form should label issue mode");
-assert(createHtml.includes("<span>タイトル</span>"), "create form should label title");
+assert(createHtml.includes('<span class="authoring-inset-label">タイトル</span>'), "create form should label title");
+assert(createHtml.includes("data-authoring-primary-fields"), "create form should group title and memo as primary authoring fields");
+assert(createHtml.includes("data-ball-authoring-title-field"), "create form should expose the shared title field hook");
+assert(createHtml.includes("data-ball-authoring-memo-field"), "create form should expose the shared memo field hook");
+assert(createHtml.includes('<span class="authoring-inset-label">タイトル</span>'), "create form should retain a semantic inset title label");
+assert(createHtml.includes('placeholder="タイトル"'), "create form should show the title name inside an empty input");
+assert(createHtml.includes('placeholder="メモ"'), "create form should show the memo name inside an empty textarea");
+assert(!createHtml.includes("小さなえもいゴト"), "create form should remove the old example title placeholder");
 assert(createHtml.includes("<span>見せる範囲</span>"), "create form should label visibility");
 assert(createHtml.includes("data-authoring-category-fold"), "create form should use the shared folded category control");
 assert(createHtml.includes('class="timestamp-field create-timestamp-field create-inline-field"'), "create form should render compact horizontal timestamp controls");
@@ -54,6 +61,7 @@ assert(createHtml.includes('name="timeEnabled" checked'), "create form should en
 assert(createHtml.includes('name="time" type="time" value="09:35"'), "create form should render a visible time input value");
 assert(createHtml.includes("<span>時刻記録</span>"), "create form should label the timestamp row as timestamp recording");
 assert(createHtml.includes('type="button" data-current-time-button>現在時刻</button>'), "create form should render a current-time button");
+assert(createHtml.includes("timestamp-now-button quiet-accent-action"), "create form should use the shared quiet accent on current time");
 assert(!createHtml.includes("<span>時刻</span>"), "create form should not show a standalone time label");
 assert(createHtml.includes('<input type="checkbox" name="timeEnabled" checked />\n        </label>'), "create form should not show a standalone timestamp checkbox label");
 assert(!createHtml.includes("<span>時刻を記録</span>"), "create form should not use the long timestamp checkbox label");
@@ -99,6 +107,9 @@ assert(editHtml.includes("ball-edit-dialog surface-shell"), "edit form should re
 assert(editHtml.includes("app-modal-backdrop"), "edit form should use the shared fixed modal backdrop");
 assert(editHtml.includes("app-modal-scroll"), "edit form should expose one shared modal scroll region");
 assert(editHtml.indexOf("surface-fixed-header") < editHtml.indexOf("surface-scroll-body"), "edit header should remain outside its scroll owner");
+assert(editHtml.includes("authoring-surface-backdrop"), "edit form should use the shared authoring backdrop contract");
+assert(editHtml.includes("authoring-surface-header"), "edit form should use the shared authoring header contract");
+assert(editHtml.indexOf('id="ball-edit-title"') < editHtml.indexOf("data-dialog-close"), "edit header should place its title before close in DOM and tab order");
 assert(editHtml.includes("autocomplete=\"off\""), "edit memo form should suppress inappropriate autofill suggestions where supported");
 assert(editHtml.includes("<span>日時</span>"), "edit form should label date as datetime");
 assert(editHtml.includes("<span>時刻記録</span>"), "edit form should label the timestamp row as timestamp recording");
@@ -111,13 +122,17 @@ assert(!editHtml.includes("<span>自由入力</span>"), "edit form should not re
 assert(editHtml.includes('placeholder="名前を自由に入力"'), "edit form should make free subject entry explicit");
 assert(editHtml.includes("<span>作り方</span>"), "edit form should label issue mode");
 assert(editHtml.includes("<span>見せる範囲</span>"), "edit form should label visibility");
-assert(editHtml.includes("<span>タイトル</span>"), "edit form should label title");
+assert(editHtml.includes('<span class="authoring-inset-label">タイトル</span>'), "edit form should label title");
+assert(editHtml.includes("data-authoring-primary-fields"), "edit form should group title and memo as primary authoring fields");
+assert(editHtml.includes('placeholder="タイトル"'), "edit form should use the shared inset title placeholder");
+assert(editHtml.includes('placeholder="メモ"'), "edit form should use the shared inset memo placeholder");
 assert(!editHtml.includes("<span>日付</span>"), "edit form should not use the old date label");
 assert(!editHtml.includes("<span>だれの玉？</span>"), "edit form should not show the old question-mark label");
 assert(editHtml.includes('class="timestamp-field edit-timestamp-field edit-inline-field timestamp-field-wide"'), "edit form should render timestamp as a compact horizontal editable row");
 assert(editHtml.includes('name="timeEnabled" checked'), "edit form should enable timestamp recording when ball has time");
 assert(editHtml.includes('name="time" type="time" value="21:08"'), "edit form should expose the existing time for editing");
 assert(editHtml.includes('type="button" data-current-time-button>現在時刻</button>'), "edit form should render a current-time button");
+assert(editHtml.includes("timestamp-now-button quiet-accent-action"), "edit form should use the shared quiet accent on current time");
 assert(!editHtml.includes("<span>時刻</span>"), "edit form should not show a standalone time label");
 assert(editHtml.includes('<input type="checkbox" name="timeEnabled" checked />\n        </label>'), "edit form should not show a standalone timestamp checkbox label");
 assert(editHtml.indexOf("<span>時刻記録</span>") < editHtml.indexOf('name="timeEnabled"'), "edit form should place timestamp controls to the right of the timestamp label");
@@ -135,7 +150,7 @@ assert(editHtml.indexOf('name="subject"') < editHtml.indexOf("data-ball-count-co
 assert(editHtml.indexOf("data-ball-count-control") < editHtml.indexOf('name="issuerType"'), "edit form should place issue mode after ball count");
 assert(editHtml.indexOf('name="issuerType"') < editHtml.indexOf('name="visibility"'), "edit form should place visibility after issue mode");
 assert(countOccurrences(editHtml, 'name="note"') === 1, "edit form should render exactly one memo textarea");
-assert(editHtml.includes('rows="4" maxlength="180" autocomplete="off"'), "edit form should preserve memo textarea behavior");
+assert(editHtml.includes('rows="4" maxlength="180" placeholder="メモ" autocomplete="off"'), "edit form should preserve memo textarea behavior");
 assertAuthoringOrder(editHtml, "edit form");
 
 const fiveBallEditHtml = renderBallEditDialog({ ...sampleBall, count: 5 }, context);
@@ -143,6 +158,8 @@ assert(fiveBallEditHtml.includes('value="5"\n              aria-label="玉数"')
 assert(fiveBallEditHtml.includes('aria-valuetext="5玉"'), "five balls should expose the visible count to assistive technology");
 assert(fiveBallEditHtml.includes('class="ball-count-tick is-emphasized" style="--ball-count-position: 44.444444%"'), "the five-ball tick should be emphasized at four of nine intervals");
 assert(fiveBallEditHtml.indexOf("data-ball-count-output") < fiveBallEditHtml.indexOf("ball-count-range-stack"), "the live count should render to the left of the range stack");
+assert(fiveBallEditHtml.includes("data-ball-count-track"), "the slider should render a pointer-inert visual track");
+assert(fiveBallEditHtml.includes("data-ball-count-thumb data-horizontal-drag-control"), "the slider should expose a thumb-only horizontal drag target");
 
 const legacyCountEditHtml = renderBallEditDialog({ ...sampleBall, count: 12 }, context);
 assert(legacyCountEditHtml.includes("既存値 12玉"), "legacy count should be shown without truncation");
@@ -194,11 +211,18 @@ assert(descentEditHtml.includes("No.2"), "edit form should show descent sequence
 assert(!descentEditHtml.includes("第2回"), "edit form should not use the old descent sequence label");
 assert(descentEditHtml.includes("ほかの降臨を見る（1回）"), "edit form should fold older descents after the direct latest item");
 assert(descentEditHtml.includes("降臨メモ"), "edit form should expose descent memo fields");
+assert(descentEditHtml.includes("authoring-inset-field edit-descent-memo"), "edit form should expose a compact inset descent memo field");
+assert(descentEditHtml.includes('rows="1" maxlength="80" placeholder="降臨メモ"'), "edit form should start descent memo at one title-height row");
+assert(descentEditHtml.includes("edit-descent-location-row"), "edit form should group descent location status and actions on one row");
+assert(!descentEditHtml.includes("edit-descent-gps-row"), "edit form should remove the old separate GPS status row");
+assert(!descentEditHtml.includes("edit-descent-actions"), "edit form should remove the old separate GPS action row");
 assert(descentEditHtml.includes("地下でメモだけ"), "edit form should preserve GPS-less descent memo");
 assert(descentEditHtml.includes("位置未取得"), "edit form should show missing GPS state");
 assert(descentEditHtml.includes('data-descent-gps-record-id="descent_1"'), "edit form should render GPS acquisition controls");
 assert(descentEditHtml.includes('data-descent-clear-gps-record-id="descent_2"'), "edit form should render GPS deletion controls for positioned records");
 assert(descentEditHtml.includes("Google Maps"), "edit form should show map links for positioned records");
+assert(descentEditHtml.includes("ghost-action quiet-accent-action detail-map-link"), "edit form should use the quiet accent on map links");
+assert(descentEditHtml.includes("ghost-action quiet-accent-action\" type=\"button\" data-descent-gps-record-id"), "edit form should use the quiet accent on descent GPS actions");
 
 function assertAuthoringOrder(html: string, label: string): void {
   const markers = [

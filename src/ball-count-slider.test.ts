@@ -5,6 +5,7 @@ import {
   ballCountToTrackPercent,
   formatBallCount,
   isLegacyBallCount,
+  pointerClientXToSliderPosition,
   sliderPositionToBallCount,
 } from "./ball-count-slider.js";
 
@@ -24,6 +25,10 @@ assertEqual(formatBallCount(5), "5玉", "the visible value should use the ball u
 assertEqual(isLegacyBallCount(10), false, "ten balls should use the normal slider");
 assertEqual(isLegacyBallCount(11), true, "eleven balls should use compatibility mode");
 assertEqual(isLegacyBallCount(99), true, "the storage maximum should use compatibility mode");
+assertEqual(pointerClientXToSliderPosition(100, 100, 180), 1, "the pointer mapping should clamp to the left endpoint");
+assertEqual(pointerClientXToSliderPosition(180, 100, 180), 5, "the pointer mapping should round to the nearest detent");
+assertEqual(pointerClientXToSliderPosition(280, 100, 180), 10, "the pointer mapping should clamp to the right endpoint");
+assertEqual(pointerClientXToSliderPosition(999, 100, 0), 1, "an invalid track width should safely keep the minimum");
 
 function assertEqual<T>(actual: T, expected: T, message: string): void {
   if (actual !== expected) {

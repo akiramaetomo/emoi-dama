@@ -31,6 +31,7 @@ export interface AppSettings {
   startupScreen: StartupScreen;
   calendarMarkerMode: CalendarMarkerMode;
   descentMinDistanceMeters: number;
+  includeDescentGpsInHandoff: boolean;
 }
 
 const SETTINGS_KEY = "happyBall.settings.v2";
@@ -60,6 +61,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   startupScreen: "calendarMonth",
   calendarMarkerMode: "spread",
   descentMinDistanceMeters: 500,
+  includeDescentGpsInHandoff: false,
 };
 
 export function loadAppSettings(): AppSettings {
@@ -102,6 +104,7 @@ export function normalizeAppSettings(value: unknown): AppSettings {
     startupScreen: readStartupScreen(source.startupScreen),
     calendarMarkerMode: readCalendarMarkerMode(source.calendarMarkerMode),
     descentMinDistanceMeters: clampNumber(source.descentMinDistanceMeters, 10, 100_000, DEFAULT_APP_SETTINGS.descentMinDistanceMeters),
+    includeDescentGpsInHandoff: readBoolean(source.includeDescentGpsInHandoff, false),
   };
 }
 
@@ -124,6 +127,7 @@ export function looksLikeAppSettings(value: unknown): boolean {
     "startupScreen",
     "calendarMarkerMode",
     "descentMinDistanceMeters",
+    "includeDescentGpsInHandoff",
   ].some((key) => key in value);
 }
 

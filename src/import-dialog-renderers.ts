@@ -136,7 +136,7 @@ export function renderPendingJsonImportDialog(
             <span><strong>${ledgerReview.nameBookToAdd.length}</strong> 追加する名前</span>
             ${ledgerReview.rejectedItemCount > 0 ? `<span><strong>${ledgerReview.rejectedItemCount}</strong> 読めない玉</span>` : ""}
           ` : ""}
-          ${pendingJsonImport.appSettings ? `<span><strong>あり</strong> アプリ設定</span>` : ""}
+          ${pendingJsonImport.appSettings ? `<span><strong>あり</strong> アプリ設定</span><span><strong>降臨GPS共有: ${pendingJsonImport.appSettings.includeDescentGpsInHandoff ? "ON" : "OFF"}</strong></span>` : ""}
           ${pendingJsonImport.categories ? `<span><strong>あり</strong> カテゴリ設定</span>` : ""}
         </div>
         <div class="json-import-options">
