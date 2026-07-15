@@ -46,6 +46,7 @@ import {
   applyDescentRecordsToBall,
   createGoogleMapsUrl,
   hasDescentPosition,
+  normalizeDescentRecords,
   type DescentPositionInput,
 } from "./descent";
 import { getDisplayDateRange, getDisplayModeIconDotCount, moveDisplayAnchorToCalendarMonth, shiftDisplayAnchor, type DisplayMode } from "./display-period";
@@ -58,9 +59,9 @@ import {
   type DialogRenderContext,
 } from "./dialog-renderers";
 import {
-  renderEditableDescentItem,
   renderBallEditDialog,
   renderCreateForm,
+  renderEditableDescentHistory,
   renderEditSaveModeConfirm,
   type FormRenderContext,
 } from "./form-renderers";
@@ -441,7 +442,12 @@ function setAriaCurrent(button: HTMLButtonElement | null, current: boolean): voi
 
 function renderActivePrimaryPanel(): string {
   if (uiState.primary === "create") {
-    return renderPanelOverlay("玉を置く", renderCreateForm(draft, getFormRenderContext()), "create");
+    return renderPanelOverlay(
+      "玉を置く",
+      renderCreateForm(draft, getFormRenderContext()),
+      "create",
+      { label: "玉を置く", formId: "ball-form" },
+    );
   }
   if (uiState.primary === "saved-list") {
     const managedBalls = getManagedBalls();
@@ -1010,6 +1016,7 @@ function saveBallEditForm(form: HTMLFormElement | null, saveMode: BallSaveMode):
   if (!form || !editingId) {
     return;
   }
+  const deletedDescents = readPendingDeletedDescents(form);
   ledger = updateBall(ledger, editingId, readDraft(form), saveMode);
   const editedBall = ledger.balls.find((ball) => ball.id === editingId);
   if (editedBall) {
@@ -1020,6 +1027,13 @@ function saveBallEditForm(form: HTMLFormElement | null, saveMode: BallSaveMode):
       updatedAt: updatedBall.updatedAt,
     };
     saveLedger(ledger);
+    for (const deleted of deletedDescents) {
+      appendActivity(createBallActivityInput(updatedBall, {
+        action: "descent-delete",
+        descentSequence: deleted.sequence,
+        message: deleted.id,
+      }));
+    }
   }
   selectedBallId = editingId;
   render();
@@ -1715,12 +1729,42 @@ function bindDescendBallEvents(root: ParentNode = document): void {
       if (!target) {
         return;
       }
+      const editForm = button.closest<HTMLFormElement>("#ball-edit-form");
+      if (editForm?.querySelector("[data-deleted-descent-id]")) {
+        const feedback = editForm.querySelector<HTMLElement>("[data-edit-descent-feedback]");
+        if (feedback) {
+          feedback.textContent = "消去を保存してから降臨してください";
+        }
+        return;
+      }
       void requestDescendLocation(target, button);
     });
   });
 }
 
 function bindEditDescentEvents(root: ParentNode = document): void {
+  root.querySelectorAll<HTMLButtonElement>("[data-descent-delete-record-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const item = button.closest<HTMLElement>("[data-descent-edit-item]");
+      const form = item?.closest<HTMLFormElement>("#ball-edit-form");
+      if (!item || !form) {
+        return;
+      }
+      const id = readDescentField(item, "id");
+      const sequence = readPositiveInteger(readDescentField(item, "sequence"), 1);
+      if (!confirm(`No.${sequence}の降臨dataを消去します。\n降臨メモ、GPS情報、付与された星も消去されます。\n保存するまで確定しません。続けますか？`)) {
+        return;
+      }
+      const marker = document.createElement("input");
+      marker.type = "hidden";
+      marker.dataset.deletedDescentId = id;
+      marker.dataset.deletedDescentSequence = String(sequence);
+      form.append(marker);
+      item.remove();
+      replaceEditableDescentHistory(form, readEditedDescentRecords(form), `No.${sequence}を消去予定です。保存で確定します`);
+    });
+  });
+
   root.querySelectorAll<HTMLButtonElement>("[data-descent-gps-record-id]").forEach((button) => {
     button.addEventListener("click", () => {
       const item = button.closest<HTMLElement>("[data-descent-edit-item]");
@@ -2287,6 +2331,7 @@ async function requestDescendLocation(ball: HappyBall, sourceButton?: HTMLButton
       message: hasDescentPosition(result.record) ? "GPS取得成功" : "位置未取得",
     }));
     if (editForm) {
+      refreshPersistentSurfacesAfterLedgerMutation();
       updateEditDialogAfterNewDescent(editForm, result.record, `GPS取得できました / No.${result.record.sequence}を記録しました`);
       return;
     }
@@ -2320,6 +2365,7 @@ function saveGpslessDescent(ball: HappyBall, memo: string, editForm: HTMLFormEle
     message: "仮降臨",
   }));
   if (editForm) {
+    refreshPersistentSurfacesAfterLedgerMutation();
     updateEditDialogAfterNewDescent(editForm, result.record, `仮降臨を記録しました / No.${result.record.sequence}`);
     return;
   }
@@ -2328,52 +2374,43 @@ function saveGpslessDescent(ball: HappyBall, memo: string, editForm: HTMLFormEle
 }
 
 function updateEditDialogAfterNewDescent(form: HTMLFormElement, record: HappyBallDescentRecord, message: string): void {
-  let history = form.querySelector<HTMLElement>(".edit-descent-history");
-  if (!history) {
-    history = document.createElement("section");
-    history.className = "edit-descent-history";
-    history.setAttribute("aria-label", "降臨情報");
-    history.innerHTML = `
-      <div class="edit-descent-head">
-        <span class="descent-section-label">降臨情報</span>
-        <span class="edit-descent-feedback" data-edit-descent-feedback role="status" aria-live="polite"></span>
-      </div>
-    `;
-    form.querySelector(".edit-lifecycle-actions")?.insertAdjacentElement("afterend", history);
-  }
+  replaceEditableDescentHistory(form, [...readEditedDescentRecords(form), record], message);
+}
 
-  const primary = history.querySelector<HTMLElement>(":scope > [data-descent-edit-item]");
-  if (primary) {
-    let folded = history.querySelector<HTMLDetailsElement>(":scope > .edit-descent-more");
-    if (!folded) {
-      folded = document.createElement("details");
-      folded.className = "edit-descent-more";
-      folded.innerHTML = `<summary>ほかの降臨を見る（1回）</summary>`;
-      history.appendChild(folded);
-    } else {
-      const count = folded.querySelectorAll("[data-descent-edit-item]").length + 1;
-      const summary = folded.querySelector("summary");
-      if (summary) {
-        summary.textContent = `ほかの降臨を見る（${count}回）`;
-      }
-    }
-    folded.insertAdjacentElement("afterbegin", primary);
+function replaceEditableDescentHistory(form: HTMLFormElement, records: HappyBallDescentRecord[], message: string): void {
+  const editingId = form.dataset.editingBallId;
+  const ball = ledger.balls.find((item) => item.id === editingId);
+  if (!ball) {
+    return;
   }
-
-  const head = history.querySelector<HTMLElement>(":scope > .edit-descent-head");
-  if (head) {
-    head.insertAdjacentHTML("afterend", renderEditableDescentItem(record));
+  const displayBall = applyDescentRecordsToBall(ball, normalizeDescentRecords(records), ball.updatedAt);
+  const template = document.createElement("template");
+  template.innerHTML = renderEditableDescentHistory(displayBall).trim();
+  const nextHistory = template.content.firstElementChild as HTMLElement | null;
+  if (!nextHistory) {
+    return;
+  }
+  const currentHistory = form.querySelector<HTMLElement>(".edit-descent-history");
+  if (currentHistory) {
+    currentHistory.replaceWith(nextHistory);
   } else {
-    history.insertAdjacentHTML("afterbegin", renderEditableDescentItem(record));
+    form.querySelector(".edit-lifecycle-actions")?.insertAdjacentElement("beforebegin", nextHistory);
   }
-  const newItem = history.querySelector<HTMLElement>(`[data-descent-id="${cssEscape(record.id)}"]`);
-  if (newItem) {
-    bindEditDescentEvents(newItem);
-  }
-  const feedback = history.querySelector<HTMLElement>("[data-edit-descent-feedback]");
+  bindDescendBallEvents(nextHistory);
+  bindEditDescentEvents(nextHistory);
+  const feedback = nextHistory.querySelector<HTMLElement>("[data-edit-descent-feedback]");
   if (feedback) {
     feedback.textContent = message;
   }
+}
+
+function refreshPersistentSurfacesAfterLedgerMutation(): void {
+  const visibleBalls = getVisibleBalls();
+  const selectedBall = visibleBalls.find((ball) => ball.id === selectedBallId) ?? visibleBalls[0] ?? null;
+  ensureBaseRendered(visibleBalls, selectedBall);
+  renderPrimarySurface();
+  applyUiState();
+  applyBallFieldTextureSetting();
 }
 
 function saveDescentResult(previousBall: HappyBall, nextBall: HappyBall): void {
@@ -2453,10 +2490,6 @@ function createGeolocationUnavailableMessage(): string {
 
 function formatCoordinatesForUi(latitude: number, longitude: number): string {
   return `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
-}
-
-function cssEscape(value: string): string {
-  return typeof CSS !== "undefined" && CSS.escape ? CSS.escape(value) : value.replace(/["\\]/g, "\\$&");
 }
 
 function nextDisplayMode(mode: DisplayMode): DisplayMode {
@@ -2692,6 +2725,13 @@ function readEditedDescentRecords(form: HTMLFormElement): HappyBallDescentRecord
     }
     return record;
   });
+}
+
+function readPendingDeletedDescents(form: HTMLFormElement): Array<{ id: string; sequence: number }> {
+  return Array.from(form.querySelectorAll<HTMLInputElement>("[data-deleted-descent-id]")).map((marker) => ({
+    id: marker.dataset.deletedDescentId ?? "",
+    sequence: readPositiveInteger(marker.dataset.deletedDescentSequence ?? "", 1),
+  }));
 }
 
 function readDescentField(root: HTMLElement, field: string): string {

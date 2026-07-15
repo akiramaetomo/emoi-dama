@@ -50,7 +50,10 @@ export function renderBallEditDialog(ball: HappyBall, context: FormRenderContext
       <section class="ball-dialog ball-edit-dialog surface-shell authoring-surface" role="dialog" aria-modal="true" aria-labelledby="ball-edit-title">
         <div class="surface-fixed-header edit-surface-header authoring-surface-header">
           <h2 id="ball-edit-title">玉を編集</h2>
-          <button class="dialog-close" type="button" data-dialog-close aria-label="閉じる">&times;</button>
+          <div class="edit-header-actions">
+            <button class="panel-header-action primary-action edit-header-save" type="submit" form="ball-edit-form">保存</button>
+            <button class="dialog-close" type="button" data-dialog-close aria-label="閉じる">&times;</button>
+          </div>
         </div>
         <div class="surface-scroll-body app-modal-scroll" data-scroll-owner>
           <form id="ball-edit-form" class="edit-form" autocomplete="off" data-editing-ball-id="${escapeAttribute(ball.id)}">
@@ -62,7 +65,6 @@ export function renderBallEditDialog(ball: HappyBall, context: FormRenderContext
             ${renderArchiveToggleButton(ball)}
             <button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-status="offered">供養</button>
             <button class="delete-ball" type="button" data-delete-ball-id="${escapeAttribute(ball.id)}">お焚上</button>
-            <button class="descend-ball" type="button" data-descend-ball-id="${escapeAttribute(ball.id)}">降臨</button>
           </div>
 
           <div class="dialog-actions">
@@ -97,6 +99,7 @@ function renderBallAuthoringFields(
           <textarea name="note" rows="4" maxlength="180" placeholder="メモ" autocomplete="off">${escapeHtml(value.note)}</textarea>
         </label>
       </div>
+      <p class="authoring-ime-hint">キーボードは入力欄以外タップで閉じられます</p>
 
       <details class="authoring-category-fold ${mode}-category-fold" data-authoring-category-fold>
         <summary>
@@ -105,6 +108,7 @@ function renderBallAuthoringFields(
         </summary>
         ${renderCategoryPalette(value.category, context)}
       </details>
+      ${mode === "edit" ? renderEchoCategory((value as HappyBall).emotionEcho) : ""}
 
       <div class="authoring-datetime-group ${mode}-datetime-group" data-authoring-datetime-group>
         <label class="${inlineClass}">
@@ -134,6 +138,19 @@ function renderBallAuthoringFields(
           ${renderOptions(visibilityLabels, value.visibility)}
         </select>
       </label>
+  `;
+}
+
+function renderEchoCategory(emotionEcho: HappyBall["emotionEcho"]): string {
+  const visual = emotionEcho?.visual;
+  return `
+    <div class="authoring-echo-category" data-authoring-echo-category>
+      <span>余韻</span>
+      <span class="authoring-echo-category-value">
+        ${visual ? `<span class="category-swatch ${renderVisualKindClass(visual)}" style="${renderVisualStyle(visual)}" aria-hidden="true"></span>` : ""}
+        <strong>${escapeHtml(emotionEcho?.category ?? "なし")}</strong>
+      </span>
+    </div>
   `;
 }
 
@@ -270,21 +287,17 @@ function renderArchiveToggleButton(ball: HappyBall): string {
   return `<button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-status="archived" aria-label="玉をしまう">しまう</button>`;
 }
 
-function renderEditableDescentHistory(ball: HappyBall): string {
+export function renderEditableDescentHistory(ball: HappyBall): string {
   const descents = ball.descents ?? [];
-  const badgeCount = ball.descentBadgeCount ?? 0;
-  if (descents.length === 0 && badgeCount === 0 && !ball.isKamiBall) {
-    return "";
-  }
   const primary = descents[descents.length - 1];
   const folded = descents.slice(0, -1).reverse();
   return `
-    <section class="edit-descent-history" aria-label="降臨情報">
+    <section class="edit-descent-history" aria-label="降臨">
       <div class="edit-descent-head">
-        <span class="descent-section-label">降臨情報</span>
+        <button class="descend-ball ghost-action quiet-accent-action" type="button" data-descend-ball-id="${escapeAttribute(ball.id)}">降臨</button>
         <span class="edit-descent-feedback" data-edit-descent-feedback role="status" aria-live="polite"></span>
       </div>
-      ${primary ? renderEditableDescentItem(primary) : ""}
+      ${primary ? renderEditableDescentItem(primary) : '<p class="edit-descent-empty">降臨なし</p>'}
       ${folded.length > 0 ? `
         <details class="edit-descent-more">
           <summary>ほかの降臨を見る（${folded.length}回）</summary>
@@ -314,6 +327,7 @@ export function renderEditableDescentItem(record: NonNullable<HappyBall["descent
       <div class="edit-descent-item-head">
         <strong>No.${record.sequence}</strong>
         <span>${escapeHtml(formatDescentDateTime(record.recordedAt))}</span>
+        <button class="ghost-action descent-record-delete" type="button" data-descent-delete-record-id="${escapeAttribute(record.id)}" aria-label="No.${record.sequence}の降臨dataを消去">消去</button>
       </div>
       <label class="authoring-inset-field edit-descent-memo">
         <span class="authoring-inset-label">降臨メモ</span>

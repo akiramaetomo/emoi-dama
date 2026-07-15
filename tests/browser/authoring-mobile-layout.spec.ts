@@ -26,6 +26,33 @@ test("create and edit fill portrait and touch-landscape phone viewports", async 
   }
 });
 
+test("portrait authoring keeps time and ball count controls on one compact row", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 640 });
+
+  await page.locator("[data-calendar-open-panel='create']").click();
+  await expect(page.locator("#ball-form .authoring-ime-hint")).toHaveText("キーボードは入力欄以外タップで閉じられます");
+  await expectCompactPortraitControls(page, "#ball-form", 1);
+  await expectCommonCategoryRow(page, "#ball-form", ".create-inline-field", 96);
+  await page.locator(".floating-panel-create .dialog-close").click();
+
+  await openFirstBallEdit(page);
+  await expect(page.locator("#ball-edit-form .authoring-ime-hint")).toHaveText("キーボードは入力欄以外タップで閉じられます");
+  await expect(page.locator("#ball-edit-form [data-authoring-echo-category] > span:first-child")).toHaveText("余韻");
+  await expect(page.locator("#ball-edit-form [data-authoring-echo-category] strong")).toHaveText("なし");
+  await expectCompactPortraitControls(page, "#ball-edit-form", 1);
+  await expectCommonCategoryRow(page, "#ball-edit-form", ".edit-inline-field", 96);
+  await expectCompactEditEchoRow(page, 96);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectCompactPortraitControls(page, "#ball-edit-form", 0.8);
+  await page.setViewportSize({ width: 360, height: 640 });
+
+  const title = page.locator("#ball-edit-form input[name='title']");
+  await title.fill("header save fixture");
+  await page.locator(".ball-edit-dialog .edit-header-save").click();
+  await expect(page.locator("[data-edit-save-correction]")).toBeVisible();
+});
+
 test("create and edit keep iPad and desktop outer geometry", async ({ page }) => {
   for (const viewport of [
     { width: 1280, height: 800 },
@@ -35,10 +62,13 @@ test("create and edit keep iPad and desktop outer geometry", async ({ page }) =>
 
     await page.locator("[data-calendar-open-panel='create']").click();
     await expectWideAuthoringSurface(page, ".floating-panel-create", "玉を置く");
+    await expectCommonCategoryRow(page, "#ball-form", ".create-inline-field", 104);
     await page.locator(".floating-panel-create .authoring-surface-header .dialog-close").click();
 
     await openFirstBallEdit(page);
     await expectWideAuthoringSurface(page, ".ball-edit-dialog", "玉を編集");
+    await expectCommonCategoryRow(page, "#ball-edit-form", ".edit-inline-field", 104);
+    await expectCompactEditEchoRow(page, 104);
     await page.locator(".ball-edit-dialog .authoring-surface-header .dialog-close").click();
   }
 });
@@ -94,8 +124,7 @@ test("create and edit share inset fields without clipping iPad date or time", as
     const descent = await page.locator("#ball-edit-form").evaluate((form) => {
       const datetime = form.querySelector<HTMLElement>("[data-authoring-datetime-group]")!;
       const history = form.querySelector<HTMLElement>(".edit-descent-history")!;
-      const sectionLabel = history.querySelector<HTMLElement>(".descent-section-label")!;
-      const standardLabel = form.querySelector<HTMLElement>("[data-authoring-datetime-group] > label > span")!;
+      const descentAction = history.querySelector<HTMLElement>(".edit-descent-head .descend-ball")!;
       const emptyLocation = history.querySelector<HTMLElement>(".edit-descent-location-row.is-empty-position")!;
       const item = emptyLocation.closest<HTMLElement>(".edit-descent-item")!;
       const memo = item.querySelector<HTMLElement>(".edit-descent-memo")!;
@@ -120,8 +149,8 @@ test("create and edit share inset fields without clipping iPad date or time", as
         historyBorder: getComputedStyle(history).borderTopWidth,
         itemBorder: getComputedStyle(item).borderTopWidth,
         matchingGroupBackground: getComputedStyle(history).backgroundColor === getComputedStyle(datetime).backgroundColor,
-        matchingLabelSize: getComputedStyle(sectionLabel).fontSize === getComputedStyle(standardLabel).fontSize,
-        matchingLabelWeight: getComputedStyle(sectionLabel).fontWeight === getComputedStyle(standardLabel).fontWeight,
+        descentActionText: descentAction.textContent?.trim(),
+        descentActionHeight: descentAction.getBoundingClientRect().height,
         memoHeight: textareaRect.height,
         memoWidthDelta: Math.abs(textareaRect.width - memoRect.width),
         memoLeftDelta: Math.abs(textareaRect.left - memoRect.left),
@@ -141,8 +170,8 @@ test("create and edit share inset fields without clipping iPad date or time", as
     expect(descent.historyBorder).toBe("2px");
     expect(descent.itemBorder).toBe("2px");
     expect(descent.matchingGroupBackground).toBe(true);
-    expect(descent.matchingLabelSize).toBe(true);
-    expect(descent.matchingLabelWeight).toBe(true);
+    expect(descent.descentActionText).toBe("降臨");
+    expect(descent.descentActionHeight).toBeGreaterThanOrEqual(36);
     expect(descent.memoHeight).toBeCloseTo(50, 0);
     expect(descent.memoWidthDelta).toBeLessThanOrEqual(0.5);
     expect(descent.memoLeftDelta).toBeLessThanOrEqual(0.5);
@@ -179,6 +208,108 @@ async function openFirstBallEdit(page: Page): Promise<void> {
   await page.locator("[data-calendar-open-panel='dayList']").click();
   await page.locator("[data-edit-ball-id]").first().click();
   await expect(page.locator(".ball-edit-dialog")).toBeVisible();
+}
+
+async function expectCompactPortraitControls(page: Page, formSelector: string, expectedStackRatio: number): Promise<void> {
+  const metrics = await page.locator(formSelector).evaluate((form) => {
+    const timestamp = form.querySelector<HTMLElement>(".timestamp-control")!;
+    const timestampField = timestamp.closest<HTMLElement>(".timestamp-field")!;
+    const timestampItems = [
+      timestamp.querySelector<HTMLElement>(".timestamp-toggle")!,
+      timestamp.querySelector<HTMLElement>("[data-current-time-button]")!,
+      timestamp.querySelector<HTMLInputElement>("input[type='time']")!,
+    ].map((element) => element.getBoundingClientRect());
+    const ballField = form.querySelector<HTMLElement>("[data-ball-count-control]")!;
+    const ballLabel = ballField.querySelector<HTMLElement>(".ball-count-field-label")!.getBoundingClientRect();
+    const output = ballField.querySelector<HTMLElement>("[data-ball-count-output]")!;
+    const outputRect = output.getBoundingClientRect();
+    const slider = ballField.querySelector<HTMLElement>(".ball-count-slider")!.getBoundingClientRect();
+    const stack = ballField.querySelector<HTMLElement>(".ball-count-range-stack")!.getBoundingClientRect();
+    const core = ballField.querySelector<HTMLElement>(".ball-count-thumb-core")!;
+    const hit = ballField.querySelector<HTMLElement>(".ball-count-thumb-hit")!;
+    const formRect = form.getBoundingClientRect();
+    const centers = timestampItems.map((rect) => rect.top + rect.height / 2);
+    return {
+      timestampWrap: getComputedStyle(timestamp).flexWrap,
+      timestampColumns: getComputedStyle(timestampField).gridTemplateColumns,
+      toggleLeftInset: timestampItems[0]!.left - timestampField.getBoundingClientRect().left,
+      timestampCenterDelta: Math.max(...centers) - Math.min(...centers),
+      timeWidth: timestampItems[2]!.width,
+      nowFontSize: Number.parseFloat(getComputedStyle(timestamp.querySelector<HTMLElement>("[data-current-time-button]")!).fontSize),
+      timestampOverflow: timestamp.scrollWidth - timestamp.clientWidth,
+      ballRowTopDelta: Math.abs(ballLabel.top - outputRect.top),
+      ballFieldOverflow: ballField.scrollWidth - ballField.clientWidth,
+      stackRatio: stack.width / (slider.right - stack.left),
+      outputFontSize: Number.parseFloat(getComputedStyle(output).fontSize),
+      labelFontSize: Number.parseFloat(getComputedStyle(ballField.querySelector<HTMLElement>(".ball-count-field-label")!).fontSize),
+      coreWidth: core.getBoundingClientRect().width,
+      hitWidth: hit.getBoundingClientRect().width,
+      formOverflow: form.scrollWidth - form.clientWidth,
+      rightOverflow: Math.max(timestampItems[2]!.right, stack.right) - formRect.right,
+    };
+  });
+  expect(metrics.timestampWrap).toBe("nowrap");
+  expect(metrics.timestampColumns.startsWith("72px ")).toBe(true);
+  expect(metrics.toggleLeftInset).toBeCloseTo(80, 0);
+  expect(metrics.timestampCenterDelta).toBeLessThanOrEqual(1);
+  expect(metrics.timeWidth).toBeGreaterThanOrEqual(139);
+  expect(metrics.nowFontSize).toBeCloseTo(12.8, 1);
+  expect(metrics.timestampOverflow).toBeLessThanOrEqual(1);
+  expect(metrics.ballRowTopDelta).toBeLessThanOrEqual(10);
+  expect(metrics.ballFieldOverflow).toBeLessThanOrEqual(1);
+  expect(metrics.stackRatio).toBeCloseTo(expectedStackRatio, 1);
+  expect(metrics.outputFontSize).toBeCloseTo(metrics.labelFontSize, 1);
+  expect(metrics.coreWidth).toBeCloseTo(20, 0);
+  expect(metrics.hitWidth).toBeCloseTo(34, 0);
+  expect(metrics.formOverflow).toBeLessThanOrEqual(1);
+  expect(metrics.rightOverflow).toBeLessThanOrEqual(0.5);
+}
+
+async function expectCommonCategoryRow(
+  page: Page,
+  formSelector: string,
+  inlineFieldSelector: string,
+  expectedLabelWidth: number,
+): Promise<void> {
+  const metrics = await page.locator(formSelector).evaluate((form, expectedInlineFieldSelector) => {
+    const category = form.querySelector<HTMLElement>(".authoring-category-fold summary")!;
+    const categoryLabel = category.querySelector<HTMLElement>(":scope > span:first-child")!.getBoundingClientRect();
+    const categoryValue = category.querySelector<HTMLElement>(".edit-category-current")!.getBoundingClientRect();
+    const labelElement = category.querySelector<HTMLElement>(":scope > span:first-child")!;
+    const referenceLabel = form.querySelector<HTMLElement>(`.authoring-datetime-group > ${expectedInlineFieldSelector} > span`)!;
+    const labelStyle = getComputedStyle(labelElement);
+    const referenceStyle = getComputedStyle(referenceLabel);
+    return {
+      categoryJustify: getComputedStyle(category).justifyContent,
+      categoryGap: categoryValue.left - categoryLabel.right,
+      labelWidth: categoryLabel.width,
+      labelWhiteSpace: labelStyle.whiteSpace,
+      labelColor: labelStyle.color,
+      referenceColor: referenceStyle.color,
+      labelFontSize: labelStyle.fontSize,
+      referenceFontSize: referenceStyle.fontSize,
+    };
+  }, inlineFieldSelector);
+  expect(metrics.categoryJustify).toBe("flex-start");
+  expect(metrics.categoryGap).toBeCloseTo(8, 0);
+  expect(metrics.labelWidth).toBeCloseTo(expectedLabelWidth, 0);
+  expect(metrics.labelWhiteSpace).toBe("nowrap");
+  expect(metrics.labelColor).toBe(metrics.referenceColor);
+  expect(metrics.labelFontSize).toBe(metrics.referenceFontSize);
+}
+
+async function expectCompactEditEchoRow(page: Page, expectedLabelWidth: number): Promise<void> {
+  const metrics = await page.locator("#ball-edit-form").evaluate((form) => {
+    const echo = form.querySelector<HTMLElement>("[data-authoring-echo-category]")!;
+    const echoLabel = echo.querySelector<HTMLElement>(":scope > span:first-child")!.getBoundingClientRect();
+    const echoValue = echo.querySelector<HTMLElement>(".authoring-echo-category-value")!.getBoundingClientRect();
+    return {
+      echoGap: echoValue.left - echoLabel.right,
+      labelWidth: echoLabel.width,
+    };
+  });
+  expect(metrics.echoGap).toBeCloseTo(8, 0);
+  expect(metrics.labelWidth).toBeCloseTo(expectedLabelWidth, 0);
 }
 
 async function expectIpadDateContainment(page: Page, formSelector: string, rowClass: string): Promise<void> {
@@ -317,7 +448,15 @@ async function expectPhoneAuthoringSurface(
   expect(metrics.surface.backgroundAlpha).toBeCloseTo(0.9, 2);
   expect(metrics.header.closeWidth).toBeCloseTo(40, 0);
   expect(metrics.header.rowDelta).toBeLessThanOrEqual(1);
-  expect(metrics.header.titleCenterDelta).toBeLessThanOrEqual(1);
+  if (selector.includes("ball-edit")) {
+    expect(metrics.header.saveCount).toBe(1);
+    expect(metrics.header.saveForm).toBe("ball-edit-form");
+    expect(metrics.header.titleCenterDelta).toBeLessThanOrEqual(1);
+    expect(metrics.header.titleActionsGap).toBeGreaterThanOrEqual(0);
+    expect(metrics.header.rightOverflow).toBeLessThanOrEqual(0.5);
+  } else {
+    expect(metrics.header.titleCenterDelta).toBeLessThanOrEqual(1);
+  }
   expect(metrics.header.closeRightInset).toBeGreaterThanOrEqual(11.5);
   expect(metrics.header.bodyOverlap).toBeLessThanOrEqual(0);
   expect(metrics.scrollOwnerCount).toBe(1);
@@ -334,7 +473,15 @@ async function expectWideAuthoringSurface(page: Page, selector: string, expected
   expect(metrics.surface.paddingLeft).toBeCloseTo(20, 0);
   expect(metrics.header.closeWidth).toBeCloseTo(48, 0);
   expect(metrics.header.rowDelta).toBeLessThanOrEqual(1);
-  expect(metrics.header.titleCenterDelta).toBeLessThanOrEqual(1);
+  if (selector.includes("ball-edit")) {
+    expect(metrics.header.saveCount).toBe(1);
+    expect(metrics.header.saveForm).toBe("ball-edit-form");
+    expect(metrics.header.titleCenterDelta).toBeLessThanOrEqual(1);
+    expect(metrics.header.titleActionsGap).toBeGreaterThanOrEqual(0);
+    expect(metrics.header.rightOverflow).toBeLessThanOrEqual(0.5);
+  } else {
+    expect(metrics.header.titleCenterDelta).toBeLessThanOrEqual(1);
+  }
   expect(metrics.header.bodyOverlap).toBeLessThanOrEqual(0);
   expect(metrics.scrollOwnerCount).toBe(1);
   await expectAuthoringVisualHierarchy(page, `${selector} form`);
@@ -343,8 +490,10 @@ async function expectWideAuthoringSurface(page: Page, selector: string, expected
 async function readAuthoringMetrics(page: Page, selector: string) {
   return page.locator(selector).evaluate((surface) => {
     const header = surface.querySelector<HTMLElement>(".authoring-surface-header")!;
-    const title = header.querySelector<HTMLElement>("h2")!;
+    const title = header.querySelector<HTMLElement>("h2, .panel-header-action")!;
     const close = header.querySelector<HTMLElement>(".dialog-close")!;
+    const save = header.querySelector<HTMLButtonElement>(".edit-header-save");
+    const actions = header.querySelector<HTMLElement>(".edit-header-actions");
     const body = surface.querySelector<HTMLElement>(":scope > [data-scroll-owner]")!;
     const surfaceRect = surface.getBoundingClientRect();
     const headerRect = header.getBoundingClientRect();
@@ -369,11 +518,23 @@ async function readAuthoringMetrics(page: Page, selector: string) {
         closeWidth: closeRect.width,
         closeRightInset: surfaceRect.right - closeRect.right,
         rowDelta: Math.abs(
-          (titleRect.top + titleRect.height / 2) - (closeRect.top + closeRect.height / 2),
+          Math.max(
+            titleRect.top + titleRect.height / 2,
+            save ? save.getBoundingClientRect().top + save.getBoundingClientRect().height / 2 : -Infinity,
+            closeRect.top + closeRect.height / 2,
+          ) - Math.min(
+            titleRect.top + titleRect.height / 2,
+            save ? save.getBoundingClientRect().top + save.getBoundingClientRect().height / 2 : Infinity,
+            closeRect.top + closeRect.height / 2,
+          ),
         ),
         titleCenterDelta: Math.abs(
           (titleRect.left + titleRect.width / 2) - (surfaceRect.left + surfaceRect.width / 2),
         ),
+        saveCount: header.querySelectorAll(".edit-header-save").length,
+        saveForm: save?.getAttribute("form") ?? null,
+        titleActionsGap: actions ? actions.getBoundingClientRect().left - titleRect.right : Infinity,
+        rightOverflow: Math.max(titleRect.right, save?.getBoundingClientRect().right ?? -Infinity, closeRect.right) - surfaceRect.right,
         bodyOverlap: headerRect.bottom - bodyRect.top,
       },
     };

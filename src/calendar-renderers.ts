@@ -139,7 +139,7 @@ function renderCalendarDayListItem(ball: HappyBall, context: CalendarRenderConte
         <p class="calendar-day-ball-memo ${ball.note.trim() ? "" : "is-empty"}">${escapeHtml(ball.note.trim() || "メモなし")}</p>
       </div>
       <div class="calendar-day-ball-actions">
-        <button class="share-ball" type="button" data-view-ball-id="${escapeAttribute(ball.id)}" aria-label="${escapeAttribute(ball.title)}の内容を見る">内容</button>
+        <button class="share-ball" type="button" data-view-ball-id="${escapeAttribute(ball.id)}" aria-label="${escapeAttribute(ball.title)}の中身を見る">中身</button>
         <button class="edit-ball" type="button" data-edit-ball-id="${escapeAttribute(ball.id)}" aria-label="${escapeAttribute(ball.title)}を編集">編集</button>
         ${renderCalendarLifecycleActions(ball)}
         <button class="delete-ball" type="button" data-delete-ball-id="${escapeAttribute(ball.id)}" aria-label="${escapeAttribute(ball.title)}をお焚上">お焚上</button>

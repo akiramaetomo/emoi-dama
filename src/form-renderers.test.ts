@@ -53,6 +53,7 @@ assert(createHtml.includes("data-ball-authoring-memo-field"), "create form shoul
 assert(createHtml.includes('<span class="authoring-inset-label">タイトル</span>'), "create form should retain a semantic inset title label");
 assert(createHtml.includes('placeholder="タイトル"'), "create form should show the title name inside an empty input");
 assert(createHtml.includes('placeholder="メモ"'), "create form should show the memo name inside an empty textarea");
+assert(createHtml.includes("キーボードは入力欄以外タップで閉じられます"), "create form should explain the safe IME dismissal gesture");
 assert(!createHtml.includes("小さなえもいゴト"), "create form should remove the old example title placeholder");
 assert(createHtml.includes("<span>見せる範囲</span>"), "create form should label visibility");
 assert(createHtml.includes("data-authoring-category-fold"), "create form should use the shared folded category control");
@@ -110,6 +111,9 @@ assert(editHtml.indexOf("surface-fixed-header") < editHtml.indexOf("surface-scro
 assert(editHtml.includes("authoring-surface-backdrop"), "edit form should use the shared authoring backdrop contract");
 assert(editHtml.includes("authoring-surface-header"), "edit form should use the shared authoring header contract");
 assert(editHtml.indexOf('id="ball-edit-title"') < editHtml.indexOf("data-dialog-close"), "edit header should place its title before close in DOM and tab order");
+assert(editHtml.includes('class="edit-header-actions"'), "edit header should group save and close on its right side");
+assert(editHtml.includes('class="panel-header-action primary-action edit-header-save" type="submit" form="ball-edit-form">保存</button>'), "edit header should submit the edit form from its fixed save action");
+assert(countOccurrences(editHtml, 'type="submit"') === 2, "edit form should keep both header and footer save actions");
 assert(editHtml.includes("autocomplete=\"off\""), "edit memo form should suppress inappropriate autofill suggestions where supported");
 assert(editHtml.includes("<span>日時</span>"), "edit form should label date as datetime");
 assert(editHtml.includes("<span>時刻記録</span>"), "edit form should label the timestamp row as timestamp recording");
@@ -126,6 +130,9 @@ assert(editHtml.includes('<span class="authoring-inset-label">タイトル</span
 assert(editHtml.includes("data-authoring-primary-fields"), "edit form should group title and memo as primary authoring fields");
 assert(editHtml.includes('placeholder="タイトル"'), "edit form should use the shared inset title placeholder");
 assert(editHtml.includes('placeholder="メモ"'), "edit form should use the shared inset memo placeholder");
+assert(editHtml.includes("キーボードは入力欄以外タップで閉じられます"), "edit form should explain the shared safe IME dismissal gesture");
+assert(editHtml.includes('data-authoring-echo-category'), "edit form should always identify the read-only echo category row");
+assert(editHtml.includes('<strong>なし</strong>'), "edit form should explicitly show when no echo category exists");
 assert(!editHtml.includes("<span>日付</span>"), "edit form should not use the old date label");
 assert(!editHtml.includes("<span>だれの玉？</span>"), "edit form should not show the old question-mark label");
 assert(editHtml.includes('class="timestamp-field edit-timestamp-field edit-inline-field timestamp-field-wide"'), "edit form should render timestamp as a compact horizontal editable row");
@@ -152,6 +159,11 @@ assert(editHtml.indexOf('name="issuerType"') < editHtml.indexOf('name="visibilit
 assert(countOccurrences(editHtml, 'name="note"') === 1, "edit form should render exactly one memo textarea");
 assert(editHtml.includes('rows="4" maxlength="180" placeholder="メモ" autocomplete="off"'), "edit form should preserve memo textarea behavior");
 assertAuthoringOrder(editHtml, "edit form");
+assert(editHtml.includes('class="edit-descent-history" aria-label="降臨"'), "edit form should always render the descent group");
+assert(editHtml.includes('data-descend-ball-id="ball_20260705_sample">降臨</button>'), "empty edit descent group should expose its descent action as the group heading");
+assert(editHtml.includes("降臨なし"), "empty edit descent group should explain that it has no records");
+const lifecycleHtml = sliceBetween(editHtml, 'class="edit-lifecycle-actions"', "</div>");
+assert(!lifecycleHtml.includes("data-descend-ball-id"), "edit lifecycle row should no longer contain the descent action");
 
 const fiveBallEditHtml = renderBallEditDialog({ ...sampleBall, count: 5 }, context);
 assert(fiveBallEditHtml.includes('value="5"\n              aria-label="玉数"'), "five balls should load at its native range detent");
@@ -160,6 +172,32 @@ assert(fiveBallEditHtml.includes('class="ball-count-tick is-emphasized" style="-
 assert(fiveBallEditHtml.indexOf("data-ball-count-output") < fiveBallEditHtml.indexOf("ball-count-range-stack"), "the live count should render to the left of the range stack");
 assert(fiveBallEditHtml.includes("data-ball-count-track"), "the slider should render a pointer-inert visual track");
 assert(fiveBallEditHtml.includes("data-ball-count-thumb data-horizontal-drag-control"), "the slider should expose a thumb-only horizontal drag target");
+
+const echoEditHtml = renderBallEditDialog({
+  ...sampleBall,
+  emotionEcho: {
+    recordedAt: "2026-07-05T11:00:00.000Z",
+    date: "2026-07-04",
+    time: "19:30",
+    subject: "エモ次郎",
+    issuerType: "self",
+    count: 1,
+    title: "前日の玉",
+    category: "よろこび",
+    note: "以前の気持ち",
+    visibility: "open",
+    visual: {
+      hue: 42,
+      saturation: 72,
+      lightness: 60,
+      kind: "filled",
+      label: "よろこび",
+    },
+  },
+}, context);
+assert(echoEditHtml.includes('<span>余韻</span>'), "edit form should label the echo explicitly");
+assert(!echoEditHtml.includes('<span>余韻カテゴリ</span>'), "edit form should remove the longer echo-category label");
+assert(echoEditHtml.includes('<strong>よろこび</strong>'), "edit form should show the stored echo category read-only");
 
 const legacyCountEditHtml = renderBallEditDialog({ ...sampleBall, count: 12 }, context);
 assert(legacyCountEditHtml.includes("既存値 12玉"), "legacy count should be shown without truncation");
@@ -201,10 +239,9 @@ const descentEditHtml = renderBallEditDialog({
   descentBadgeCount: 2,
   isKamiBall: false,
 }, context);
-assert(descentEditHtml.includes("descent-section-label"), "edit form should style descent label separately");
 assert(!descentEditHtml.includes("降臨 2回"), "edit form should not show descent count in the heading");
 const editDescentHeadHtml = sliceBetween(descentEditHtml, 'class="edit-descent-head"', "</div>");
-assert(editDescentHeadHtml.includes("降臨情報"), "edit form heading should show descent label");
+assert(editDescentHeadHtml.includes('data-descend-ball-id="ball_20260705_sample">降臨</button>'), "edit form heading should use the descent action as its group label");
 assert(!editDescentHeadHtml.includes("2星"), "edit form heading should not show star count");
 assert(!editDescentHeadHtml.includes("✦2"), "edit form heading should not show compact star badge");
 assert(descentEditHtml.includes("No.2"), "edit form should show descent sequence as number label");
@@ -220,6 +257,9 @@ assert(descentEditHtml.includes("地下でメモだけ"), "edit form should pres
 assert(descentEditHtml.includes("位置未取得"), "edit form should show missing GPS state");
 assert(descentEditHtml.includes('data-descent-gps-record-id="descent_1"'), "edit form should render GPS acquisition controls");
 assert(descentEditHtml.includes('data-descent-clear-gps-record-id="descent_2"'), "edit form should render GPS deletion controls for positioned records");
+assert(descentEditHtml.includes('data-descent-delete-record-id="descent_1"'), "edit form should allow a GPS-less descent record to be removed");
+assert(descentEditHtml.includes('data-descent-delete-record-id="descent_2"'), "edit form should allow a GPS-backed descent record to be removed");
+assert(countOccurrences(descentEditHtml, ">消去</button>") === 2, "edit form should render one whole-record removal action per descent");
 assert(descentEditHtml.includes("Google Maps"), "edit form should show map links for positioned records");
 assert(descentEditHtml.includes("ghost-action quiet-accent-action detail-map-link"), "edit form should use the quiet accent on map links");
 assert(descentEditHtml.includes("ghost-action quiet-accent-action\" type=\"button\" data-descent-gps-record-id"), "edit form should use the quiet accent on descent GPS actions");

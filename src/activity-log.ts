@@ -17,6 +17,7 @@ export type ActivityLogAction =
   | "delete-ball"
   | "lifecycle-change"
   | "descent-create"
+  | "descent-delete"
   | "descent-gps-update"
   | "descent-gps-clear"
   | "clear-ball-data";
@@ -199,6 +200,8 @@ export function formatActivityActionLabel(action: ActivityLogAction): string {
       return "状態変更";
     case "descent-create":
       return "降臨";
+    case "descent-delete":
+      return "降臨data消去";
     case "descent-gps-update":
       return "降臨GPS取得";
     case "descent-gps-clear":
@@ -286,6 +289,7 @@ function isActivityLogAction(value: unknown): value is ActivityLogAction {
     "delete-ball",
     "lifecycle-change",
     "descent-create",
+    "descent-delete",
     "descent-gps-update",
     "descent-gps-clear",
     "clear-ball-data",

@@ -5,6 +5,7 @@ import {
   createBallActivityInput,
   createBallActivitySnapshot,
   findLatestBallSendMode,
+  formatActivityActionLabel,
   loadActivityLog,
   recordActivity,
 } from "./activity-log.js";
@@ -79,6 +80,15 @@ const deletedEntries = appendActivityLogEntry(nextEntries, createBallActivityInp
   ballSnapshot: createBallActivitySnapshot(sampleBall),
 }), deletedRecordedAt);
 assertEqual(deletedEntries[0]?.ballSnapshot?.id, sampleBall.id, "delete log should keep a minimal ball snapshot");
+
+const descentDeletedEntries = appendActivityLogEntry(deletedEntries, createBallActivityInput(sampleBall, {
+  action: "descent-delete",
+  descentSequence: 2,
+  message: "descent_2",
+}), new Date(Date.now() + 3000).toISOString());
+assertEqual(descentDeletedEntries[0]?.action, "descent-delete", "whole descent deletion should survive activity normalization");
+assertEqual(descentDeletedEntries[0]?.descentSequence, 2, "whole descent deletion should retain its former sequence");
+assertEqual(formatActivityActionLabel("descent-delete"), "降臨data消去", "whole descent deletion should have a user-facing activity label");
 
 let manyEntries = deletedEntries;
 for (let index = 0; index < ACTIVITY_LOG_MAX_ENTRIES + 10; index += 1) {

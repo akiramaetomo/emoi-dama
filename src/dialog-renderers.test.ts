@@ -74,11 +74,17 @@ assertIncludes(detailHtml, "お預け", "detail card should offer formal send");
 assertIncludes(detailHtml, 'data-send-mode="casual"', "casual send button should expose send mode");
 assertIncludes(detailHtml, 'data-send-mode="formal"', "formal send button should expose send mode");
 assertIncludes(detailHtml, "ghost-action quiet-accent-action detail-card-action", "send buttons should share the quiet current-time palette");
-assertIncludes(detailHtml, "降臨GPS情報：", "send card should use the explicit GPS privacy label");
-assertIncludes(detailHtml, ">OFF</strong>", "GPS-off send card should show its state as text");
+const sendCardStart = detailHtml.indexOf("detail-receipt-card");
+const sendCardEnd = detailHtml.indexOf("</article>", sendCardStart);
+const sendCardHtml = detailHtml.slice(sendCardStart, sendCardEnd);
+assertNotIncludes(sendCardHtml, "降臨GPS情報：", "send card should move GPS privacy status into the descent group");
+assertIncludes(detailHtml, 'class="detail-descent-history" aria-label="降臨"', "detail should always render a descent group");
+assertIncludes(detailHtml, "降臨GPS情報：", "descent group should use the explicit GPS privacy label");
+assertIncludes(detailHtml, ">OFF</strong>", "GPS-off descent group should show its state as text");
 assertNotIncludes(detailHtml, "handoff-privacy-switch", "send card should not resemble an editable switch");
 assertNotIncludes(detailHtml, "handoff-privacy-input", "send card GPS state should not expose a form control");
-assertIncludes(detailHtml, "⚙「降臨」で設定可", "send card should point to settings");
+assertIncludes(detailHtml, "⚙ 設定の「降臨」で変更", "descent group should point to its settings location");
+assertIncludes(detailHtml, "降臨なし", "empty detail descent group should explain that it has no records");
 assertNotIncludes(detailHtml, "降臨GPSを含めない", "send card should not resemble an unchecked error state");
 assertNotIncludes(detailHtml, "準備済み", "detail send card should not show prepared status");
 assertNotIncludes(detailHtml, "未準備", "detail send card should not show unprepared status");
@@ -116,10 +122,10 @@ const descentDetailHtml = renderBallDialog({
   descentBadgeCount: 1,
   isKamiBall: false,
 }, context);
-assertIncludes(descentDetailHtml, "降臨情報", "detail should show descent history");
+assertIncludes(descentDetailHtml, 'class="descent-section-label">降臨</span>', "detail should show the descent group label");
 assertIncludes(descentDetailHtml, "descent-section-label", "detail should style descent label separately");
 assertNotIncludes(descentDetailHtml, "detail-descent-card", "detail should not render the redundant descent summary card");
-assertNotIncludes(descentDetailHtml, "降臨情報 1回", "detail descent heading should not show descent count");
+assertNotIncludes(descentDetailHtml, "降臨 1回", "detail descent heading should not show descent count");
 assertIncludes(descentDetailHtml, "No.1", "detail should show descent sequence as number label");
 assertNotIncludes(descentDetailHtml, "第1回", "detail should not use the old descent sequence label");
 assertIncludes(descentDetailHtml, "駅前で降臨", "detail should show descent memo");

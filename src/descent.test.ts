@@ -1,5 +1,6 @@
 import {
   appendDescentToBall,
+  applyDescentRecordsToBall,
   createGoogleMapsUrl,
   DESCENT_BADGE_MAX,
   distanceMeters,
@@ -156,6 +157,72 @@ assert(
   createGoogleMapsUrl({ latitude: 35.681236, longitude: 139.767125 }).includes("query=35.681236%2C139.767125"),
   "Google Maps URL should include the coordinate query",
 );
+
+const deletionFixture = applyDescentRecordsToBall(sampleBall, [
+  {
+    id: "descent_delete_1",
+    sequence: 1,
+    recordedAt: "2026-07-06T08:00:00.000Z",
+    latitude: 35.681236,
+    longitude: 139.767125,
+    badgeAwarded: true,
+    memo: "GPSあり1",
+  },
+  {
+    id: "descent_delete_2",
+    sequence: 2,
+    recordedAt: "2026-07-06T09:00:00.000Z",
+    latitude: 35.6895,
+    longitude: 139.6917,
+    badgeAwarded: true,
+    memo: "GPSあり2",
+  },
+  {
+    id: "descent_delete_3",
+    sequence: 3,
+    recordedAt: "2026-07-06T10:00:00.000Z",
+    badgeAwarded: true,
+    memo: "GPSなし3",
+  },
+], "2026-07-06T11:00:00.000Z");
+const middleDeleted = applyDescentRecordsToBall(
+  deletionFixture,
+  deletionFixture.descents?.filter((record) => record.id !== "descent_delete_2"),
+  "2026-07-06T11:05:00.000Z",
+);
+assertEqual(middleDeleted.descents?.length, 2, "deleting a middle descent should remove exactly one record");
+assertEqual(middleDeleted.descents?.[1]?.sequence, 2, "retained descents should be renumbered after a middle deletion");
+assertEqual(middleDeleted.descentBadgeCount, 2, "deleting a middle descent should remove its awarded star");
+assert(!middleDeleted.descents?.some((record) => record.id === "descent_delete_2"), "deleting a GPS-backed descent should remove its complete record");
+
+const latestDeleted = applyDescentRecordsToBall(
+  deletionFixture,
+  deletionFixture.descents?.filter((record) => record.id !== "descent_delete_3"),
+  "2026-07-06T11:10:00.000Z",
+);
+assertEqual(latestDeleted.descents?.length, 2, "deleting the latest descent should promote the previous record");
+assertEqual(latestDeleted.descents?.[1]?.id, "descent_delete_2", "the previous descent should become latest after deletion");
+assert(!latestDeleted.descents?.some((record) => record.id === "descent_delete_3"), "deleting a GPS-less descent should remove its complete record");
+
+const onlyRecordDeleted = applyDescentRecordsToBall(
+  { ...sampleBall, descents: deletionFixture.descents?.slice(0, 1), descentBadgeCount: 1 },
+  [],
+  "2026-07-06T11:15:00.000Z",
+);
+assertEqual(onlyRecordDeleted.descents?.length, 0, "deleting the only descent should leave an empty history");
+assertEqual(onlyRecordDeleted.descentBadgeCount, 0, "deleting the only descent should clear its star");
+
+const kamiRecords = Array.from({ length: DESCENT_BADGE_MAX }, (_, index) => ({
+  id: `descent_kami_${index + 1}`,
+  sequence: index + 1,
+  recordedAt: `2026-07-${String(index + 1).padStart(2, "0")}T08:00:00.000Z`,
+  badgeAwarded: true,
+  memo: "",
+}));
+const kamiFixture = applyDescentRecordsToBall(sampleBall, kamiRecords);
+const kamiRecordDeleted = applyDescentRecordsToBall(kamiFixture, kamiFixture.descents?.slice(0, -1));
+assertEqual(kamiFixture.isKamiBall, true, "twenty retained descent stars should produce a kami ball");
+assertEqual(kamiRecordDeleted.isKamiBall, false, "deleting below the threshold should clear the kami state");
 
 let gpslessBetweenPositioned = first.ok ? first.ball : sampleBall;
 const provisionalBetween = appendDescentToBall(

@@ -5,7 +5,7 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator("[data-calendar-primary-shell]")).toBeVisible();
 });
 
-test("GPS sharing requires confirmation, persists, and stays read-only in send UI", async ({ page }) => {
+test("GPS sharing requires confirmation, persists, and stays read-only in the descent group", async ({ page }) => {
   await page.locator("[data-calendar-open-panel='settings']").click();
   await page.locator("details.descent-settings summary").click();
   const setting = page.locator("#setting-handoff-descent-gps");
@@ -25,17 +25,19 @@ test("GPS sharing requires confirmation, persists, and stays read-only in send U
   await expect(page.locator(".detail-receipt-card .detail-card-label")).toHaveText("玉を送る");
   const privacyState = page.locator(".handoff-privacy-status");
   await expect(privacyState).toContainText("降臨GPS情報：ON");
-  await expect(privacyState).toContainText("⚙「降臨」で設定可");
+  await expect(privacyState).toContainText("⚙ 設定の「降臨」で変更");
   await expect(privacyState.locator("input, button")).toHaveCount(0);
   await expect(privacyState.locator(".handoff-privacy-value")).toHaveClass(/is-on/);
-  const privacyLayout = await page.locator(".detail-receipt-card").evaluate((card) => {
+  const privacyLayout = await page.locator(".ball-detail-dialog").evaluate((dialog) => {
+    const card = dialog.querySelector<HTMLElement>(".detail-receipt-card")!;
+    const descentGroup = dialog.querySelector<HTMLElement>(".detail-descent-history")!;
     const sendLabel = card.querySelector<HTMLElement>(".detail-card-label")!;
-    const gpsLabel = card.querySelector<HTMLElement>(".handoff-privacy-label")!;
-    const gpsValue = card.querySelector<HTMLElement>(".handoff-privacy-value")!;
-    const helper = card.querySelector<HTMLElement>(".handoff-privacy-status small")!;
-    const privacyStatus = card.querySelector<HTMLElement>(".handoff-privacy-status")!;
+    const gpsLabel = descentGroup.querySelector<HTMLElement>(".handoff-privacy-label")!;
+    const gpsValue = descentGroup.querySelector<HTMLElement>(".handoff-privacy-value")!;
+    const helper = descentGroup.querySelector<HTMLElement>(".handoff-privacy-status small")!;
+    const privacyStatus = descentGroup.querySelector<HTMLElement>(".handoff-privacy-status")!;
     const sendButton = card.querySelector<HTMLElement>("[data-send-mode='casual']")!;
-    const cardRect = card.getBoundingClientRect();
+    const groupRect = descentGroup.getBoundingClientRect();
     const gpsRect = gpsLabel.getBoundingClientRect();
     const helperRect = helper.getBoundingClientRect();
     return {
@@ -49,11 +51,15 @@ test("GPS sharing requires confirmation, persists, and stays read-only in send U
       helperWhiteSpace: getComputedStyle(helper).whiteSpace,
       helperGap: helperRect.left - gpsRect.right,
       cardRowGap: getComputedStyle(card).rowGap,
+      cardBorderWidth: getComputedStyle(card).borderTopWidth,
+      cardBorderColor: getComputedStyle(card).borderTopColor,
+      descentBorderWidth: getComputedStyle(descentGroup).borderTopWidth,
+      descentBorderColor: getComputedStyle(descentGroup).borderTopColor,
       privacyColumnGap: getComputedStyle(privacyStatus).columnGap,
       sendButtonBackground: getComputedStyle(sendButton).backgroundColor,
       sendButtonBorder: getComputedStyle(sendButton).borderColor,
       sendButtonColor: getComputedStyle(sendButton).color,
-      helperFits: helperRect.right <= cardRect.right + 0.5,
+      helperFits: helperRect.right <= groupRect.right + 0.5,
       helperRowDelta: Math.abs((helperRect.top + helperRect.height / 2) - (gpsRect.top + gpsRect.height / 2)),
     };
   });
@@ -61,7 +67,7 @@ test("GPS sharing requires confirmation, persists, and stays read-only in send U
   expect(privacyLayout.sendWhiteSpace).toBe("nowrap");
   expect(privacyLayout.gpsValueColor).toBe("rgb(243, 206, 105)");
   expect(privacyLayout.gpsWhiteSpace).toBe("nowrap");
-  expect(privacyLayout.helperText).toBe("⚙「降臨」で設定可");
+  expect(privacyLayout.helperText).toBe("⚙ 設定の「降臨」で変更");
   expect(Number.parseFloat(privacyLayout.helperFontSize)).toBeCloseTo(12.8, 1);
   expect(privacyLayout.helperWhiteSpace).toBe("nowrap");
   expect(privacyLayout.helperGap).toBeGreaterThanOrEqual(4);
@@ -72,13 +78,16 @@ test("GPS sharing requires confirmation, persists, and stays read-only in send U
   expect(privacyLayout.sendButtonBorder).toBe("rgba(244, 215, 160, 0.24)");
   expect(privacyLayout.sendButtonColor).toBe("rgb(246, 223, 177)");
   expect(privacyLayout.cardRowGap).toBe("10px");
+  expect(privacyLayout.descentBorderWidth).toBe(privacyLayout.cardBorderWidth);
+  expect(privacyLayout.descentBorderColor).toBe(privacyLayout.cardBorderColor);
   expect(privacyLayout.helperFits).toBe(true);
   expect(privacyLayout.helperRowDelta).toBeLessThanOrEqual(1);
 
   for (const viewport of [{ width: 768, height: 1024 }, { width: 1280, height: 800 }]) {
     await page.setViewportSize(viewport);
-    const wideLayout = await page.locator(".detail-receipt-card").evaluate((card) => {
-      const helper = card.querySelector<HTMLElement>(".handoff-privacy-status small")!;
+    const wideLayout = await page.locator(".ball-detail-dialog").evaluate((dialog) => {
+      const card = dialog.querySelector<HTMLElement>(".detail-receipt-card")!;
+      const helper = dialog.querySelector<HTMLElement>(".detail-descent-history .handoff-privacy-status small")!;
       return {
         cardRowGap: getComputedStyle(card).rowGap,
         helperFontSize: getComputedStyle(helper).fontSize,

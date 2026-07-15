@@ -88,13 +88,9 @@ export function renderBallDialog(ball: HappyBall, context: DialogRenderContext):
                 <button class="ghost-action quiet-accent-action detail-card-action" type="button" data-dialog-receipt-ball-id="${escapeAttribute(ball.id)}" data-send-mode="formal">${escapeHtml(sendModeLabels.formal)}</button>
               </div>
             </div>
-            <div class="handoff-privacy-status">
-              <span class="handoff-privacy-label">降臨GPS情報：<strong class="handoff-privacy-value${context.includeDescentGpsInHandoff ? " is-on" : ""}">${context.includeDescentGpsInHandoff ? "ON" : "OFF"}</strong></span>
-              <small>⚙「降臨」で設定可</small>
-            </div>
           </article>
         </div>
-        ${renderDescentHistory(ball)}
+        ${renderDescentHistory(ball, context)}
         <div class="detail-folds">
           <details class="detail-fold">
             <summary>見せる範囲・ID</summary>
@@ -126,17 +122,18 @@ export function renderBallDialog(ball: HappyBall, context: DialogRenderContext):
   `;
 }
 
-function renderDescentHistory(ball: HappyBall): string {
+function renderDescentHistory(ball: HappyBall, context: DialogRenderContext): string {
   const descents = ball.descents ?? [];
-  if (descents.length === 0) {
-    return "";
-  }
   return `
-    <section class="detail-descent-history" aria-label="降臨情報">
+    <section class="detail-descent-history" aria-label="降臨">
       <div class="detail-descent-history-head">
-        <span class="descent-section-label">降臨情報</span>
+        <span class="descent-section-label">降臨</span>
       </div>
-      ${renderFoldedDescentList(descents, "detail")}
+      <div class="handoff-privacy-status detail-descent-privacy">
+        <span class="handoff-privacy-label">降臨GPS情報：<strong class="handoff-privacy-value${context.includeDescentGpsInHandoff ? " is-on" : ""}">${context.includeDescentGpsInHandoff ? "ON" : "OFF"}</strong></span>
+        <small>⚙ 設定の「降臨」で変更</small>
+      </div>
+      ${descents.length > 0 ? renderFoldedDescentList(descents, "detail") : '<p class="detail-descent-empty">降臨なし</p>'}
     </section>
   `;
 }

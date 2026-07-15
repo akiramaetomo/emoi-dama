@@ -12,6 +12,40 @@ This project follows a lightweight changelog discipline:
 
 ## Unreleased
 
+## 0.7.0 - 2026-07-16
+
+- Unified create/edit category rows with the same non-wrapping pale-blue label
+  column and 8px value gap, and aligned the edit-only `余韻` row to that rhythm.
+  Portrait-phone timestamp controls stay on one row with the checkbox farther
+  left, a compact `現在時刻` action, and a flexing wider time input. `N玉` now
+  matches the `玉数` label size while the responsive count track and
+  touch-friendly thumb hit target remain unchanged. The keyboard hint uses the
+  shorter requested wording.
+- Added a fixed-header `保存` action to `玉を編集` while retaining the bottom
+  save action. The edit title is now centered independently of its right-side
+  save/close controls, and the compact category/`余韻` pair explicitly shows
+  the saved echo category or `なし` as read-only context.
+- Widened the ball-count track only on portrait viewports up to 380px. USB
+  inspection confirmed the SC-52E uses a 360px CSS viewport where the nested
+  80% reduction made the visible rail excessively short; wider phones retain
+  the accepted 80% treatment without Android-specific detection.
+- Matched the Ball Detail descent-group border to its other information cards.
+- Removed only the visual `本日` pill on portrait phones and made the full month
+  heading reliably centered on iPad Chrome and WebKit in both orientations.
+- Added a fixed-header `玉を置く` submit button while retaining the existing
+  end-of-form action, plus a shared create/edit hint for dismissing the software
+  keyboard by tapping outside an input.
+- Renamed the Ball List detail action from `内容` to `中身` and fixed descent
+  stars so a descent created inside edit appears on the underlying list as soon
+  as edit closes.
+- Made descent groups visible even with no history in edit and Ball Detail,
+  moved the outbound `降臨GPS情報` status from the send card into Ball Detail's
+  descent group, and made the edit group heading itself the `降臨` action.
+- Added staged whole-record descent deletion with confirmation. Saving removes
+  its memo, GPS, and star, renumbers retained records, recalculates derived
+  descent state, and records `descent-delete` in the local activity log; cancel
+  preserves the original history.
+
 ## 0.6.0 - 2026-07-15
 
 - Added a default-OFF, settings-only privacy control for including descent GPS

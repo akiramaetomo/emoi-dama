@@ -167,7 +167,7 @@ function renderListSurface(): string {
           <article class="lab-list-item">
             <span class="lab-mini-ball" aria-hidden="true"></span>
             <div><strong>検証項目 ${index + 1}</strong><p>上端・中間・下端で上下スワイプします。</p></div>
-            <button type="button">内容</button>
+            <button type="button">中身</button>
           </article>
         `).join("")}
       </div>

@@ -6,12 +6,12 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator("[data-calendar-primary-shell]")).toBeVisible();
 });
 
-test("formal release identifies 0.6.0 in Settings without a prerelease badge", async ({ page }) => {
+test("formal release identifies 0.7.0 in Settings without a prerelease badge", async ({ page }) => {
   await page.locator("[data-calendar-open-panel='settings']").click();
   const about = page.locator(".app-about-panel");
   await about.locator("summary").click();
-  await expect(about.locator("dd").nth(0)).toHaveText("0.6.0");
-  await expect(about.locator("dd").nth(1)).toHaveText("0.6.0");
+  await expect(about.locator("dd").nth(0)).toHaveText("0.7.0");
+  await expect(about.locator("dd").nth(1)).toHaveText("0.7.0");
 });
 
 test("initial Calendar owns the viewport and keeps its dock visible", async ({ page }) => {
@@ -78,7 +78,7 @@ test("uiDebug exposes viewport, app, and scroll-owner diagnostics without changi
   const overlay = page.locator("[data-ui-debug-overlay]");
   await expect(overlay).toContainText("UI DEBUG");
   await expect(overlay).toContainText("vv off");
-  await expect(overlay).toContainText("UI DEBUG v0.6.0");
+  await expect(overlay).toContainText("UI DEBUG v0.7.0");
   await page.locator("[data-calendar-primary-body]").dispatchEvent("touchstart", {
     touches: [{ identifier: 1, clientX: 100, clientY: 200 }],
   });

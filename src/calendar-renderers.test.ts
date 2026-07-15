@@ -261,6 +261,8 @@ assert(dayListHtml.includes("発行者: エモ次郎"), "day list view should sh
 assert(dayListHtml.includes("送り手段: お配り"), "day list view should show the latest send method");
 assert(dayListHtml.includes("朝に少し進めた。午後に続きを見る。"), "day list view should show memo snippets");
 assert(dayListHtml.includes("calendar-day-ball-memo"), "day list memo should use the compact two-line memo class");
+assert(dayListHtml.includes(">中身</button>"), "day list should name the detail action as ball contents");
+assert(!dayListHtml.includes(">内容</button>"), "day list should remove the old detail action name");
 assert(dayListHtml.includes("calendar-day-count-under-icon"), "day list view should show multi-ball counts below the ball icon");
 assert(dayListHtml.includes("3玉"), "day list view should show multi-ball counts only when needed");
 assert(!dayListHtml.includes("calendar-day-count-badge"), "day list view should not show the old title-row count badge");
