@@ -1,13 +1,18 @@
 import type { CategoryColorPreset } from "./categories";
 import type { NameBookEntry } from "./models";
 import { dampingSliderToValue } from "./motion-tuning";
-import { readBackgroundTexture, readEchoStrength, readStartupScreen, type AppSettings } from "./settings";
+import { classificationSliderToRatio } from "./play-physics-classification";
+import { readBackgroundTexture, readEchoStrength, readStartupScreen, type AppSettings, type PhysicsParameterSettings, type PhysicsSettingsProfile } from "./settings";
+import { bindThumbOnlyRangeInteraction } from "./settings-range-control";
 import { formatSettingValue } from "./settings-renderers";
 
 interface SettingsPanelEventHandlers {
   unlockAudio: () => void;
   toggleGravitySensor: () => void;
   updateAppSettings: (patch: Partial<AppSettings>) => void;
+  updatePhysicsSettings: (profile: PhysicsSettingsProfile, patch: Partial<PhysicsParameterSettings>) => void;
+  setPhysicsSettingsProfile: (profile: PhysicsSettingsProfile) => void;
+  resetJutsuPhysicsSettings: () => void;
   saveCategories: (categories: CategoryColorPreset[]) => CategoryColorPreset[];
   resetCategories: () => void;
   saveNameBook: (entries: NameBookEntry[]) => NameBookEntry[];
@@ -18,16 +23,27 @@ interface SettingsPanelEventContext {
   categories: CategoryColorPreset[];
   maxNameBookEntries: number;
   handlers: SettingsPanelEventHandlers;
+  physicsSettingsProfile: PhysicsSettingsProfile;
   root?: ParentNode;
 }
 
-const numberSettings: { id: string; prop: keyof AppSettings; readValue?: (input: HTMLInputElement) => number }[] = [
+const physicsNumberSettings: { id: string; prop: keyof PhysicsParameterSettings; readValue?: (input: HTMLInputElement) => number }[] = [
   { id: "setting-wall", prop: "wallRestitution" },
   { id: "setting-contact", prop: "contactRestitution" },
   { id: "setting-damping", prop: "linearDamping", readValue: (input) => dampingSliderToValue(input.valueAsNumber) },
   { id: "setting-flick", prop: "flickPower" },
   { id: "setting-speed", prop: "maxSpeed" },
   { id: "setting-gravity-strength", prop: "gravityStrength" },
+  { id: "setting-density-ratio", prop: "classificationDensityRatio", readValue: (input) => classificationSliderToRatio(input.valueAsNumber) },
+  { id: "setting-class-damping-ratio", prop: "classificationDampingRatio", readValue: (input) => classificationSliderToRatio(input.valueAsNumber) },
+  { id: "setting-class-buoyancy", prop: "classificationBuoyancyStrength" },
+  { id: "setting-parent-diameter", prop: "parentBallDiameterPx" },
+  { id: "setting-parent-lifetime", prop: "parentBallLifetimeSeconds" },
+];
+
+type NumberAppSettingKey = "masterVolume" | "frequencyHz" | "durationMs" | "descentMinDistanceMeters";
+
+const numberSettings: { id: string; prop: NumberAppSettingKey; readValue?: (input: HTMLInputElement) => number }[] = [
   { id: "setting-volume", prop: "masterVolume" },
   { id: "setting-pitch", prop: "frequencyHz" },
   { id: "setting-duration", prop: "durationMs" },
@@ -36,12 +52,16 @@ const numberSettings: { id: string; prop: keyof AppSettings; readValue?: (input:
 
 export function bindSettingsPanelEvents(context: SettingsPanelEventContext): void {
   const root = context.root ?? document;
-  bindTuningEvents(root, context.handlers);
+  bindTuningEvents(root, context.physicsSettingsProfile, context.handlers);
   bindCategorySettingsEvents(root, context.categories, context.handlers);
   bindNameBookSettingsEvents(root, context.maxNameBookEntries, context.handlers);
 }
 
-function bindTuningEvents(root: ParentNode, handlers: SettingsPanelEventHandlers): void {
+function bindTuningEvents(
+  root: ParentNode,
+  physicsSettingsProfile: PhysicsSettingsProfile,
+  handlers: SettingsPanelEventHandlers,
+): void {
   const sound = root.querySelector<HTMLInputElement>("#setting-sound");
   sound?.addEventListener("change", () => {
     handlers.unlockAudio();
@@ -92,8 +112,29 @@ function bindTuningEvents(root: ParentNode, handlers: SettingsPanelEventHandlers
     handlers.updateAppSettings({ startupScreen: readStartupScreen(startupScreen.value) });
   });
 
+  root.querySelectorAll<HTMLButtonElement>("[data-physics-settings-profile]").forEach((button) => {
+    button.addEventListener("click", () => {
+      handlers.setPhysicsSettingsProfile(button.dataset.physicsSettingsProfile === "jutsu" ? "jutsu" : "normal");
+    });
+  });
+
+  root.querySelector<HTMLButtonElement>("#reset-jutsu-physics")?.addEventListener("click", () => {
+    const confirmed = window.confirm("術専用の物理パラメータをデフォルト値に戻します。通常の設定は変更されません。実行しますか？");
+    if (confirmed) {
+      handlers.resetJutsuPhysicsSettings();
+    }
+  });
+
+  for (const setting of physicsNumberSettings) {
+    bindNumberSetting(root, setting.id, setting.prop, (patch) => {
+      handlers.updatePhysicsSettings(physicsSettingsProfile, patch);
+    }, handlers.unlockAudio, setting.readValue);
+  }
+
   for (const setting of numberSettings) {
-    bindNumberSetting(root, setting.id, setting.prop, handlers, setting.readValue);
+    bindNumberSetting(root, setting.id, setting.prop, (patch) => {
+      handlers.updateAppSettings(patch);
+    }, handlers.unlockAudio, setting.readValue);
   }
 
 }
@@ -271,19 +312,23 @@ function showNameBookSettingsFeedback(
   }, 1400);
 }
 
-function bindNumberSetting(
+function bindNumberSetting<T extends string>(
   root: ParentNode,
   id: string,
-  prop: keyof AppSettings,
-  handlers: SettingsPanelEventHandlers,
+  prop: T,
+  update: (patch: Record<T, number>) => void,
+  unlockAudio: () => void,
   readValue?: (input: HTMLInputElement) => number,
 ): void {
   const input = root.querySelector<HTMLInputElement>(`#${id}`);
+  if (input) {
+    bindThumbOnlyRangeInteraction(input);
+  }
   input?.addEventListener("input", () => {
     const value = readValue ? readValue(input) : Number(input.value);
-    handlers.unlockAudio();
+    unlockAudio();
     updateRangeValue(root, id, value);
-    handlers.updateAppSettings({ [prop]: value });
+    update({ [prop]: value } as Record<T, number>);
   });
 }
 

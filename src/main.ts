@@ -19,11 +19,11 @@ import {
   createBallDisplayLabel,
   nextBallLabelMode,
   renderBallLabelModeCycleAriaLabel,
-  renderNextBallLabelModeIcon,
 } from "./ball-labels";
 import { bindBallCountSliderControls } from "./ball-count-slider";
 import { renderCalendarOverlay, renderCalendarPrimaryParts, type CalendarRenderContext } from "./calendar-renderers";
 import {
+  categoryColorPresets,
   loadCategoryColorPresets,
   resetCategoryColorPresets,
   saveCategoryColorPresets,
@@ -49,7 +49,7 @@ import {
   normalizeDescentRecords,
   type DescentPositionInput,
 } from "./descent";
-import { getDisplayDateRange, getDisplayModeIconDotCount, moveDisplayAnchorToCalendarMonth, shiftDisplayAnchor, type DisplayMode } from "./display-period";
+import { getDisplayDateRange, moveDisplayAnchorToCalendarMonth, shiftDisplayAnchor, type DisplayMode } from "./display-period";
 import {
   createVisibilitySafeSummaryLabel,
   getReceiptTitle,
@@ -67,6 +67,12 @@ import {
 } from "./form-renderers";
 import { resolveManualSubjectPreset, resolveNamePresetSelection } from "./form-interactions";
 import { TinyImpactAudio } from "./impact-audio";
+import {
+  isDomRendererComparisonEnabled,
+  isGravityDebugEnabled,
+  isHandoffDebugEnabled,
+  isUiDebugDiagnosticsEnabled,
+} from "./development-diagnostics";
 import { ImeViewportCoordinator } from "./ime-viewport-coordinator";
 import { isGeolocationUnavailableError, isStaleGeolocationPositionError, readReliableCurrentPosition } from "./location";
 import {
@@ -85,6 +91,21 @@ import {
   type HandoffOptions,
   type UrlPacketParseResult,
 } from "./packet";
+import { createPlayRenderPlan, denseDeviceLimit, limitVisualPopulation, sortNewestFirst, type PopulationPlan } from "./play-population";
+import {
+  resolveMotionClass,
+} from "./play-physics-classification";
+import {
+  createInitialPlayJutsuState,
+  reducePlayJutsuState,
+  type PlayJutsuAction,
+} from "./play-jutsu-state";
+import {
+  clampPlayMenuPosition,
+  createInitialPlayMenuPosition,
+  type PlayMenuPosition,
+} from "./play-jutsu-menu";
+import { LazyPixiBallStageRenderer } from "./lazy-pixi-ball-stage-renderer";
 import { renderPanelOverlay } from "./overlay-renderers";
 import { PhysicsRuntimeController } from "./physics-runtime-controller";
 import { RapierStage, type PhysicsBallSnapshot, type VisualBallSource } from "./rapier-stage";
@@ -92,8 +113,13 @@ import { createReceiptImageBlob, createReceiptImageFileName } from "./receipt-im
 import {
   loadAppSettings,
   normalizeAppSettings,
+  resetJutsuPhysicsSettings as resetJutsuPhysicsSettingsToDefault,
+  resolvePhysicsProfileSettings,
   saveAppSettings,
+  updatePhysicsProfileSettings,
   type AppSettings,
+  type PhysicsParameterSettings,
+  type PhysicsSettingsProfile,
 } from "./settings";
 import { bindSettingsPanelEvents } from "./settings-panel-events";
 import {
@@ -105,7 +131,7 @@ import { capturePrimaryScreen, createMainPrimaryScreen, type PrimaryScreenState 
 import { SurfaceInteractionController } from "./surface-interaction-controller";
 import { createStartupScreenState } from "./startup-state";
 import { UiLayerHosts } from "./ui-layer-hosts";
-import { isUiDebugEnabled, UiDebugDiagnostics } from "./ui-debug-diagnostics";
+import { UiDebugDiagnostics } from "./ui-debug-diagnostics";
 import {
   addBall,
   clearBallData,
@@ -150,6 +176,7 @@ let physicsStage: RapierStage | null = null;
 const physicsRuntime = new PhysicsRuntimeController<RapierStage>();
 const physicsSnapshots = new Map<string, PhysicsBallSnapshot>();
 let openSettingsGroups: string[] = [];
+let physicsSettingsProfile: PhysicsSettingsProfile = "normal";
 let activityLogHelpOpen = false;
 let rapierReady = false;
 let audioEngine: TinyImpactAudio;
@@ -160,11 +187,20 @@ let lastMotionDebugLogAt = 0;
 let bootComplete = false;
 let baseRenderSignature = "";
 let activeBallDialogEscapeHandler: (() => void) | null = null;
-let createPromptDismissed = false;
 let randomTextureVariables: Record<string, string> | null = null;
 let ledgerListDateFilter: string | null = null;
 let pendingCalendarDayListScrollTop: number | null = null;
+let pendingSettingsScrollTop: number | null = null;
 const pendingDescentBallIds = new Set<string>();
+let rendererFallbackToDom = false;
+let rendererFallbackScheduled = false;
+let playJutsuState = createInitialPlayJutsuState();
+let playControlsOpen = false;
+let playJutsuFeedback = "";
+let playMenuPosition: PlayMenuPosition | null = null;
+let playWorldDisclosureOpen = false;
+let playParentDisclosureOpen = false;
+let playMenuResizeObserver: ResizeObserver | null = null;
 
 const uiHosts = new UiLayerHosts(appRoot, __APP_VERSION__);
 const imeViewport = new ImeViewportCoordinator(appRoot, () => createAppUiSnapshot(uiState).editableSurface);
@@ -192,7 +228,8 @@ const SETTINGS_GROUP_CLASSES = [
   "category-settings",
   "display-settings",
   "descent-settings",
-  "tuning-panel",
+  "physics-settings",
+  "sound-settings",
   "backup-settings",
   "ball-management-panel",
   "activity-log-panel",
@@ -211,7 +248,7 @@ window.addEventListener("unhandledrejection", (event) => {
 window.addEventListener("keydown", handleDisplayNavigationKey);
 imeViewport.install();
 interactionController.install();
-if (isUiDebugEnabled()) {
+if (isUiDebugDiagnosticsEnabled(window.location.search)) {
   new UiDebugDiagnostics(appRoot, __APP_VERSION__).install();
 }
 void boot();
@@ -291,6 +328,7 @@ function render(): void {
   applyUiState();
   applyBallFieldTextureSetting();
   restorePendingCalendarDayListScroll();
+  restorePendingSettingsScroll();
 }
 
 function ensureBaseRendered(visibleBalls: HappyBall[], selectedBall: HappyBall | null): void {
@@ -299,17 +337,18 @@ function ensureBaseRendered(visibleBalls: HappyBall[], selectedBall: HappyBall |
     selectedBallId,
     displayMode,
     displayAnchorDate,
-    createPromptDismissed,
-    settings: appSettings,
   });
   if (nextSignature === baseRenderSignature) {
     return;
   }
   baseRenderSignature = nextSignature;
+  const visualPopulation = createVisualPopulation(visibleBalls);
 
   capturePhysicsSnapshotsSafely();
   physicsRuntime.destroy();
   physicsStage = null;
+  playMenuResizeObserver?.disconnect();
+  playMenuResizeObserver = null;
 
   uiHosts.renderBase(`
     <main class="app-shell ball-world-shell">
@@ -319,18 +358,66 @@ function ensureBaseRendered(visibleBalls: HappyBall[], selectedBall: HappyBall |
             <p class="screen-kicker play-screen-kicker">Emotion Play</p>
             ${renderPlayPeriodNav()}
             <h1 id="stage-title">${escapeHtml(selectedBall ? createVisibilitySafeSummaryLabel(selectedBall) : "今日のえもい玉は？")}</h1>
+            ${renderPopulationStatus(visualPopulation)}
+            ${import.meta.env.DEV ? `<p class="play-fragmentation-status" data-fragmentation-status aria-live="polite"></p>` : ""}
           </div>
         </div>
-        <div id="ball-field" class="ball-field texture-${appSettings.backgroundTexture}" aria-label="触って転がせるえもい玉"></div>
-        ${renderGravityDebugPanel()}
-        <div class="world-control-dock">
-          <p class="control-state-label play-display-state-label">${renderDisplayModeName(displayMode)}表示</p>
-          ${createPromptDismissed ? "" : `<p class="world-action-prompt">＋で玉を置きましょう</p>`}
-          <div class="world-actions" aria-label="操作">
-            <button class="dock-symbol-button dock-create-button" type="button" data-open-panel="create" aria-label="玉を作る">＋</button>
+        <div class="play-world-region">
+          <div id="ball-field" class="ball-field texture-${appSettings.backgroundTexture}" aria-label="触って転がせるえもい玉"></div>
+          ${renderGravityDebugPanel()}
+          <div class="play-mode-popover" data-play-mode-popover role="dialog" aria-label="術の設定" ${playControlsOpen ? "" : "hidden"}>
+            <button class="play-mode-drag-grip" type="button" data-play-mode-drag-grip aria-label="術メニューを移動"></button>
+            <div class="play-jutsu-actions">
+              <button type="button" data-apply-jutsu="fill">充填分割の術</button>
+              <button type="button" data-apply-jutsu="count-limit">小玉分割の術</button>
+            </div>
+            <div class="play-jutsu-reset-actions">
+              <button type="button" data-reset-ball-jutsu>玉の術を解く</button>
+              <button type="button" data-disable-play-jutsu>術を無効</button>
+            </div>
+            <p class="play-jutsu-feedback" data-play-jutsu-feedback aria-live="polite">${escapeHtml(playJutsuFeedback)}</p>
+            <details class="play-mode-disclosure" data-play-mode-disclosure="world" ${playWorldDisclosureOpen ? "open" : ""}>
+              <summary><span>世界</span><small>Sekai</small></summary>
+              <div class="play-mode-disclosure-body">
+                <div class="play-mode-row" role="group" aria-label="重力">
+                  <span>重力</span>
+                  <button type="button" data-play-gravity-mode="free" class="${playJutsuState.gravityMode === "free" ? "is-on" : ""}">なし</button>
+                  <button type="button" data-play-gravity-mode="fixed-down" class="${playJutsuState.gravityMode === "fixed-down" ? "is-on" : ""}">あり</button>
+                </div>
+                <div class="play-mode-row" role="group" aria-label="浮力。タップ、ドラッグ、親玉の存在中に有効">
+                  <span>浮力<small>（タップ時のみ有効）</small></span>
+                  <button type="button" data-play-buoyancy-mode="off" class="${playJutsuState.buoyancyMode === "off" ? "is-on" : ""}">なし</button>
+                  <button type="button" data-play-buoyancy-mode="on" class="${playJutsuState.buoyancyMode === "on" ? "is-on" : ""}" ${playJutsuState.gravityMode === "free" ? "disabled aria-disabled=\"true\"" : ""}>あり</button>
+                </div>
+              </div>
+            </details>
+            <details class="play-mode-disclosure" data-play-mode-disclosure="parent" ${playParentDisclosureOpen ? "open" : ""}>
+              <summary><span>親玉</span><small>Oyadama</small></summary>
+              <div class="play-mode-disclosure-body">
+                <div class="play-mode-row" role="group" aria-label="親玉">
+                  <span>親玉</span>
+                  <button type="button" data-play-parent-enabled="false" class="${playJutsuState.interactionMode === "grab" ? "is-on" : ""}">なし</button>
+                  <button type="button" data-play-parent-enabled="true" class="${playJutsuState.interactionMode === "parent" ? "is-on" : ""}">あり</button>
+                </div>
+                <div class="play-mode-row play-mode-row-three" role="group" aria-label="親玉の分割の術">
+                  <span>分割の術</span>
+                  <button type="button" data-play-parent-split-mode="off" class="${playJutsuState.parentSplitMode === "off" ? "is-on" : ""}">無</button>
+                  <button type="button" data-play-parent-split-mode="count-limit" class="${playJutsuState.parentSplitMode === "count-limit" ? "is-on" : ""}" ${playJutsuState.interactionMode === "grab" ? "disabled aria-disabled=\"true\"" : ""}>小玉</button>
+                  <button type="button" data-play-parent-split-mode="fill" class="${playJutsuState.parentSplitMode === "fill" ? "is-on" : ""}" ${playJutsuState.interactionMode === "grab" ? "disabled aria-disabled=\"true\"" : ""}>充填</button>
+                </div>
+              </div>
+            </details>
+          </div>
+        </div>
+        <div class="play-control-region">
+          <div class="world-control-dock">
+            <div class="world-actions app-control-bar" aria-label="コントロールバー">
+            <span class="control-bar-left">
+              <button class="dock-symbol-button dock-create-button" type="button" data-open-panel="create" aria-label="玉を作る">${renderCreateBallIcon()}</button>
+            </span>
             <span class="primary-screen-control-group" aria-label="主要3画面">
-              <button class="calendar-main-ball-button is-primary-active ${appSettings.ballLabelMode !== "none" ? "is-label-on" : ""}" type="button" data-cycle-ball-label-mode aria-current="page" aria-label="${escapeHtml(renderBallLabelModeCycleAriaLabel(appSettings.ballLabelMode))}">
-                ${renderNextBallLabelModeIcon(appSettings.ballLabelMode)}
+              <button class="calendar-main-ball-button ${appSettings.ballLabelMode !== "none" ? "is-label-on" : ""}" type="button" data-cycle-ball-label-mode aria-current="page" aria-label="${escapeHtml(renderBallLabelModeCycleAriaLabel(appSettings.ballLabelMode))}">
+                ${renderPlayScreenIcon()}
               </button>
               <button class="calendar-screen-button" type="button" data-open-panel="calendar" aria-label="カレンダー">
                 ${renderCalendarScreenIcon()}
@@ -339,8 +426,11 @@ function ensureBaseRendered(visibleBalls: HappyBall[], selectedBall: HappyBall |
                 <span class="day-list-screen-icon" aria-hidden="true"></span>
               </button>
             </span>
-            <button class="display-mode-next-button" type="button" data-cycle-display-mode aria-label="${escapeHtml(renderDisplayModeCycleAriaLabel())}">${renderDisplayModeCycleIcon(nextDisplayMode(displayMode))}</button>
-            <button class="dock-symbol-button dock-settings-button" type="button" data-open-panel="settings" aria-label="設定">⚙</button>
+            <span class="control-bar-functions">
+              <button class="play-mode-button ${isPlayJutsuActive() ? "is-on" : ""}" type="button" data-toggle-play-modes aria-expanded="${playControlsOpen}">術</button>
+              <button class="dock-symbol-button dock-settings-button" type="button" data-open-panel="settings" aria-label="設定">⚙</button>
+            </span>
+            </div>
           </div>
         </div>
       </section>
@@ -349,7 +439,7 @@ function ensureBaseRendered(visibleBalls: HappyBall[], selectedBall: HappyBall |
 
   bindEvents(uiHosts.base);
   if (rapierReady) {
-    mountRapierStage(visibleBalls);
+    mountRapierStage(visualPopulation);
   }
 }
 
@@ -476,7 +566,11 @@ function syncPendingImportSurface(): void {
 }
 
 function dispatchUi(action: AppUiAction, apply = true): void {
-  uiState = reduceAppUiState(uiState, action);
+  const nextState = reduceAppUiState(uiState, action);
+  if (createAppUiSnapshot(nextState).pausesPhysics) {
+    physicsRuntime.sync(true);
+  }
+  uiState = nextState;
   if (apply) {
     applyUiState();
   }
@@ -520,7 +614,7 @@ function getVisibleBalls(): HappyBall[] {
 }
 
 function renderGravityDebugPanel(): string {
-  if (!appSettings.gravityDebugEnabled) {
+  if (!isGravityDebugEnabled(appSettings.gravityDebugEnabled)) {
     return "";
   }
   return `
@@ -537,7 +631,7 @@ function renderGravityDebugPanel(): string {
 }
 
 function updateGravityDebugPanel(): void {
-  if (!appSettings.gravityDebugEnabled) {
+  if (!isGravityDebugEnabled(appSettings.gravityDebugEnabled)) {
     return;
   }
   const output = document.querySelector<HTMLElement>("[data-gravity-debug-output]");
@@ -545,6 +639,29 @@ function updateGravityDebugPanel(): void {
     return;
   }
   output.textContent = formatGravityDebugSnapshot(latestGravityDebug);
+}
+
+function syncGravityDebugPanelStructure(): void {
+  const worldRegion = uiHosts.base.querySelector<HTMLElement>(".play-world-region");
+  const existing = worldRegion?.querySelector<HTMLElement>(".gravity-debug-panel") ?? null;
+  const gravityDebugEnabled = isGravityDebugEnabled(appSettings.gravityDebugEnabled);
+  if (!worldRegion || (!gravityDebugEnabled && !existing)) {
+    return;
+  }
+  if (!gravityDebugEnabled) {
+    existing?.remove();
+    return;
+  }
+  if (existing) {
+    updateGravityDebugPanel();
+    return;
+  }
+  const field = worldRegion.querySelector<HTMLElement>("#ball-field");
+  field?.insertAdjacentHTML("afterend", renderGravityDebugPanel());
+  const panel = worldRegion.querySelector<HTMLElement>(".gravity-debug-panel");
+  if (panel) {
+    bindEvents(panel);
+  }
 }
 
 function formatGravityDebugSnapshot(snapshot: DeviceGravityDebugSnapshot | null): string {
@@ -599,7 +716,7 @@ function getDialogRenderContext(): DialogRenderContext {
     showMemoField: appSettings.showMemoField,
     emotionEchoStrength: appSettings.emotionEchoStrength,
     includeDescentGpsInHandoff: appSettings.includeDescentGpsInHandoff,
-    handoffDebugEnabled: new URLSearchParams(window.location.search).get("handoffDebug") === "1",
+    handoffDebugEnabled: isHandoffDebugEnabled(window.location.search),
   };
 }
 
@@ -673,6 +790,7 @@ function getToolsPanelRenderContext(): ToolsPanelRenderContext {
   return {
     appSettings,
     appVersion: __APP_VERSION__,
+    developmentToolsEnabled: import.meta.env.DEV,
     categories: editableCategories,
     activityLog,
     openSettingsGroups,
@@ -680,6 +798,7 @@ function getToolsPanelRenderContext(): ToolsPanelRenderContext {
     nameBook: ledger.ownerProfile.nameBook,
     maxNameBookEntries: MAX_NAME_BOOK_ENTRIES,
     defaultSampleName: DEFAULT_SAMPLE_NAME,
+    physicsSettingsProfile,
   };
 }
 
@@ -705,22 +824,30 @@ function getImportDialogRenderContext() {
 function renderDisplayRangeLabel(): string {
   const range = getDisplayDateRange(displayMode, displayAnchorDate);
   if (displayMode === "day") {
-    return `${displayAnchorDate} の玉`;
+    return displayAnchorDate;
   }
   if (displayMode === "week") {
-    return `${range.start} - ${range.end} の週`;
+    return `${range.start} – ${range.end.slice(5)}`;
   }
-  return `${displayAnchorDate.slice(0, 7)} の月`;
+  return displayAnchorDate.slice(0, 7);
 }
 
 function renderPlayPeriodNav(): string {
   const displayModeName = renderDisplayModeName(displayMode);
   return `
     <div class="play-period-nav" aria-label="${escapeHtml(displayModeName)}表示の期間移動">
-      <button class="calendar-nav play-period-nav-button" type="button" data-shift-display-period="-1" aria-label="前の${escapeHtml(displayModeName)}">‹</button>
-      <p class="stage-filter">${escapeHtml(renderDisplayRangeLabel())}</p>
-      <button class="calendar-nav play-period-nav-button" type="button" data-shift-display-period="1" aria-label="次の${escapeHtml(displayModeName)}">›</button>
+      <button class="calendar-nav play-period-nav-button play-period-nav-button-previous" type="button" data-shift-display-period="-1" aria-label="前の${escapeHtml(displayModeName)}">${renderPeriodChevronIcon("previous")}</button>
+      <button class="stage-filter play-period-mode-button" type="button" data-cycle-display-mode aria-label="${escapeHtml(renderDisplayModeCycleAriaLabel())}">${escapeHtml(renderDisplayRangeLabel())}</button>
+      <button class="calendar-nav play-period-nav-button play-period-nav-button-next" type="button" data-shift-display-period="1" aria-label="次の${escapeHtml(displayModeName)}">${renderPeriodChevronIcon("next")}</button>
     </div>
+  `;
+}
+
+function renderPeriodChevronIcon(direction: "previous" | "next"): string {
+  return `
+    <svg class="period-chevron period-chevron-${direction}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M15.5 4.5 8 12l7.5 7.5"></path>
+    </svg>
   `;
 }
 
@@ -763,14 +890,6 @@ function renderDisplayModeName(mode: DisplayMode): string {
 
 function renderNextDisplayModeName(mode: DisplayMode): string {
   return renderDisplayModeName(nextDisplayMode(mode));
-}
-
-function renderDisplayModeCycleIcon(mode: DisplayMode): string {
-  return `
-    <span class="display-mode-icon display-mode-icon-${mode}" aria-hidden="true">
-      ${Array.from({ length: getDisplayModeIconDotCount(mode) }, () => "<i></i>").join("")}
-    </span>
-  `;
 }
 
 function prepareCreateDraftForOpen(): void {
@@ -1108,15 +1227,42 @@ function haveDescentRecordsChanged(previous: NonNullable<HappyBall["descents"]>,
   return JSON.stringify(previous) !== JSON.stringify(next);
 }
 
-function mountRapierStage(balls: HappyBall[]): void {
+function mountRapierStage(population: PopulationPlan<VisualBallSource>): void {
   const field = uiHosts.base.querySelector<HTMLDivElement>("#ball-field");
   if (!field || !rapierReady) {
     return;
   }
 
+  const rect = field.getBoundingClientRect();
+  const rendererPreference = rendererFallbackToDom
+    || isDomRendererComparisonEnabled(window.location.search)
+    ? "dom"
+    : "pixi";
+  const runtimeSettings = getRuntimeAppSettings();
+  const renderPlan = createPlayRenderPlan(
+    rect.width,
+    rect.height,
+    population.displayedCount,
+    appSettings.radius,
+    rendererPreference,
+  );
+  const stageSources = population.displayed.map((source) => ({ ...source, radius: renderPlan.radius }));
+  const renderer = renderPlan.renderer === "pixi"
+    ? new LazyPixiBallStageRenderer(field, runtimeSettings, {
+        densityMode: renderPlan.densityMode,
+        appearanceProfile: renderPlan.appearanceProfile,
+        onFallback: handleRendererFallback,
+      })
+    : undefined;
+  field.dataset.ballRenderer = renderPlan.renderer;
+  field.dataset.ballDensity = renderPlan.densityMode;
+  field.dataset.ballAppearance = renderPlan.appearanceProfile;
+  field.dataset.runtimePhysicsProfile = getRuntimePhysicsProfile();
+  field.dataset.ballDiameter = (renderPlan.radius * 2).toFixed(2);
+  field.dataset.rendererFallback = rendererFallbackToDom ? "pixi-fault" : "none";
   physicsStage = new RapierStage(
     field,
-    expandVisualBalls(balls),
+    stageSources,
     (ballId) => {
       selectedBallId = ballId;
       updateSelectedState();
@@ -1128,17 +1274,35 @@ function mountRapierStage(balls: HappyBall[]): void {
       updateSelectedSummary();
       showBallDialog(ballId);
     },
-    appSettings,
+    runtimeSettings,
     audioEngine,
     handlePhysicsFault,
+    {
+      radiusMode: renderPlan.radiusMode,
+      renderer,
+      gravityMode: playJutsuState.gravityMode,
+      buoyancyMode: playJutsuState.buoyancyMode,
+      interactionMode: playJutsuState.interactionMode,
+      fragmentationMode: playJutsuState.fragmentationMode,
+      parentSplitMode: playJutsuState.parentSplitMode,
+      displayLimit: renderPlan.renderer === "dom" ? 120 : denseDeviceLimit(window.matchMedia("(max-width: 520px)").matches),
+      onPopulationChange: updateFragmentationStatus,
+      onBuoyancyActivationChange: (activation) => {
+        field.style.setProperty("--play-fluid-activation", activation.toFixed(3));
+        field.dataset.fluidActivation = activation.toFixed(3);
+      },
+    },
   );
   physicsRuntime.attach(physicsStage);
   installPlayDebugEventLogging(field);
 }
 
 function installPlayDebugEventLogging(field: HTMLElement): void {
+  if (!import.meta.env.DEV) {
+    return;
+  }
   const logEvent = (event: Event) => {
-    if (!appSettings.gravityDebugEnabled) {
+    if (!isGravityDebugEnabled(appSettings.gravityDebugEnabled)) {
       return;
     }
     debugLog.append(`play:${event.type}`, describeDebugEvent(event));
@@ -1158,7 +1322,7 @@ function installPlayDebugEventLogging(field: HTMLElement): void {
 }
 
 function appendGravityDebugLog(snapshot: DeviceGravityDebugSnapshot): void {
-  if (!appSettings.gravityDebugEnabled) {
+  if (!isGravityDebugEnabled(appSettings.gravityDebugEnabled)) {
     return;
   }
   const now = Date.now();
@@ -1266,7 +1430,7 @@ function createDebugLogContext(): Record<string, unknown> {
       orientationType: screen.orientation?.type ?? null,
     },
     gravityEnabled: appSettings.gravityEnabled,
-    gravityDebugEnabled: appSettings.gravityDebugEnabled,
+    gravityDebugEnabled: isGravityDebugEnabled(appSettings.gravityDebugEnabled),
     latestGravityDebug,
   };
 }
@@ -1293,13 +1457,24 @@ async function copyDebugLog(): Promise<void> {
 }
 
 function expandVisualBalls(balls: HappyBall[]): VisualBallSource[] {
-  return balls.flatMap((ball) => {
-    const count = Math.max(1, Math.min(ball.count, 12));
+  return sortNewestFirst(balls).flatMap((ball) => {
+    const count = Math.max(1, Math.min(ball.count, 200));
     return Array.from({ length: count }, (_, index) => {
       const label = createBallDisplayLabel(ball, appSettings.ballLabelMode);
+      const baseInstanceId = `${ball.id}_${index}`;
+      const category = editableCategories.find((preset) => preset.name === ball.category)
+        ?? categoryColorPresets.find((preset) => preset.name === ball.category)
+        ?? editableCategories.find((preset) => preset.visualKind === ball.visual.kind && preset.hue === ball.visual.hue);
+      const motionClass = resolveMotionClass(category?.tone ?? (ball.visual.kind === "ring" ? "future" : "neutral"), ball.visual.kind);
       return {
-        id: `${ball.id}_${index}`,
+        id: baseInstanceId,
         ballId: ball.id,
+        fragmentIndex: index,
+        baseInstanceId,
+        fragmentGeneration: 0,
+        fragmentOrdinal: 0,
+        radius: appSettings.radius,
+        motionClass,
         hue: ball.visual.hue,
         saturation: ball.visual.saturation,
         lightness: ball.visual.lightness,
@@ -1317,6 +1492,193 @@ function expandVisualBalls(balls: HappyBall[]): VisualBallSource[] {
   });
 }
 
+function createVisualPopulation(balls: HappyBall[]): PopulationPlan<VisualBallSource> {
+  const sources = expandVisualBalls(balls);
+  const useDomSafetyLimit = rendererFallbackToDom
+    || isDomRendererComparisonEnabled(window.location.search);
+  const likelyDense = sources.length > 120;
+  const limit = useDomSafetyLimit
+    ? 120
+    : likelyDense
+    ? denseDeviceLimit(window.matchMedia("(max-width: 520px)").matches)
+    : 120;
+  return limitVisualPopulation(sources, limit);
+}
+
+function renderPopulationStatus(population: PopulationPlan<VisualBallSource>): string {
+  if (!population.truncated && population.totalCount <= 120) {
+    return "";
+  }
+  return `<p class="play-population-status" aria-live="polite">表示中 ${population.displayedCount} / 全${population.totalCount}玉</p>`;
+}
+
+function renderCreateBallIcon(): string {
+  return `
+    <span class="dock-create-action-icon" aria-hidden="true">
+      <span class="dock-create-ball-icon"><span>＋</span></span>
+      <small class="dock-create-label">new</small>
+    </span>
+  `;
+}
+
+function renderPlayScreenIcon(): string {
+  return `
+    <span class="play-triple-ball-icon" aria-hidden="true">
+      <i></i><i></i><i></i>
+    </span>
+  `;
+}
+
+function updateFragmentationStatus(displayedCount: number, originalCount: number): void {
+  if (!import.meta.env.DEV) {
+    return;
+  }
+  const status = uiHosts.base.querySelector<HTMLElement>("[data-fragmentation-status]");
+  if (status) {
+    status.textContent = displayedCount > originalCount ? `分割中 ${displayedCount} / 元${originalCount}玉` : "";
+  }
+}
+
+function syncPlayModeControls(): void {
+  const popover = uiHosts.base.querySelector<HTMLElement>("[data-play-mode-popover]");
+  const toggle = uiHosts.base.querySelector<HTMLButtonElement>("[data-toggle-play-modes]");
+  if (popover) {
+    popover.hidden = !playControlsOpen;
+    if (playControlsOpen) {
+      requestAnimationFrame(() => positionPlayModePopover(popover));
+    }
+  }
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", String(playControlsOpen));
+    toggle.classList.toggle("is-on", isPlayJutsuActive());
+  }
+  uiHosts.base.querySelectorAll<HTMLButtonElement>("[data-play-gravity-mode]").forEach((button) => {
+    button.classList.toggle("is-on", button.dataset.playGravityMode === playJutsuState.gravityMode);
+  });
+  uiHosts.base.querySelectorAll<HTMLButtonElement>("[data-play-buoyancy-mode]").forEach((button) => {
+    button.classList.toggle("is-on", button.dataset.playBuoyancyMode === playJutsuState.buoyancyMode);
+    button.disabled = button.dataset.playBuoyancyMode === "on" && playJutsuState.gravityMode === "free";
+    button.setAttribute("aria-disabled", String(button.disabled));
+  });
+  uiHosts.base.querySelectorAll<HTMLButtonElement>("[data-play-parent-enabled]").forEach((button) => {
+    const enabled = playJutsuState.interactionMode === "parent";
+    button.classList.toggle("is-on", button.dataset.playParentEnabled === String(enabled));
+  });
+  uiHosts.base.querySelectorAll<HTMLButtonElement>("[data-play-parent-split-mode]").forEach((button) => {
+    button.classList.toggle("is-on", button.dataset.playParentSplitMode === playJutsuState.parentSplitMode);
+    button.disabled = button.dataset.playParentSplitMode !== "off" && playJutsuState.interactionMode === "grab";
+    button.setAttribute("aria-disabled", String(button.disabled));
+  });
+}
+
+function bindPlayModePopover(root: ParentNode): void {
+  const popover = root.querySelector<HTMLElement>("[data-play-mode-popover]");
+  const world = popover?.closest<HTMLElement>(".play-world-region");
+  const grip = popover?.querySelector<HTMLButtonElement>("[data-play-mode-drag-grip]");
+  if (!popover || !world || !grip) {
+    return;
+  }
+
+  playMenuResizeObserver?.disconnect();
+  playMenuResizeObserver = new ResizeObserver(() => positionPlayModePopover(popover));
+  playMenuResizeObserver.observe(world);
+  playMenuResizeObserver.observe(popover);
+
+  let drag: { pointerId: number; origin: PlayMenuPosition; clientX: number; clientY: number } | null = null;
+  grip.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    positionPlayModePopover(popover);
+    const origin = playMenuPosition ?? { x: popover.offsetLeft, y: popover.offsetTop };
+    drag = { pointerId: event.pointerId, origin, clientX: event.clientX, clientY: event.clientY };
+    grip.setPointerCapture(event.pointerId);
+    popover.classList.add("is-dragging");
+  });
+  grip.addEventListener("pointermove", (event) => {
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+    event.preventDefault();
+    playMenuPosition = {
+      x: drag.origin.x + event.clientX - drag.clientX,
+      y: drag.origin.y + event.clientY - drag.clientY,
+    };
+    positionPlayModePopover(popover);
+  });
+  const finishDrag = (event: PointerEvent) => {
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+    event.preventDefault();
+    if (grip.hasPointerCapture(event.pointerId)) {
+      grip.releasePointerCapture(event.pointerId);
+    }
+    drag = null;
+    popover.classList.remove("is-dragging");
+  };
+  grip.addEventListener("pointerup", finishDrag);
+  grip.addEventListener("pointercancel", finishDrag);
+
+  popover.querySelectorAll<HTMLDetailsElement>("[data-play-mode-disclosure]").forEach((details) => {
+    details.addEventListener("toggle", () => {
+      if (details.dataset.playModeDisclosure === "world") {
+        playWorldDisclosureOpen = details.open;
+      } else if (details.dataset.playModeDisclosure === "parent") {
+        playParentDisclosureOpen = details.open;
+      }
+      requestAnimationFrame(() => positionPlayModePopover(popover));
+    });
+  });
+  requestAnimationFrame(() => positionPlayModePopover(popover));
+}
+
+function positionPlayModePopover(popover: HTMLElement): void {
+  if (popover.hidden) {
+    return;
+  }
+  const world = popover.closest<HTMLElement>(".play-world-region");
+  if (!world) {
+    return;
+  }
+  const worldSize = { width: world.clientWidth, height: world.clientHeight };
+  const menuSize = { width: popover.offsetWidth, height: popover.offsetHeight };
+  if (worldSize.width <= 0 || worldSize.height <= 0 || menuSize.width <= 0 || menuSize.height <= 0) {
+    return;
+  }
+  playMenuPosition = playMenuPosition
+    ? clampPlayMenuPosition(playMenuPosition, worldSize, menuSize)
+    : createInitialPlayMenuPosition(worldSize, menuSize);
+  popover.style.left = `${Math.round(playMenuPosition.x)}px`;
+  popover.style.top = `${Math.round(playMenuPosition.y)}px`;
+  popover.dataset.menuX = String(Math.round(playMenuPosition.x));
+  popover.dataset.menuY = String(Math.round(playMenuPosition.y));
+}
+
+function isPlayJutsuActive(): boolean {
+  return playJutsuState.gravityMode === "fixed-down"
+    || playJutsuState.buoyancyMode === "on"
+    || playJutsuState.interactionMode === "parent"
+    || playJutsuState.parentSplitMode !== "off";
+}
+
+function syncPlayJutsuFeedback(): void {
+  const feedback = uiHosts.base.querySelector<HTMLElement>("[data-play-jutsu-feedback]");
+  if (feedback) {
+    feedback.textContent = playJutsuFeedback;
+  }
+}
+
+function dispatchPlayJutsu(action: PlayJutsuAction): void {
+  playJutsuState = reducePlayJutsuState(playJutsuState, action);
+  syncRuntimePhysicsSettings();
+  physicsStage?.setPlayGravityMode(playJutsuState.gravityMode);
+  physicsStage?.setBuoyancyMode(playJutsuState.buoyancyMode);
+  physicsStage?.setInteractionMode(playJutsuState.interactionMode);
+  physicsStage?.setParentSplitMode(playJutsuState.parentSplitMode);
+  physicsStage?.setFragmentationMode(playJutsuState.fragmentationMode);
+  syncPlayModeControls();
+}
+
 function createBallLabelClass(label: string): string {
   const length = Array.from(label).length;
   if (length <= 4) {
@@ -1329,6 +1691,28 @@ function createBallLabelClass(label: string): string {
     return "label-long";
   }
   return "label-xlong";
+}
+
+function syncBallLabelModeWithoutPhysicsRebuild(): boolean {
+  const stage = uiHosts.base.querySelector<HTMLElement>(".stage");
+  const button = uiHosts.base.querySelector<HTMLButtonElement>("[data-cycle-ball-label-mode]");
+  if (!stage || !button) {
+    return false;
+  }
+
+  stage.classList.toggle("show-ball-labels", appSettings.ballLabelMode !== "none");
+  for (const mode of ["none", "date", "title", "name"] as const) {
+    stage.classList.toggle(`label-mode-${mode}`, appSettings.ballLabelMode === mode);
+  }
+  button.classList.toggle("is-label-on", appSettings.ballLabelMode !== "none");
+  button.setAttribute("aria-label", renderBallLabelModeCycleAriaLabel(appSettings.ballLabelMode));
+  button.innerHTML = renderPlayScreenIcon();
+
+  if (!physicsStage) {
+    return true;
+  }
+  const population = createVisualPopulation(getVisibleBalls());
+  return physicsStage.updateVisualSources(population.displayed);
 }
 
 function updateSelectedState(): void {
@@ -1347,6 +1731,82 @@ function updateSelectedSummary(): void {
 }
 
 function bindEvents(root: ParentNode): void {
+  bindPlayModePopover(root);
+  root.querySelector<HTMLButtonElement>("[data-toggle-play-modes]")?.addEventListener("click", () => {
+    playControlsOpen = !playControlsOpen;
+    syncPlayModeControls();
+  });
+
+  root.querySelectorAll<HTMLButtonElement>("[data-play-gravity-mode]").forEach((button) => {
+    button.addEventListener("click", () => {
+      playJutsuFeedback = "";
+      dispatchPlayJutsu({
+        type: "set-gravity",
+        mode: button.dataset.playGravityMode === "fixed-down" ? "fixed-down" : "free",
+      });
+      syncPlayJutsuFeedback();
+    });
+  });
+
+  root.querySelectorAll<HTMLButtonElement>("[data-play-buoyancy-mode]").forEach((button) => {
+    button.addEventListener("click", () => {
+      playJutsuFeedback = "";
+      dispatchPlayJutsu({
+        type: "set-buoyancy",
+        mode: button.dataset.playBuoyancyMode === "on" ? "on" : "off",
+      });
+      syncPlayJutsuFeedback();
+    });
+  });
+
+  root.querySelectorAll<HTMLButtonElement>("[data-play-parent-enabled]").forEach((button) => {
+    button.addEventListener("click", () => {
+      playJutsuFeedback = "";
+      dispatchPlayJutsu({ type: "set-parent", enabled: button.dataset.playParentEnabled === "true" });
+      syncPlayJutsuFeedback();
+    });
+  });
+
+  root.querySelectorAll<HTMLButtonElement>("[data-play-parent-split-mode]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const requestedMode = button.dataset.playParentSplitMode;
+      playJutsuFeedback = "";
+      dispatchPlayJutsu({
+        type: "set-parent-split",
+        mode: requestedMode === "fill" ? "fill" : requestedMode === "count-limit" ? "count-limit" : "off",
+      });
+      syncPlayJutsuFeedback();
+    });
+  });
+
+  root.querySelectorAll<HTMLButtonElement>("[data-apply-jutsu]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const mode = button.dataset.applyJutsu === "fill" ? "fill" : "count-limit";
+      dispatchPlayJutsu({ type: "apply-technique", mode });
+      const result = physicsStage?.applyJutsuFragmentation(mode);
+      playJutsuFeedback = result?.status === "applied"
+        ? `${result.splitRecordCount}件を一段階分割しました（${result.previousCount}→${result.nextCount}玉）`
+        : result?.status === "blocked-limit"
+          ? "表示上限を超えるため、分割しませんでした。"
+          : "これ以上分割できる玉はありません。";
+      syncPlayJutsuFeedback();
+    });
+  });
+
+  root.querySelector<HTMLButtonElement>("[data-reset-ball-jutsu]")?.addEventListener("click", () => {
+    const result = physicsStage?.resetJutsuFragmentation();
+    playJutsuFeedback = result?.status === "reset"
+      ? `${result.resetGroupCount}玉を再結合しました（${result.previousCount}→${result.nextCount}玉）`
+      : "分割された玉はありません。";
+    syncPlayJutsuFeedback();
+  });
+
+  root.querySelector<HTMLButtonElement>("[data-disable-play-jutsu]")?.addEventListener("click", () => {
+    dispatchPlayJutsu({ type: "reset-normal" });
+    playJutsuFeedback = "術を無効にしました。分割済みの玉は維持しています。";
+    syncPlayJutsuFeedback();
+  });
+
   root.querySelectorAll<HTMLButtonElement>("[data-open-panel]").forEach((button) => {
     button.addEventListener("click", () => {
       const panel = button.dataset.openPanel;
@@ -1365,8 +1825,10 @@ function bindEvents(root: ParentNode): void {
       if (panel === "create" || panel === "settings") {
         rememberSubfeatureReturnScreen();
       }
+      if (panel === "settings") {
+        physicsSettingsProfile = isPlayJutsuActive() ? "jutsu" : "normal";
+      }
       if (panel === "create") {
-        createPromptDismissed = true;
         prepareCreateDraftForOpen();
       }
       if (panel === "list" && uiState.primary !== "settings") {
@@ -1408,7 +1870,9 @@ function bindEvents(root: ParentNode): void {
 
   root.querySelector("[data-cycle-ball-label-mode]")?.addEventListener("click", () => {
     updateAppSettings({ ballLabelMode: nextBallLabelMode(appSettings.ballLabelMode) });
-    render();
+    if (!syncBallLabelModeWithoutPhysicsRebuild()) {
+      render();
+    }
   });
 
   root.querySelector("[data-toggle-activity-log-help]")?.addEventListener("click", () => {
@@ -1497,11 +1961,11 @@ function bindEvents(root: ParentNode): void {
       }
       if (panel === "create") {
         rememberSubfeatureReturnScreen();
-        createPromptDismissed = true;
         prepareCreateDraftForOpen();
       }
       if (panel === "settings") {
         rememberSubfeatureReturnScreen();
+        physicsSettingsProfile = isPlayJutsuActive() ? "jutsu" : "normal";
       }
       dispatchUi({ type: "open-primary", route: panel === "create" ? "create" : "settings" }, false);
       render();
@@ -1554,6 +2018,7 @@ function bindEvents(root: ParentNode): void {
   bindSettingsPanelEvents({
     categories: editableCategories,
     maxNameBookEntries: MAX_NAME_BOOK_ENTRIES,
+    physicsSettingsProfile,
     root,
     handlers: {
       unlockAudio: () => audioEngine.unlock(),
@@ -1561,6 +2026,13 @@ function bindEvents(root: ParentNode): void {
         void toggleGravitySensor();
       },
       updateAppSettings,
+      updatePhysicsSettings: updateSelectedPhysicsSettings,
+      setPhysicsSettingsProfile: (profile) => {
+        rememberSettingsScroll();
+        physicsSettingsProfile = profile;
+        render();
+      },
+      resetJutsuPhysicsSettings: resetJutsuPhysicsProfile,
       saveCategories: applyCategorySettings,
       resetCategories: resetCategorySettings,
       saveNameBook: applyNameBookSettings,
@@ -2649,7 +3121,66 @@ function updateAppSettings(patch: Partial<AppSettings>): void {
   saveAppSettings(appSettings);
   syncGravityController();
   applyBallFieldTextureSetting();
-  physicsStage?.updateSettings(appSettings);
+  syncRuntimePhysicsSettings();
+  syncGravityDebugPanelStructure();
+}
+
+function updateSelectedPhysicsSettings(
+  profile: PhysicsSettingsProfile,
+  patch: Partial<PhysicsParameterSettings>,
+): void {
+  appSettings = updatePhysicsProfileSettings(appSettings, profile, patch);
+  saveAppSettings(appSettings);
+  if (profile === "normal") {
+    syncGravityController();
+  }
+  syncRuntimePhysicsSettings();
+}
+
+function resetJutsuPhysicsProfile(): void {
+  rememberSettingsScroll();
+  appSettings = resetJutsuPhysicsSettingsToDefault(appSettings);
+  saveAppSettings(appSettings);
+  syncRuntimePhysicsSettings();
+  render();
+}
+
+function getRuntimeAppSettings(): AppSettings {
+  return resolvePhysicsProfileSettings(appSettings, getRuntimePhysicsProfile());
+}
+
+function rememberSettingsScroll(): void {
+  const scroller = document.querySelector<HTMLElement>(".floating-panel-settings .app-modal-scroll");
+  pendingSettingsScrollTop = scroller?.scrollTop ?? null;
+}
+
+function restorePendingSettingsScroll(): void {
+  if (pendingSettingsScrollTop === null) {
+    return;
+  }
+  const scrollTop = pendingSettingsScrollTop;
+  pendingSettingsScrollTop = null;
+  const scroller = document.querySelector<HTMLElement>(".floating-panel-settings .app-modal-scroll");
+  if (!scroller) {
+    return;
+  }
+  const restore = () => {
+    scroller.scrollTop = Math.min(scrollTop, scroller.scrollHeight);
+  };
+  restore();
+  requestAnimationFrame(restore);
+}
+
+function getRuntimePhysicsProfile(): PhysicsSettingsProfile {
+  return isPlayJutsuActive() ? "jutsu" : "normal";
+}
+
+function syncRuntimePhysicsSettings(): void {
+  physicsStage?.updateSettings(getRuntimeAppSettings());
+  const field = uiHosts.base.querySelector<HTMLElement>("#ball-field");
+  if (field) {
+    field.dataset.runtimePhysicsProfile = getRuntimePhysicsProfile();
+  }
 }
 
 function applyBallFieldTextureSetting(): void {
@@ -2825,4 +3356,20 @@ function handlePhysicsFault(error: unknown): void {
       <span>画面操作と保存データは継続して利用できます。</span>
     </aside>
   `, true);
+}
+
+function handleRendererFallback(error: unknown): void {
+  if (rendererFallbackToDom || rendererFallbackScheduled) {
+    return;
+  }
+  rendererFallbackScheduled = true;
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  debugLog.append("renderer-fallback", { from: "pixi", to: "dom", message });
+  console.warn("Pixi renderer failed; rebuilding the Play surface with the DOM safety renderer.", error);
+  queueMicrotask(() => {
+    rendererFallbackScheduled = false;
+    rendererFallbackToDom = true;
+    baseRenderSignature = "";
+    render();
+  });
 }

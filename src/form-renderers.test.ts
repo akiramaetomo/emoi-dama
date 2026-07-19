@@ -32,12 +32,13 @@ assert(!createHtml.includes('type="number"'), "create form should not use a nume
 assert(createHtml.includes("data-ball-count-control"), "create form should use the shared ball count control");
 assert(createHtml.includes('type="range"'), "create form should expose a native ball count range");
 assert(createHtml.includes('min="1"'), "create ball count range should start at one ball");
-assert(createHtml.includes('max="10"'), "create ball count range should end at ten balls");
+assert(createHtml.includes('max="10"'), "create ball count range should expose ten selectable positions");
 assert(createHtml.includes('name="count" type="hidden" value="1"'), "create form should submit the mapped count through a hidden field");
 assert(createHtml.includes("data-ball-count-range"), "create form should identify the shared count range");
 assert(createHtml.includes('data-ball-count-tick="1"'), "create form should render a one-ball tick");
 assert(createHtml.includes('data-ball-count-tick="5"'), "create form should render the emphasized five-ball tick");
-assert(createHtml.includes('data-ball-count-tick="10"'), "create form should render a ten-ball tick");
+assert(createHtml.includes('data-ball-count-tick="50"'), "create form should render a fifty-ball tick");
+assert(createHtml.includes('data-ball-count-tick="100"'), "create form should render a one-hundred-ball tick");
 assert(!createHtml.includes('data-ball-count-tick="0"'), "create form should not render an invalid zero tick");
 assert(countOccurrences(createHtml, "data-ball-count-tick=") === 10, "create form should render ten ticks across nine intervals");
 assert(!createHtml.includes("球数"), "create form should not rename ball count to sphere count");
@@ -203,7 +204,7 @@ const legacyCountEditHtml = renderBallEditDialog({ ...sampleBall, count: 12 }, c
 assert(legacyCountEditHtml.includes("既存値 12玉"), "legacy count should be shown without truncation");
 assert(legacyCountEditHtml.includes('name="count" type="hidden" value="12"'), "legacy count should remain the submitted value");
 assert(legacyCountEditHtml.includes("data-ball-count-slider hidden"), "legacy count should initially hide the normal slider");
-assert(legacyCountEditHtml.includes("data-ball-count-convert>10玉以下へ変更"), "legacy count should require an explicit conversion action");
+assert(legacyCountEditHtml.includes("data-ball-count-convert>最寄りの公開目盛へ変更"), "legacy count should require an explicit conversion action");
 
 const noTimeEditHtml = renderBallEditDialog({ ...sampleBall, time: undefined }, context);
 assert(noTimeEditHtml.includes('name="time" type="time" value="" disabled'), "edit form should still show a disabled time input when ball has no time");

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test("candidate lab has one fixed body and an absolute app/layer hierarchy", async ({ page }) => {
   await page.goto("/viewport-lab.html?mode=candidate");
-  await expect(page.locator(".lab-version")).toHaveText("v0.7.0");
+  await expect(page.locator(".lab-version")).toHaveText("v0.8.0");
   await expect(page.locator(".lab-meta-controls strong")).toHaveText("FIXED BODY + NO-PAN SUBTREE");
 
   const geometry = await page.evaluate(() => ({
@@ -47,7 +47,7 @@ test("candidate lab has one fixed body and an absolute app/layer hierarchy", asy
 
 test("current and candidate lab modes remain visibly distinguishable", async ({ page }) => {
   await page.goto("/viewport-lab.html?mode=current");
-  await expect(page.locator(".lab-version")).toHaveText("v0.7.0");
+  await expect(page.locator(".lab-version")).toHaveText("v0.8.0");
   await expect(page.locator(".lab-meta-controls strong")).toHaveText("MINIMAL CURRENT CONTROL");
   await expect(page.locator(".lab-meta-controls a")).toHaveAttribute("href", "./viewport-lab.html?mode=candidate");
 
@@ -79,7 +79,7 @@ test("candidate lab keeps route, internal scroll, modal input, and telemetry ind
   await expect(page.locator(".lab-modal-panel")).toBeVisible();
   await page.locator(".lab-modal-panel textarea").focus();
   await expect(page.locator(".lab-modal-panel textarea")).toBeFocused();
-  await expect(page.locator("[data-lab-telemetry]")).toContainText("VIEWPORT LAB v0.7.0 candidate");
+  await expect(page.locator("[data-lab-telemetry]")).toContainText("VIEWPORT LAB v0.8.0 candidate");
   await expect(page.locator("[data-download-lab-log]")).toBeVisible();
 
   await page.locator("[data-close-lab-modal-button]").click();

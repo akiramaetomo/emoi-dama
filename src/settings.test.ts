@@ -1,7 +1,11 @@
 import {
   DEFAULT_APP_SETTINGS,
+  DEFAULT_JUTSU_PHYSICS_SETTINGS,
   looksLikeAppSettings,
   normalizeAppSettings,
+  resetJutsuPhysicsSettings,
+  resolvePhysicsProfileSettings,
+  updatePhysicsProfileSettings,
 } from "./settings.js";
 import {
   dampingSliderToValue,
@@ -15,6 +19,11 @@ const normalized = normalizeAppSettings({
   flickPower: 99,
   maxSpeed: 99999,
   gravityStrength: 99999,
+  classificationDensityRatio: 99,
+  classificationDampingRatio: 0.01,
+  classificationBuoyancyStrength: 9,
+  parentBallDiameterPx: 999,
+  parentBallLifetimeSeconds: 0,
   radius: 2,
   masterVolume: 0.5,
   frequencyHz: Number.NaN,
@@ -36,6 +45,11 @@ assertEqual(normalized.linearDamping, 100, "linear damping should clamp to the m
 assertEqual(normalized.flickPower, 3, "flick power should clamp to the maximum");
 assertEqual(normalized.maxSpeed, 5000, "max speed should clamp to the maximum");
 assertEqual(normalized.gravityStrength, 20000, "gravity strength should clamp to the maximum");
+assertEqual(normalized.classificationDensityRatio, 4, "density ratio should clamp to the maximum");
+assertEqual(normalized.classificationDampingRatio, 0.25, "class damping ratio should clamp to the minimum");
+assertEqual(normalized.classificationBuoyancyStrength, 1, "classification buoyancy should clamp to the maximum");
+assertEqual(normalized.parentBallDiameterPx, 160, "parent diameter should clamp to the maximum");
+assertEqual(normalized.parentBallLifetimeSeconds, 1, "parent lifetime should clamp to the minimum");
 assertEqual(normalized.radius, 24, "radius should clamp to the minimum");
 assertEqual(normalized.masterVolume, 0.5, "valid numbers should be preserved");
 assertEqual(normalized.frequencyHz, DEFAULT_APP_SETTINGS.frequencyHz, "invalid numbers should fall back to defaults");
@@ -103,12 +117,41 @@ assertEqual(defaults.linearDamping, 0.3, "linear damping should default to the c
 assertEqual(defaults.flickPower, 2, "flick power should default to the current movement tuning value");
 assertEqual(defaults.maxSpeed, 5000, "max speed should default to the current movement tuning value");
 assertEqual(defaults.gravityStrength, 4000, "gravity strength should default to the current movement tuning value");
+assertEqual(defaults.classificationDensityRatio, 2, "density classification should default to ratio two");
+assertEqual(defaults.classificationDampingRatio, 2, "damping classification should default to ratio two");
+assertEqual(defaults.classificationBuoyancyStrength, 1, "classification buoyancy should default to a visible development value");
+assertEqual(defaults.parentBallDiameterPx, 112, "parent diameter should retain the approved default");
+assertEqual(defaults.parentBallLifetimeSeconds, 3, "parent lifetime should retain the approved default");
 assertEqual(defaults.emotionEchoStrength, DEFAULT_APP_SETTINGS.emotionEchoStrength, "invalid echo strength should use default");
 assertEqual(defaults.backgroundTexture, DEFAULT_APP_SETTINGS.backgroundTexture, "missing texture should use default");
 assertEqual(defaults.startupScreen, "calendarMonth", "missing startup screen should default to calendar month");
 assertEqual(defaults.calendarMarkerMode, "spread", "missing calendar marker mode should default to spread");
 assertEqual(defaults.descentMinDistanceMeters, 500, "missing descent distance should default to 500m");
 assertEqual(defaults.includeDescentGpsInHandoff, false, "missing handoff GPS setting should default to off");
+assertEqual(defaults.jutsuPhysicsSettings.wallRestitution, 0.85, "legacy settings should receive the approved jutsu wall bounce");
+assertEqual(defaults.jutsuPhysicsSettings.contactRestitution, 0.6, "legacy settings should receive the approved jutsu contact bounce");
+assertEqual(defaults.jutsuPhysicsSettings.linearDamping, 0.4, "legacy settings should receive the approved jutsu damping");
+assertEqual(defaults.jutsuPhysicsSettings.flickPower, 2, "legacy settings should receive the approved jutsu flick power");
+assertEqual(defaults.jutsuPhysicsSettings.maxSpeed, 4000, "legacy settings should receive the approved jutsu speed");
+assertEqual(defaults.jutsuPhysicsSettings.gravityStrength, 1000, "legacy settings should receive the approved jutsu gravity");
+assertEqual(defaults.jutsuPhysicsSettings.classificationDensityRatio, 2, "legacy settings should receive the approved jutsu density ratio");
+assertEqual(defaults.jutsuPhysicsSettings.classificationDampingRatio, 2, "legacy settings should receive the approved jutsu damping ratio");
+assertEqual(defaults.jutsuPhysicsSettings.classificationBuoyancyStrength, 1, "legacy settings should receive the approved jutsu buoyancy");
+assertEqual(defaults.jutsuPhysicsSettings.parentBallDiameterPx, 100, "legacy settings should receive the approved jutsu parent diameter");
+assertEqual(defaults.jutsuPhysicsSettings.parentBallLifetimeSeconds, 2, "legacy settings should receive the approved jutsu parent lifetime");
+
+const jutsuRuntimeSettings = resolvePhysicsProfileSettings(defaults, "jutsu");
+assertEqual(jutsuRuntimeSettings.gravityStrength, 1000, "jutsu runtime should use the jutsu profile");
+assertEqual(jutsuRuntimeSettings.maxSpeed, 4000, "jutsu runtime should use the jutsu speed");
+assertEqual(resolvePhysicsProfileSettings(defaults, "normal").gravityStrength, 4000, "normal runtime should retain normal physics");
+
+const customizedJutsu = updatePhysicsProfileSettings(defaults, "jutsu", { gravityStrength: 2220 });
+assertEqual(customizedJutsu.jutsuPhysicsSettings.gravityStrength, 2220, "jutsu edits should update only the jutsu profile");
+assertEqual(customizedJutsu.gravityStrength, 4000, "jutsu edits should not overwrite normal physics");
+const customizedNormal = updatePhysicsProfileSettings(customizedJutsu, "normal", { gravityStrength: 3000 });
+assertEqual(customizedNormal.gravityStrength, 3000, "normal edits should update normal physics");
+assertEqual(customizedNormal.jutsuPhysicsSettings.gravityStrength, 2220, "normal edits should preserve jutsu physics");
+assertEqual(resetJutsuPhysicsSettings(customizedNormal).jutsuPhysicsSettings.gravityStrength, DEFAULT_JUTSU_PHYSICS_SETTINGS.gravityStrength, "reset should restore the shipped jutsu defaults");
 
 assert(looksLikeAppSettings({ soundEnabled: false }), "settings-like objects should be recognized");
 assert(looksLikeAppSettings({ startupScreen: "main" }), "startup screen setting should be recognized");

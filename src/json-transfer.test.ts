@@ -70,7 +70,11 @@ const exportPayload = createExportPayload(
   ["ledger", "appSettings", "activityLog"],
   {
     ledger: existingLedger,
-    appSettings: { ...DEFAULT_APP_SETTINGS, includeDescentGpsInHandoff: true },
+    appSettings: {
+      ...DEFAULT_APP_SETTINGS,
+      includeDescentGpsInHandoff: true,
+      jutsuPhysicsSettings: { ...DEFAULT_APP_SETTINGS.jutsuPhysicsSettings, gravityStrength: 2220 },
+    },
     categories: categoryColorPresets,
     activityLog: [
       {
@@ -91,6 +95,7 @@ assertEqual(exportPayload.exportedAt, "2026-06-29T12:34:56.000Z", "export payloa
 assertEqual(Boolean(exportPayload.ledger), true, "export payload should include selected ledger data");
 assertEqual(Boolean(exportPayload.appSettings), true, "export payload should include selected settings data");
 assertEqual((exportPayload.appSettings as AppSettings | undefined)?.includeDescentGpsInHandoff, true, "export should preserve handoff GPS sharing state");
+assertEqual((exportPayload.appSettings as AppSettings | undefined)?.jutsuPhysicsSettings.gravityStrength, 2220, "export should preserve customized jutsu physics");
 assertEqual(Boolean(exportPayload.categories), false, "export payload should omit unselected category data");
 assertEqual(Boolean(exportPayload.activityLog), true, "export payload should include selected activity log data");
 
@@ -124,6 +129,7 @@ const importReview = reviewJsonImport({
     soundEnabled: "false",
     gravityEnabled: true,
     includeDescentGpsInHandoff: true,
+    jutsuPhysicsSettings: { ...DEFAULT_APP_SETTINGS.jutsuPhysicsSettings, gravityStrength: 2220 },
   },
   categories: [
     { ...categoryColorPresets[0], name: "新よろこび" },
@@ -138,11 +144,13 @@ assertEqual(importReview.ledger?.nameBookToAdd[0]?.name, "友人", "ledger revie
 assertEqual(importReview.appSettings?.soundEnabled, DEFAULT_APP_SETTINGS.soundEnabled, "settings review should reject string boolean values");
 assertEqual(importReview.appSettings?.gravityEnabled, true, "settings review should preserve real boolean values");
 assertEqual(importReview.appSettings?.includeDescentGpsInHandoff, true, "settings review should preserve handoff GPS sharing state");
+assertEqual(importReview.appSettings?.jutsuPhysicsSettings.gravityStrength, 2220, "settings review should preserve customized jutsu physics");
 assertEqual(importReview.categories?.[0]?.name, "新よろこび", "category review should normalize imported category names");
 
 const legacySettingsReview = reviewJsonImport({ soundEnabled: false }, "settings.json", existingLedger);
 assertEqual(legacySettingsReview.sections.join(","), "appSettings", "legacy settings JSON should be accepted directly");
 assertEqual(legacySettingsReview.appSettings?.soundEnabled, false, "legacy settings JSON should preserve explicit false");
+assertEqual(legacySettingsReview.appSettings?.jutsuPhysicsSettings.gravityStrength, 1000, "legacy settings JSON should receive shipped jutsu physics");
 
 const unknownReview = reviewJsonImport({ hello: "world" }, "unknown.json", existingLedger);
 assertEqual(Boolean(unknownReview.error), true, "unknown JSON should return a review error");

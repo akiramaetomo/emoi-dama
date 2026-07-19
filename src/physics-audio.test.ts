@@ -1,4 +1,4 @@
-import { impactEnergyToGain } from "./impact-audio.js";
+import { IMPACT_AUDIO_LIMITS, impactEnergyToGain, selectImpactEventsForAudio } from "./impact-audio.js";
 import {
   applyBallColliderSettings,
   findWallImpactCandidates,
@@ -18,6 +18,18 @@ assert(strongGain > thresholdGain * 250, "impact gain should preserve roughly 50
 assert(strongGain <= quietSettings.masterVolume, "impact gain should not exceed master volume");
 assertEqual(impactEnergyToGain(84.9, quietSettings), 0, "sub-threshold impacts should stay silent");
 assertEqual(impactEnergyToGain(3000, { ...quietSettings, masterVolume: 0 }), 0, "zero master volume should stay silent");
+
+const selectedImpacts = selectImpactEventsForAudio([
+  { kind: "contact", energy: 84 },
+  { kind: "wall", energy: 900 },
+  { kind: "contact", energy: 300 },
+  { kind: "contact", energy: 1200 },
+  { kind: "wall", energy: Number.NaN },
+], quietSettings.soundThreshold);
+assertEqual(selectedImpacts.map((impact) => impact.energy).join(","), "1200,900,300", "audio batches should keep the three strongest audible collision starts");
+assertEqual(IMPACT_AUDIO_LIMITS.maxVoices, 8, "impact audio should retain the eight-voice polyphony limit");
+assertEqual(IMPACT_AUDIO_LIMITS.maxTriggersPerBatch, 3, "impact audio should retain the three-trigger batch limit");
+assertEqual(IMPACT_AUDIO_LIMITS.minTriggerIntervalMs, 28, "impact audio should retain the 28ms batch gate");
 
 const slidingOnLeftWall = findWallImpactCandidates(
   { x: 41, y: 140 },

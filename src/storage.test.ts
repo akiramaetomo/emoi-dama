@@ -85,7 +85,7 @@ const legacyVisualRecovery = normalizeStoredLedger({
   ],
 });
 assertEqual(legacyVisualRecovery.ledger.balls.length, 1, "legacy visual recovery should keep the ball");
-assertEqual(legacyVisualRecovery.ledger.balls[0]?.count, 99, "legacy visual recovery should clamp unsafe counts");
+assertEqual(legacyVisualRecovery.ledger.balls[0]?.count, 200, "legacy visual recovery should clamp unsafe counts");
 assertEqual(legacyVisualRecovery.ledger.balls[0]?.visual.label, "夕方の空", "legacy visual recovery should recreate a readable label");
 assertEqual(typeof legacyVisualRecovery.ledger.balls[0]?.visual.hue, "number", "legacy visual recovery should recreate a hue");
 assertEqual(legacyVisualRecovery.ledger.balls[0]?.visual.kind, "filled", "legacy visual recovery should use filled visuals");

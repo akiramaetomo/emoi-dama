@@ -5,12 +5,14 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator(".app-build-badge")).toHaveCount(0);
 });
 
-test("create slider uses nine equal intervals and saves 1 2 5 10", async ({ page }) => {
+test("public slider uses nine equal intervals and saves 1 2 5 8 50 100", async ({ page }) => {
   const cases = [
     { raw: 1, count: 1 },
     { raw: 2, count: 2 },
     { raw: 5, count: 5 },
-    { raw: 10, count: 10 },
+    { raw: 8, count: 8 },
+    { raw: 9, count: 50 },
+    { raw: 10, count: 100 },
   ];
 
   for (const { raw, count } of cases) {
@@ -89,7 +91,7 @@ test("create slider uses nine equal intervals and saves 1 2 5 10", async ({ page
   await expect(form.locator("input[name='count']")).toHaveValue("6");
   await dragTrackAcross(page, form.locator("[data-ball-count-track]"));
   await expect(form.locator("input[name='count']")).toHaveValue("6");
-  await form.locator("[data-ball-count-tick='10']").click();
+  await form.locator("[data-ball-count-tick='100']").click();
   await expect(form.locator("input[name='count']")).toHaveValue("6");
   await expect(page.locator("html")).toHaveJSProperty("scrollTop", 0);
 });
@@ -129,13 +131,14 @@ test("create and edit sliders change count without root scroll", async ({ page }
   await expect.poll(() => readNewestStoredCount(page)).toBe(2);
 });
 
-test("legacy 11 12 and 99 remain unchanged until explicit conversion", async ({ page }) => {
-  await seedLegacyCounts(page, [11, 12, 99]);
+test("legacy 9 10 and 200 remain unchanged while 50 uses the public slider", async ({ page }) => {
+  test.setTimeout(90_000);
+  await seedLegacyCounts(page, [9, 10, 50, 200]);
   await page.reload();
   await expect(page.locator(".app-build-badge")).toHaveCount(0);
   await page.locator("[data-calendar-open-panel='dayList']").click();
 
-  for (const count of [11, 12, 99]) {
+  for (const count of [9, 10, 200]) {
     await page.locator(`[data-edit-ball-id='legacy_${count}']`).click();
     const form = page.locator("#ball-edit-form");
     await expect(form.locator("[data-ball-count-legacy]")).toContainText(`既存値 ${count}玉`);
@@ -148,17 +151,28 @@ test("legacy 11 12 and 99 remain unchanged until explicit conversion", async ({ 
     await page.locator("[data-dialog-close]").click();
   }
 
-  await page.locator("[data-edit-ball-id='legacy_12']").click();
-  const form = page.locator("#ball-edit-form");
+  await page.locator("[data-edit-ball-id='legacy_50']").click();
+  let form = page.locator("#ball-edit-form");
+  await expect(form.locator("[data-ball-count-legacy]")).toHaveCount(0);
+  await expect(form.locator("[data-ball-count-slider]")).toBeVisible();
+  await expect(form.locator("[data-ball-count-range]")).toHaveValue("9");
+  await expect(form.locator("input[name='count']")).toHaveValue("50");
+  await form.locator("input[name='title']").fill("legacy 50 updated");
+  await form.evaluate((node: HTMLFormElement) => node.requestSubmit());
+  await page.locator("[data-edit-save-correction]").click();
+  await expect.poll(() => readStoredCount(page, "legacy_50")).toBe(50);
+  await page.locator("[data-dialog-close]").click();
+
+  await page.locator("[data-edit-ball-id='legacy_200']").click();
+  form = page.locator("#ball-edit-form");
   await form.locator("[data-ball-count-convert]").click();
   await expect(form.locator("[data-ball-count-legacy]")).toBeHidden();
   await expect(form.locator("[data-ball-count-slider]")).toBeVisible();
   await expect(form.locator("[data-ball-count-range]")).toHaveValue("10");
-  await expect(form.locator("input[name='count']")).toHaveValue("10");
-  await setRangeValue(form.locator("[data-ball-count-range]"), 5);
+  await expect(form.locator("input[name='count']")).toHaveValue("100");
   await form.evaluate((node: HTMLFormElement) => node.requestSubmit());
   await page.locator("[data-edit-save-correction]").click();
-  await expect.poll(() => readStoredCount(page, "legacy_12")).toBe(5);
+  await expect.poll(() => readStoredCount(page, "legacy_200")).toBe(100);
 });
 
 async function setRangeValue(range: Locator, raw: number): Promise<void> {

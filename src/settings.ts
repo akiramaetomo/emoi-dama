@@ -5,6 +5,21 @@ export type BallLabelMode = "none" | "date" | "title" | "name";
 export type BackgroundTexture = "grid" | "paper" | "grain" | "mist" | "random";
 export type StartupScreen = "main" | "calendarMonth" | "calendarDayList";
 export type CalendarMarkerMode = "spread" | "meter";
+export type PhysicsSettingsProfile = "normal" | "jutsu";
+
+export interface PhysicsParameterSettings {
+  wallRestitution: number;
+  contactRestitution: number;
+  linearDamping: number;
+  flickPower: number;
+  maxSpeed: number;
+  gravityStrength: number;
+  classificationDensityRatio: number;
+  classificationDampingRatio: number;
+  classificationBuoyancyStrength: number;
+  parentBallDiameterPx: number;
+  parentBallLifetimeSeconds: number;
+}
 
 export interface AppSettings {
   wallRestitution: number;
@@ -19,6 +34,11 @@ export interface AppSettings {
   gravityEnabled: boolean;
   gravityDebugEnabled: boolean;
   gravityStrength: number;
+  classificationDensityRatio: number;
+  classificationDampingRatio: number;
+  classificationBuoyancyStrength: number;
+  parentBallDiameterPx: number;
+  parentBallLifetimeSeconds: number;
   masterVolume: number;
   frequencyHz: number;
   frequencySpread: number;
@@ -32,16 +52,31 @@ export interface AppSettings {
   calendarMarkerMode: CalendarMarkerMode;
   descentMinDistanceMeters: number;
   includeDescentGpsInHandoff: boolean;
+  jutsuPhysicsSettings: PhysicsParameterSettings;
 }
 
 const SETTINGS_KEY = "happyBall.settings.v2";
+
+export const DEFAULT_JUTSU_PHYSICS_SETTINGS: PhysicsParameterSettings = {
+  wallRestitution: 0.85,
+  contactRestitution: 0.6,
+  linearDamping: 0.4,
+  flickPower: 2,
+  maxSpeed: 4000,
+  gravityStrength: 1000,
+  classificationDensityRatio: 2,
+  classificationDampingRatio: 2,
+  classificationBuoyancyStrength: 1,
+  parentBallDiameterPx: 100,
+  parentBallLifetimeSeconds: 2,
+};
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   wallRestitution: MOVEMENT_SETTING_RANGES.wallRestitution.defaultValue,
   contactRestitution: MOVEMENT_SETTING_RANGES.contactRestitution.defaultValue,
   linearDamping: MOVEMENT_SETTING_RANGES.linearDamping.defaultValue,
   angularDamping: 0.28,
-  friction: 0.02,
+  friction: 0,
   flickPower: MOVEMENT_SETTING_RANGES.flickPower.defaultValue,
   maxSpeed: MOVEMENT_SETTING_RANGES.maxSpeed.defaultValue,
   radius: 42,
@@ -49,6 +84,11 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   gravityEnabled: false,
   gravityDebugEnabled: false,
   gravityStrength: MOVEMENT_SETTING_RANGES.gravityStrength.defaultValue,
+  classificationDensityRatio: 2,
+  classificationDampingRatio: 2,
+  classificationBuoyancyStrength: 1,
+  parentBallDiameterPx: 112,
+  parentBallLifetimeSeconds: 3,
   masterVolume: 0.28,
   frequencyHz: 1100,
   frequencySpread: 1.35,
@@ -62,6 +102,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   calendarMarkerMode: "spread",
   descentMinDistanceMeters: 500,
   includeDescentGpsInHandoff: false,
+  jutsuPhysicsSettings: DEFAULT_JUTSU_PHYSICS_SETTINGS,
 };
 
 export function loadAppSettings(): AppSettings {
@@ -92,6 +133,11 @@ export function normalizeAppSettings(value: unknown): AppSettings {
     gravityEnabled: readBoolean(source.gravityEnabled, DEFAULT_APP_SETTINGS.gravityEnabled),
     gravityDebugEnabled: readBoolean(source.gravityDebugEnabled, DEFAULT_APP_SETTINGS.gravityDebugEnabled),
     gravityStrength: clampNumber(source.gravityStrength, MOVEMENT_SETTING_RANGES.gravityStrength.min, MOVEMENT_SETTING_RANGES.gravityStrength.max, DEFAULT_APP_SETTINGS.gravityStrength),
+    classificationDensityRatio: clampNumber(source.classificationDensityRatio, 0.25, 4, DEFAULT_APP_SETTINGS.classificationDensityRatio),
+    classificationDampingRatio: clampNumber(source.classificationDampingRatio, 0.25, 4, DEFAULT_APP_SETTINGS.classificationDampingRatio),
+    classificationBuoyancyStrength: clampNumber(source.classificationBuoyancyStrength, 0, 1, DEFAULT_APP_SETTINGS.classificationBuoyancyStrength),
+    parentBallDiameterPx: clampNumber(source.parentBallDiameterPx, 40, 160, DEFAULT_APP_SETTINGS.parentBallDiameterPx),
+    parentBallLifetimeSeconds: clampNumber(source.parentBallLifetimeSeconds, 1, 30, DEFAULT_APP_SETTINGS.parentBallLifetimeSeconds),
     masterVolume: clampNumber(source.masterVolume, 0, 1, DEFAULT_APP_SETTINGS.masterVolume),
     frequencyHz: clampNumber(source.frequencyHz, 200, 4200, DEFAULT_APP_SETTINGS.frequencyHz),
     frequencySpread: clampNumber(source.frequencySpread, 1, 3, DEFAULT_APP_SETTINGS.frequencySpread),
@@ -105,7 +151,37 @@ export function normalizeAppSettings(value: unknown): AppSettings {
     calendarMarkerMode: readCalendarMarkerMode(source.calendarMarkerMode),
     descentMinDistanceMeters: clampNumber(source.descentMinDistanceMeters, 10, 100_000, DEFAULT_APP_SETTINGS.descentMinDistanceMeters),
     includeDescentGpsInHandoff: readBoolean(source.includeDescentGpsInHandoff, false),
+    jutsuPhysicsSettings: normalizePhysicsParameterSettings(source.jutsuPhysicsSettings),
   };
+}
+
+export function resolvePhysicsProfileSettings(
+  settings: AppSettings,
+  profile: PhysicsSettingsProfile,
+): AppSettings {
+  return profile === "jutsu"
+    ? { ...settings, ...settings.jutsuPhysicsSettings }
+    : settings;
+}
+
+export function updatePhysicsProfileSettings(
+  settings: AppSettings,
+  profile: PhysicsSettingsProfile,
+  patch: Partial<PhysicsParameterSettings>,
+): AppSettings {
+  return profile === "jutsu"
+    ? normalizeAppSettings({
+        ...settings,
+        jutsuPhysicsSettings: { ...settings.jutsuPhysicsSettings, ...patch },
+      })
+    : normalizeAppSettings({ ...settings, ...patch });
+}
+
+export function resetJutsuPhysicsSettings(settings: AppSettings): AppSettings {
+  return normalizeAppSettings({
+    ...settings,
+    jutsuPhysicsSettings: DEFAULT_JUTSU_PHYSICS_SETTINGS,
+  });
 }
 
 export function looksLikeAppSettings(value: unknown): boolean {
@@ -118,6 +194,11 @@ export function looksLikeAppSettings(value: unknown): boolean {
     "linearDamping",
     "gravityEnabled",
     "gravityDebugEnabled",
+    "classificationDensityRatio",
+    "classificationDampingRatio",
+    "classificationBuoyancyStrength",
+    "parentBallDiameterPx",
+    "parentBallLifetimeSeconds",
     "soundEnabled",
     "ballLabelMode",
     "showBallLabels",
@@ -167,6 +248,23 @@ function readBallLabelMode(value: unknown, legacyShowLabels: unknown): BallLabel
 
 function readBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
+}
+
+function normalizePhysicsParameterSettings(value: unknown): PhysicsParameterSettings {
+  const source = isPlainObject(value) ? value : {};
+  return {
+    wallRestitution: clampNumber(source.wallRestitution, MOVEMENT_SETTING_RANGES.wallRestitution.min, MOVEMENT_SETTING_RANGES.wallRestitution.max, DEFAULT_JUTSU_PHYSICS_SETTINGS.wallRestitution),
+    contactRestitution: clampNumber(source.contactRestitution, MOVEMENT_SETTING_RANGES.contactRestitution.min, MOVEMENT_SETTING_RANGES.contactRestitution.max, DEFAULT_JUTSU_PHYSICS_SETTINGS.contactRestitution),
+    linearDamping: clampNumber(source.linearDamping, MOVEMENT_SETTING_RANGES.linearDamping.min, MOVEMENT_SETTING_RANGES.linearDamping.max, DEFAULT_JUTSU_PHYSICS_SETTINGS.linearDamping),
+    flickPower: clampNumber(source.flickPower, MOVEMENT_SETTING_RANGES.flickPower.min, MOVEMENT_SETTING_RANGES.flickPower.max, DEFAULT_JUTSU_PHYSICS_SETTINGS.flickPower),
+    maxSpeed: clampNumber(source.maxSpeed, MOVEMENT_SETTING_RANGES.maxSpeed.min, MOVEMENT_SETTING_RANGES.maxSpeed.max, DEFAULT_JUTSU_PHYSICS_SETTINGS.maxSpeed),
+    gravityStrength: clampNumber(source.gravityStrength, MOVEMENT_SETTING_RANGES.gravityStrength.min, MOVEMENT_SETTING_RANGES.gravityStrength.max, DEFAULT_JUTSU_PHYSICS_SETTINGS.gravityStrength),
+    classificationDensityRatio: clampNumber(source.classificationDensityRatio, 0.25, 4, DEFAULT_JUTSU_PHYSICS_SETTINGS.classificationDensityRatio),
+    classificationDampingRatio: clampNumber(source.classificationDampingRatio, 0.25, 4, DEFAULT_JUTSU_PHYSICS_SETTINGS.classificationDampingRatio),
+    classificationBuoyancyStrength: clampNumber(source.classificationBuoyancyStrength, 0, 1, DEFAULT_JUTSU_PHYSICS_SETTINGS.classificationBuoyancyStrength),
+    parentBallDiameterPx: clampNumber(source.parentBallDiameterPx, 40, 160, DEFAULT_JUTSU_PHYSICS_SETTINGS.parentBallDiameterPx),
+    parentBallLifetimeSeconds: clampNumber(source.parentBallLifetimeSeconds, 1, 30, DEFAULT_JUTSU_PHYSICS_SETTINGS.parentBallLifetimeSeconds),
+  };
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {

@@ -1,9 +1,11 @@
 import type { ImpactEvent } from "./rapier-stage.js";
 import type { AppSettings } from "./settings.js";
 
-const MAX_AUDIO_VOICES = 8;
-const MAX_AUDIO_TRIGGERS_PER_FRAME = 3;
-const MIN_AUDIO_TRIGGER_INTERVAL_MS = 28;
+export const IMPACT_AUDIO_LIMITS = Object.freeze({
+  maxVoices: 8,
+  maxTriggersPerBatch: 3,
+  minTriggerIntervalMs: 28,
+});
 const AUDIO_TRIGGER_SPACING_SECONDS = 0.018;
 const AUDIO_FAILURE_REPORT_INTERVAL_MS = 2500;
 const MAX_ENERGY_GAIN_REFERENCE = 3000;
@@ -61,14 +63,11 @@ export class TinyImpactAudio {
     }
 
     const nowMs = performance.now();
-    if (nowMs - this.lastPlayedAt < MIN_AUDIO_TRIGGER_INTERVAL_MS) {
+    if (nowMs - this.lastPlayedAt < IMPACT_AUDIO_LIMITS.minTriggerIntervalMs) {
       return;
     }
 
-    const selected = impacts
-      .filter((impact) => impact.energy >= settings.soundThreshold)
-      .sort((a, b) => b.energy - a.energy)
-      .slice(0, MAX_AUDIO_TRIGGERS_PER_FRAME);
+    const selected = selectImpactEventsForAudio(impacts, settings.soundThreshold);
 
     try {
       selected.forEach((impact, index) => this.playPing(context, impact, settings, index * AUDIO_TRIGGER_SPACING_SECONDS));
@@ -140,7 +139,7 @@ export class TinyImpactAudio {
   }
 
   private playPing(context: AudioContext, impact: ImpactEvent, settings: AppSettings, offset: number): void {
-    if (this.voices >= MAX_AUDIO_VOICES) {
+    if (this.voices >= IMPACT_AUDIO_LIMITS.maxVoices) {
       return;
     }
 
@@ -195,6 +194,13 @@ export function impactEnergyToGain(energy: number, settings: Pick<AppSettings, "
   const perceptualEnergy = Math.log1p(normalizedEnergy * IMPACT_GAIN_LOG_CURVE) / Math.log1p(IMPACT_GAIN_LOG_CURVE);
   const dynamicGainRatio = MIN_DYNAMIC_GAIN_RATIO * ((1 / MIN_DYNAMIC_GAIN_RATIO) ** perceptualEnergy);
   return Math.max(MIN_GAIN_VALUE, settings.masterVolume * dynamicGainRatio);
+}
+
+export function selectImpactEventsForAudio(impacts: readonly ImpactEvent[], soundThreshold: number): ImpactEvent[] {
+  return impacts
+    .filter((impact) => Number.isFinite(impact.energy) && impact.energy >= soundThreshold)
+    .sort((a, b) => b.energy - a.energy)
+    .slice(0, IMPACT_AUDIO_LIMITS.maxTriggersPerBatch);
 }
 
 function clamp(value: number, min: number, max: number): number {

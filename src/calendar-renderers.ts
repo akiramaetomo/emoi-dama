@@ -205,11 +205,13 @@ function renderCalendarControlDock(context: CalendarRenderContext): string {
   return `
     <div class="calendar-control-dock">
       <p class="control-state-label calendar-marker-state-label" data-calendar-marker-state${context.calendarMode === "dayList" ? " hidden" : ""}>${renderCalendarMarkerModeName(context.calendarMarkerMode)}表示</p>
-      <div class="world-actions calendar-actions-bar" aria-label="カレンダー操作">
-        <button class="dock-symbol-button dock-create-button" type="button" data-calendar-open-panel="create" aria-label="選択日に玉を作る">＋</button>
+      <div class="world-actions app-control-bar calendar-actions-bar" aria-label="コントロールバー">
+        <span class="control-bar-left">
+          <button class="dock-symbol-button dock-create-button" type="button" data-calendar-open-panel="create" aria-label="選択日に玉を作る">${renderCreateBallIcon()}</button>
+        </span>
         <span class="primary-screen-control-group" aria-label="主要3画面">
           <button class="calendar-main-ball-button" type="button" data-calendar-main aria-label="メイン画面へ戻る">
-            <span class="calendar-main-ball-icon" aria-hidden="true"></span>
+            ${renderPlayScreenIcon()}
           </button>
           <button class="calendar-screen-button" type="button" data-calendar-open-panel="calendar" aria-label="カレンダー"${context.calendarMode === "month" ? ` aria-current="page"` : ""}>
             ${renderCalendarScreenIcon()}
@@ -218,11 +220,26 @@ function renderCalendarControlDock(context: CalendarRenderContext): string {
             <span class="day-list-screen-icon" aria-hidden="true"></span>
           </button>
         </span>
-        <button class="calendar-marker-mode-button" type="button" data-calendar-cycle-marker-mode aria-label="${escapeAttribute(renderCalendarMarkerModeCycleAriaLabel(context.calendarMarkerMode))}"${context.calendarMode === "dayList" ? " hidden" : ""}>${renderCalendarMarkerModeIcon(context.calendarMarkerMode)}</button>
-        <button class="dock-symbol-button dock-settings-button" type="button" data-calendar-open-panel="settings" aria-label="設定">⚙</button>
+        <span class="control-bar-functions">
+          <button class="calendar-marker-mode-button" type="button" data-calendar-cycle-marker-mode aria-label="${escapeAttribute(renderCalendarMarkerModeCycleAriaLabel(context.calendarMarkerMode))}"${context.calendarMode === "dayList" ? " hidden" : ""}>${renderCalendarMarkerModeIcon(context.calendarMarkerMode)}</button>
+          <button class="dock-symbol-button dock-settings-button" type="button" data-calendar-open-panel="settings" aria-label="設定">⚙</button>
+        </span>
       </div>
     </div>
   `;
+}
+
+function renderCreateBallIcon(): string {
+  return `
+    <span class="dock-create-action-icon" aria-hidden="true">
+      <span class="dock-create-ball-icon"><span>＋</span></span>
+      <small class="dock-create-label">new</small>
+    </span>
+  `;
+}
+
+function renderPlayScreenIcon(): string {
+  return `<span class="play-triple-ball-icon" aria-hidden="true"><i></i><i></i><i></i></span>`;
 }
 
 function renderCalendarMarkerModeCycleAriaLabel(mode: CalendarMarkerMode): string {

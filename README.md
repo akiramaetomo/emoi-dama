@@ -22,6 +22,9 @@ Open the prototype:
 https://akiramaetomo.github.io/emoi-dama/
 ```
 
+Current formal release: **0.8.0**. See [CHANGELOG.md](CHANGELOG.md) for the
+complete release history.
+
 ## Keep It As A Ball
 
 A ball is a small charm. It is not just a recording tool. You can see it, touch
@@ -70,11 +73,19 @@ more than collecting many balls.
 The current prototype runs entirely in the browser.
 
 - Create and keep small emotional moments as balls.
-- Roll, grab, flick, and hear the balls.
+- Roll, grab, flick, and hear the balls in a Pixi/WebGL and Rapier-backed world
+  that remains responsive at high ball counts.
+- Use the session-only `術` controls for fixed gravity, pseudo-buoyancy, a
+  temporary Parent ball, fragmentation, and recombination without rewriting
+  saved ball records.
+- Keep separate editable normal and Jutsu physics profiles in Settings.
 - Inspect and edit ball contents.
-- Revisit memories from the calendar.
-- Show paper-like `お預け状` / `預かり証` previews.
-- Exchange one-ball URL packets without a server database.
+- Move directly among Play, Calendar, and the one-day Ball List from the shared
+  Control Bar, and revisit different display periods.
+- Show paper-like `お預け状` / `預かり証` receipts as QR codes or shareable
+  images. Descent GPS stays excluded unless explicitly enabled in Settings.
+- Exchange the one-ball packet carried by a receipt QR without a server
+  database.
 - Export and import JSON for manual backup and review.
 
 Prototype safety notes:
@@ -98,12 +109,14 @@ See [LICENSE.md](LICENSE.md).
 
 1. Open the app.
 2. When something feels emoi, press the `+` mark and create one ball.
-3. Flick it lightly and try its motion and sound.
+3. Flick it lightly and try its motion and sound. Open `術` when you want to
+   try fixed gravity, pseudo-buoyancy, the Parent ball, or session-only splits.
 4. Tap a ball when you want to inspect its contents.
-5. Use the calendar to browse balls. You can show balls from multiple days at
-   once.
-6. When you want to pass a ball to someone, create an `お預け状` URL and send it
-   through LINE or another message app.
+5. Use Calendar or the one-day Ball List to browse balls, and use the period
+   control in Play to show balls from different date ranges.
+6. When you want to pass a ball to someone, open `玉を送る`, show the receipt
+   QR to the recipient, or use `画像で送る`. Include descent GPS only when you
+   intentionally enable it in Settings.
 
 ## Development
 
@@ -117,6 +130,7 @@ For published app versions and user-visible changes, see
 npm install
 npm test
 npm run build
+npm run test:release
 npm run dev
 ```
 

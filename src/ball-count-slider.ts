@@ -1,14 +1,27 @@
 export const BALL_COUNT_SLIDER_MIN = 1;
 export const BALL_COUNT_SLIDER_MAX = 10;
 export const BALL_COUNT_SLIDER_EMPHASIS = 5;
-export const BALL_COUNT_NORMAL_MAX = 10;
+export const BALL_COUNT_STORAGE_MAX = 200;
+
+const PUBLIC_COUNTS = [1, 2, 3, 4, 5, 6, 7, 8, 50, 100] as const;
 
 export function sliderPositionToBallCount(position: number): number {
-  return clampRounded(position, BALL_COUNT_SLIDER_MIN, BALL_COUNT_SLIDER_MAX);
+  const normalizedPosition = clampRounded(position, BALL_COUNT_SLIDER_MIN, BALL_COUNT_SLIDER_MAX);
+  return PUBLIC_COUNTS[normalizedPosition - 1];
 }
 
 export function ballCountToSliderPosition(count: number): number {
-  return clampRounded(count, BALL_COUNT_SLIDER_MIN, BALL_COUNT_SLIDER_MAX);
+  const rounded = Math.round(Number.isFinite(count) ? count : PUBLIC_COUNTS[0]);
+  let nearestPosition = BALL_COUNT_SLIDER_MIN;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < PUBLIC_COUNTS.length; index += 1) {
+    const distance = Math.abs(PUBLIC_COUNTS[index] - rounded);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestPosition = index + 1;
+    }
+  }
+  return nearestPosition;
 }
 
 export function ballCountToTrackPercent(count: number): number {
@@ -21,13 +34,19 @@ export function pointerClientXToSliderPosition(clientX: number, trackLeft: numbe
     return BALL_COUNT_SLIDER_MIN;
   }
   const fraction = Math.max(0, Math.min(1, (clientX - trackLeft) / trackWidth));
-  return sliderPositionToBallCount(
+  return clampRounded(
     BALL_COUNT_SLIDER_MIN + fraction * (BALL_COUNT_SLIDER_MAX - BALL_COUNT_SLIDER_MIN),
+    BALL_COUNT_SLIDER_MIN,
+    BALL_COUNT_SLIDER_MAX,
   );
 }
 
 export function isLegacyBallCount(count: number): boolean {
-  return Number.isFinite(count) && Math.round(count) > BALL_COUNT_NORMAL_MAX;
+  if (!Number.isFinite(count)) {
+    return false;
+  }
+  const rounded = Math.round(count);
+  return !PUBLIC_COUNTS.includes(rounded as typeof PUBLIC_COUNTS[number]);
 }
 
 export function formatBallCount(count: number): string {
@@ -111,7 +130,7 @@ export function bindBallCountSliderControls(root: ParentNode): void {
     convert?.addEventListener("click", () => {
       legacy?.setAttribute("hidden", "");
       slider?.removeAttribute("hidden");
-      range.value = String(BALL_COUNT_SLIDER_MAX);
+      range.value = String(ballCountToSliderPosition(Number(hidden.value)));
       sync();
       range.focus({ preventScroll: true });
     });

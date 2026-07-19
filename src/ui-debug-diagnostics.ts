@@ -64,10 +64,6 @@ declare global {
   }
 }
 
-export function isUiDebugEnabled(search = window.location.search): boolean {
-  return new URLSearchParams(search).get("uiDebug") === "1";
-}
-
 export class UiDebugDiagnostics {
   private readonly overlay = document.createElement("pre");
   private readonly history: UiDebugSnapshot[] = [];

@@ -12,6 +12,222 @@ This project follows a lightweight changelog discipline:
 
 ## Unreleased
 
+## 0.8.0 - 2026-07-20
+
+- Release highlights: moved the ball world to density-aware Pixi/WebGL while
+  retaining full Rapier collision and automatic safety fallback; added the
+  session-only `術` experience with fixed gravity, pseudo-buoyancy, temporary
+  Parent-ball interaction, up-to-32x fragmentation, and recombination; and
+  added independent normal/Jutsu physics profiles without changing saved ball
+  records or transfer formats.
+- Refined the public experience with a clearer Play/Calendar/List Control Bar,
+  a movable compact Jutsu menu, safer touch sliders, three Settings clusters,
+  responsive phone/iPad layouts, and the public `1-8 / 50 / 100` ball-count
+  scale. QR/image handoff keeps descent GPS excluded unless the user explicitly
+  enables it.
+- Promoted the accepted `0.7.1-dev.1` through `0.7.1-dev.21` work to the
+  formal `0.8.0` Pages release. Formal builds no longer expose the development
+  badge, URL-triggered UI or handoff diagnostics, the gravity-sensor debug
+  setting and overlay, or the viewport laboratory; the normal gravity sensor,
+  automatic renderer fallback, and contained runtime-error recovery remain.
+
+- Prepared `0.7.1-dev.21` with one user-editable physics profile shared by all
+  Jutsu. Jutsu activation now automatically uses the approved tuned values and
+  disabling Jutsu restores the user's untouched normal physics. Settings can
+  switch between both profiles, preserve Jutsu edits and backups, and reset
+  only the Jutsu profile to its shipped defaults. Switching the tuning target
+  also preserves the Settings scroll position on phones and iPad, and the
+  animated `えもい玉` Settings mark keeps enough top clearance to avoid
+  clipping at the top of its motion.
+
+- Prepared `0.7.1-dev.20` with three Settings clusters: `玉の仕立て`,
+  `玉のふるまい`, and `管理`. Each cluster now owns one two-pixel framed,
+  faintly tinted surface, while the ten disclosure items no longer repeat
+  individual card borders, backgrounds, or open shadows. Thin internal
+  separators retain scanability, and exclusive disclosure behavior is
+  unchanged across clusters.
+
+- Prepared `0.7.1-dev.19` to keep iPad track-only touches blocked through the
+  browser's delayed input/change/click completion after touch end. Settings
+  tuning rows now share a more compact scale on PC, smartphone, and iPad:
+  smaller item text and subsection headings, tighter internal spacing, and
+  slightly shorter range tracks, while top-level headings and the 44px
+  thumb-start allowance remain unchanged.
+
+- Prepared `0.7.1-dev.18` with separate `物理パラメータ` and `サウンド`
+  Settings groups. Physics controls now place the gravity-sensor toggles first,
+  then organize existing values as `世界の物理` and `玉・親玉の性質`. Every
+  Settings slider now ignores gestures beginning on its track while preserving
+  thumb drag, keyboard adjustment, and vertical menu scrolling, preventing
+  accidental value changes during touch scrolling.
+
+- Prepared `0.7.1-dev.17` with clearer shared Control Bar actions. The Play,
+  Calendar, and List group is larger, borderless, and gives the current screen
+  a stronger filled state; Settings and the ball-plus creation action are
+  enlarged, and creation now includes a compact `new` label. Play period
+  cycling moved from the Control Bar to a larger translucent date/range button
+  below Emotion Play, with Japanese mode suffixes removed. Matching SVG
+  chevrons use the same translucent treatment and replace platform-dependent
+  text arrows. Screen-specific mode controls now sit beside the primary group
+  while Settings remains at the right edge. The former display-mode and
+  creation guidance labels are removed.
+  The movable Jutsu menu now stays above Play's period controls, so its drag
+  grip cannot become trapped behind the date/range buttons. The Play stage
+  title is reduced by one visual step, and the complete Emotion Play header is
+  raised to align its visible top edge with the Calendar and List headers.
+
+- Prepared `0.7.1-dev.16` as the Parent/Jutsu feature's final hands-on polish:
+  shortened the preset actions to `充填分割の術` and `小玉分割の術`, and raised
+  all compact Jutsu-menu text one step for older-reader legibility.
+
+- Prepared `0.7.1-dev.15` with a compact translucent `術` menu that can be
+  dragged within the Play world without triggering ball input. World and
+  Parent controls now start folded, their open state and menu position survive
+  the session, and `玉の術を解く` recombines every fragment group near its
+  mass-weighted current position while preserving averaged motion. The
+  separate `術を無効` action still turns off effects without changing
+  fragments.
+
+- Prepared `0.7.1-dev.14` with the new `術` Play menu. Gravity, explicitly
+  armed pseudo-buoyancy, Parent interaction, and Parent split technique are now
+  independently composable with invalid combinations blocked. Beginner small-
+  ball/fill Jutsu presets atomically advance every eligible record by one
+  generation, the effect-disable action preserves existing fragments, and active buoyancy
+  gives the world a synchronized water-color wash behind the balls.
+
+- Accepted `0.7.1-dev.13` as the first minimum Parent-ball physics baseline
+  after PC/mobile hands-on testing. Fixed gravity, class sedimentation,
+  whole-world pseudo-buoyancy, Parent stirring/throwing, quantity/fill splits,
+  32x small fragments, and the separated Control Bar work without a known
+  fatal bug. UI polish, parameter tuning, solver experiments, and further
+  Parent-ball ideas remain follow-up work rather than requirements for this
+  baseline.
+
+- Kept session-only fragmentation intact when movement or visual settings are
+  changed. Closing Settings no longer rebuilds the Play Canvas and Rapier world
+  from the original ledger count.
+
+- Fixed reproducible motion loss between 1/16 and 1/32 fragments. Predictive
+  Soft CCD was applying energy-losing constraints before real contact; it is
+  removed, with regular CCD retained only for generation-four/five fragments
+  to protect their high-speed wall and ball collisions.
+
+- Fixed a dev.13 wall-bounce regression where shallow boundary recovery could
+  erase a strong impact. The fallback now mirrors tamaping's proven rule:
+  reflect only an outward normal component with configured wall restitution,
+  preserve tangential speed, and do not re-reflect a Rapier bounce.
+
+- Corrected the dev.13 Control Bar follow-up: Play uses three differently
+  colored balls in a wider triangle, Create uses a larger precisely centered
+  ball-plus mark, and Calendar/List keep centered 30px icon boxes. Their bar
+  now reaches the viewport bottom and both side edges; Create and Settings keep
+  full touch targets without circular button chrome.
+
+- Prepared the `0.7.1-dev.13` interaction refinement. Fixed-down stirring now
+  supports adjustable density-derived pseudo-buoyancy with zero-friction
+  contacts, while stable small fragments receive wall-clear drag constraints,
+  shallow boundary recovery, generation-four/five regular CCD, legal split placement, and wall-sound
+  chatter protection. The shorter black Control Bar replaces the redundant
+  outer frame, keeps the three main screens grouped, introduces ball-plus and
+  three-ball motion-motif icons, moves guidance into the world, and puts function
+  controls and Settings on the right.
+
+- Prepared the `0.7.1-dev.12` Play-physics refinement. The physical world now
+  ends above a safe-area-aware bottom control region, so fixed-down gravity
+  cannot sediment balls behind the controls or into the iPad gesture area.
+  Added session quantity/fill fragmentation modes, with fill targeting an
+  estimated 80%-height packed layer through area-linear radius transitions.
+  Persisted logarithmic density/damping ratios, Parent diameter, and Parent
+  maximum lifetime are now adjustable; the default Parent profile is density
+  64 and damping multiplier 1/64 with a Parent-only safety cap.
+
+- Prepared the `0.7.1-dev.11` Play-physics candidate. The new `遊び方`
+  popover independently selects fixed screen-down gravity and direct-grab or
+  temporary `親玉` touch. Dark, neutral, bright, and ring appearances now use
+  distinct density/damping profiles for sedimentation tendencies. Parent
+  contacts atomically double all displayed bodies from one record up to 32x,
+  preserve 2D area, remain session-only, and respect the existing 500/1000
+  caps and dense Pixi simplification.
+
+- Stabilized overfilled Play/month displays by pausing physics before route
+  rendering, removing duplicate all-pairs overlap/audio scans, restoring
+  resize-aware Rapier walls, and sourcing impact sound from Rapier collision
+  events. Normal DOM rendering now has a newest-first 120-body safety path.
+- Added density-aware Pixi/WebGL rendering without changing stored data. Dense
+  displays keep full Rapier mutual collision for up to 1000 PC/iPad bodies or
+  500 narrow-phone bodies and use cached category-color pseudo-gloss sprites
+  with deterministic tonal variation instead of flat dots. The current layered
+  Pixi/WebGL is now the default at every density, while the DOM look remains a
+  development comparison and a newest-first 120-body safety fallback.
+- Added displayed/total feedback when a device limit hides older physical
+  balls, plus browser coverage for 180-body route switching and a 1005-record
+  population capped to the newest 1000 bodies.
+- Refined the Pixi migration after phone hands-on review. Populations above the
+  DOM guard now keep the layered faithful appearance until balls reach a 12px
+  diameter, DPR3 rendering smooths edges, and drag feedback no longer enlarges
+  the visible ball beyond its Rapier collider. Faithful echo glow combines a
+  uniform soft base with four stable ID-derived irregular patterns, while
+  larger descent stars sit on the ball surface and orbit with physical spin.
+- Corrected the faithful Pixi composition after USB comparison. Filled balls
+  now sit above the background watermark, archived balls regain the prior
+  smoky layered treatment instead of fading the whole sprite, echo strength
+  matches the former DOM scale, labels and descent stars are larger, ring
+  centers read as open rings, and star orbits remain continuous across wrapped
+  Rapier angles.
+- Prepared the `0.7.1-dev.4` hands-on candidate. Pixi labels now use balanced
+  one-to-three-line text without horizontal compression, and cycling label
+  modes replaces presentation textures without rebuilding Rapier bodies or
+  moving the world. Faithful echo uses a cached fixed layer plus a separately
+  cached, slowly rotating irregular layer with stable per-ball variation.
+  Echo settings control spread at one brightness, highlights cover a broader
+  lens-like area, and ring bands are thinner while retaining their glaze.
+  Development builds map count positions 9/10 to 50/200 while preserving old
+  stored 9/10 values until explicit conversion.
+- Prepared the `0.7.1-dev.5` visual-comparison candidate without changing
+  initial or stored echo settings. The standard echo profile now reaches the
+  former wide distance with a smoother near-ball suppression and much clearer
+  fixed/rotating irregularity. Idle echo motion is twice as fast and blends
+  toward one quarter of Rapier angular velocity while a ball spins. Faithful
+  balls use broad diffuse highlights without explicit rim strokes, ring balls
+  punch their own echo out of the transparent center, star presence no longer
+  shrinks labels, and `?echoComposite=foreground` places every ball surface in
+  front of all echoes for development comparison.
+- Prepared the `0.7.1-dev.6` hands-on candidate. Standard-size balls now use
+  faithful Pixi without URL arguments on PC, iPad, and phone; development DOM
+  comparison uses `?renderer=dom`, and Pixi initialization failure rebuilds a
+  safe newest-120 DOM/Rapier population. The rejected foreground composition
+  path was removed. Echo irregularity was halved from a nominal 70% to 35%
+  while retaining total nominal light and the accepted radial envelope, and
+  physical-spin coupling was reduced from one quarter to one eighth speed.
+  Pixi rendering now stops with the paused Play physics surface so background
+  Calendar/settings work does not keep consuming GPU time.
+- Prepared the `0.7.1-dev.7` visual-tuning candidate. Echo light now keeps
+  visibly irregular patterns in both the fixed and rotating sprites with a
+  nominal 45/30/25 uniform/fixed/rotating balance. The distant high-color ring
+  is softened into a broader diffusion shoulder without changing spread.
+  Descent stars render at 80% opacity with baked pale reflection, warm body
+  color, cool/dark depth, and a softer shadow instead of a flat sharp fill.
+- Prepared the `0.7.1-dev.8` echo-interference candidate. The fixed sprite now
+  bakes a 30% uniform foundation with a 35% irregular pattern, while the
+  independently rotating irregular sprite rises to 35%. The accepted spread,
+  softened diffusion shoulder, 18--30 second idle period, and one-eighth
+  physical-spin coupling remain unchanged.
+- Prepared the `0.7.1-dev.9` echo-balance candidate after hands-on review found
+  dev.8 too locally varied, especially on small faithful balls. The fixed
+  sprite now bakes a 40% uniform foundation with a 30% irregular pattern, and
+  the independently rotating irregular sprite uses the remaining 30%.
+- Recorded the accepted DOM/CSS-to-Pixi migration history, including the
+  duplicate all-pairs diagnosis, renderer/physics boundary, source-size
+  tradeoff, rejected visual approaches, DPR/composition lessons, and the
+  hands-on echo-tuning sequence for future high-density rendering work.
+- Prepared the `0.7.1-dev.10` branch-closing candidate. The public and local
+  authoring slider now shares the `1-8 / 50 / 100` scale while stored 9, 10,
+  and 200-ball values remain unchanged until explicit conversion. DOM renderer
+  comparison and Pixi fault injection are limited by the Vite development
+  environment instead of prerelease version text; production keeps only the
+  automatic newest-120 DOM fallback. Removed the stale hard-coded Pages
+  reference from Settings while retaining the prerelease build badge.
+
 ## 0.7.0 - 2026-07-16
 
 - Unified create/edit category rows with the same non-wrapping pale-blue label

@@ -713,7 +713,7 @@ function clampPercent(value: number, min: number, max: number): number {
 }
 
 function clampCount(count: number): number {
-  return Math.max(1, Math.min(99, Math.round(count)));
+  return Math.max(1, Math.min(200, Math.round(count)));
 }
 
 function createLedgerId(): string {

@@ -156,7 +156,9 @@ function renderEchoCategory(emotionEcho: HappyBall["emotionEcho"]): string {
 
 export function renderBallCountControl(count: number, mode: "create" | "edit"): string {
   const preserveLegacy = mode === "edit" && isLegacyBallCount(count);
-  const initialCount = preserveLegacy ? Math.round(count) : Math.min(BALL_COUNT_SLIDER_MAX, Math.max(1, Math.round(count)));
+  const initialCount = preserveLegacy
+    ? Math.round(count)
+    : sliderPositionToBallCount(ballCountToSliderPosition(count));
   const position = preserveLegacy ? BALL_COUNT_SLIDER_MAX : ballCountToSliderPosition(initialCount);
   const positionPercent = ballCountToTrackPercent(sliderPositionToBallCount(position));
   const inputId = `${mode}-ball-count-range`;
@@ -168,7 +170,7 @@ export function renderBallCountControl(count: number, mode: "create" | "edit"): 
         ${preserveLegacy ? `
           <div class="ball-count-legacy" data-ball-count-legacy>
             <strong>既存値 ${formatBallCount(initialCount)}</strong>
-            <button class="ghost-action" type="button" data-ball-count-convert>10玉以下へ変更</button>
+            <button class="ghost-action" type="button" data-ball-count-convert>最寄りの公開目盛へ変更</button>
           </div>
         ` : ""}
         <div class="ball-count-slider" data-ball-count-slider${preserveLegacy ? " hidden" : ""}>
@@ -204,9 +206,10 @@ export function renderBallCountControl(count: number, mode: "create" | "edit"): 
 function renderBallCountTicks(): string {
   const length = BALL_COUNT_SLIDER_MAX - BALL_COUNT_SLIDER_MIN + 1;
   return Array.from({ length }, (_, index) => {
-    const count = BALL_COUNT_SLIDER_MIN + index;
+    const position = BALL_COUNT_SLIDER_MIN + index;
+    const count = sliderPositionToBallCount(position);
     const percent = `${ballCountToTrackPercent(count).toFixed(6).replace(/\.?0+$/, "")}%`;
-    const classes = count === BALL_COUNT_SLIDER_EMPHASIS ? "ball-count-tick is-emphasized" : "ball-count-tick";
+    const classes = position === BALL_COUNT_SLIDER_EMPHASIS ? "ball-count-tick is-emphasized" : "ball-count-tick";
     return `<span class="${classes}" style="--ball-count-position: ${percent}" data-ball-count-tick="${count}"><i></i><b>${count}</b></span>`;
   }).join("");
 }

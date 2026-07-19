@@ -3,11 +3,13 @@ import { findLatestBallSendMode, formatActivityActionLabel, formatSendModeLabel,
 import { renderOptions } from "./form-renderers.js";
 import { issuerLabels, type HappyBall, type LifecycleStatus, type NameBookEntry, type NameRole } from "./models.js";
 import { DAMPING_SLIDER_RANGE, MOVEMENT_SETTING_RANGES, dampingValueToSlider } from "./motion-tuning.js";
-import type { AppSettings, BackgroundTexture, EmotionEchoStrength, StartupScreen } from "./settings.js";
+import { CLASSIFICATION_RATIO_SLIDER, classificationRatioToSlider } from "./play-physics-classification.js";
+import type { AppSettings, BackgroundTexture, EmotionEchoStrength, PhysicsSettingsProfile, StartupScreen } from "./settings.js";
 
 export interface ToolsPanelRenderContext {
   appSettings: AppSettings;
   appVersion: string;
+  developmentToolsEnabled: boolean;
   categories: CategoryColorPreset[];
   openSettingsGroups: string[];
   activityLogHelpOpen: boolean;
@@ -15,6 +17,7 @@ export interface ToolsPanelRenderContext {
   activityLog: ActivityLogEntry[];
   maxNameBookEntries: number;
   defaultSampleName: string;
+  physicsSettingsProfile: PhysicsSettingsProfile;
 }
 
 const nameRoleLabels: Record<NameRole, string> = {
@@ -39,6 +42,9 @@ export interface LedgerListRenderOptions {
 
 export function renderToolsPanel(context: ToolsPanelRenderContext): string {
   const { appSettings } = context;
+  const physicsSettings = context.physicsSettingsProfile === "jutsu"
+    ? appSettings.jutsuPhysicsSettings
+    : appSettings;
   const officialVersion = context.appVersion.includes("-") ? "未付与" : context.appVersion;
   return `
     <div class="tools-panel">
@@ -47,6 +53,8 @@ export function renderToolsPanel(context: ToolsPanelRenderContext): string {
           <span class="settings-brand-word">えもい玉</span>
         </span>
       </div>
+      <section class="settings-cluster settings-cluster-tailoring" aria-labelledby="settings-cluster-tailoring-title">
+        <p class="settings-cluster-title" id="settings-cluster-tailoring-title">玉の仕立て</p>
       <details class="settings-group name-book-settings"${renderDetailsOpen(context, "name-book-settings")}>
         <summary class="panel-title">
           <h2>名前帳</h2>
@@ -88,9 +96,9 @@ export function renderToolsPanel(context: ToolsPanelRenderContext): string {
             <span>余韻光芒</span>
             <select id="setting-echo-strength">
               ${renderEchoStrengthOption(appSettings.emotionEchoStrength, "off", "無効")}
-              ${renderEchoStrengthOption(appSettings.emotionEchoStrength, "weak", "弱")}
-              ${renderEchoStrengthOption(appSettings.emotionEchoStrength, "medium", "中")}
-              ${renderEchoStrengthOption(appSettings.emotionEchoStrength, "strong", "強")}
+              ${renderEchoStrengthOption(appSettings.emotionEchoStrength, "weak", "狭い")}
+              ${renderEchoStrengthOption(appSettings.emotionEchoStrength, "medium", "標準")}
+              ${renderEchoStrengthOption(appSettings.emotionEchoStrength, "strong", "広い")}
             </select>
           </label>
         </div>
@@ -132,30 +140,63 @@ export function renderToolsPanel(context: ToolsPanelRenderContext): string {
           <p class="settings-copy privacy-setting-note">初期値はOFFです。「送る」で作るQRと共有画像だけに適用され、台帳や地図には影響しません。</p>
         </div>
       </details>
+      </section>
 
-      <details class="settings-group tuning-panel"${renderDetailsOpen(context, "tuning-panel")}>
+      <section class="settings-cluster settings-cluster-behavior" aria-labelledby="settings-cluster-behavior-title">
+        <p class="settings-cluster-title" id="settings-cluster-behavior-title">玉のふるまい</p>
+      <details class="settings-group physics-settings"${renderDetailsOpen(context, "physics-settings")}>
         <summary class="panel-title">
-          <h2>サウンド・ビジュアル</h2>
+          <h2>物理パラメータ</h2>
         </summary>
         <div class="tuning-section">
-          <h3>玉の動き</h3>
-          ${renderRange("setting-wall", "Wall Bounce", appSettings.wallRestitution, MOVEMENT_SETTING_RANGES.wallRestitution)}
-          ${renderRange("setting-contact", "Contact Bounce", appSettings.contactRestitution, MOVEMENT_SETTING_RANGES.contactRestitution)}
-          ${renderDampingRange(appSettings.linearDamping)}
-          ${renderRange("setting-flick", "Flick Power", appSettings.flickPower, MOVEMENT_SETTING_RANGES.flickPower)}
-          ${renderRange("setting-speed", "Max Speed", appSettings.maxSpeed, MOVEMENT_SETTING_RANGES.maxSpeed)}
-          ${renderRange("setting-gravity-strength", "Gravity", appSettings.gravityStrength, MOVEMENT_SETTING_RANGES.gravityStrength)}
           <label class="inline-toggle">
             <input id="setting-gravity" type="checkbox" ${appSettings.gravityEnabled ? "checked" : ""} />
             <span>重力センサー</span>
           </label>
-          <label class="inline-toggle">
-            <input id="setting-gravity-debug" type="checkbox" ${appSettings.gravityDebugEnabled ? "checked" : ""} />
-            <span>センサー値表示</span>
-          </label>
+          ${context.developmentToolsEnabled ? `
+            <label class="inline-toggle">
+              <input id="setting-gravity-debug" type="checkbox" ${appSettings.gravityDebugEnabled ? "checked" : ""} />
+              <span>センサー値表示</span>
+            </label>
+          ` : ""}
+        </div>
+        <div class="physics-profile-control">
+          <span class="physics-profile-label">調整対象</span>
+          <div class="physics-profile-options" role="group" aria-label="物理パラメータの調整対象">
+            <button type="button" data-physics-settings-profile="normal" aria-pressed="${context.physicsSettingsProfile === "normal"}">通常</button>
+            <button type="button" data-physics-settings-profile="jutsu" aria-pressed="${context.physicsSettingsProfile === "jutsu"}">術専用</button>
+          </div>
+          <p class="settings-copy">術が有効な間は、術専用の値へ自動で切り替わります。</p>
         </div>
         <div class="tuning-section">
-          <h3>サウンド</h3>
+          <h3>世界の物理</h3>
+          ${renderRange("setting-wall", "Wall Bounce", physicsSettings.wallRestitution, MOVEMENT_SETTING_RANGES.wallRestitution)}
+          ${renderRange("setting-contact", "Contact Bounce", physicsSettings.contactRestitution, MOVEMENT_SETTING_RANGES.contactRestitution)}
+          ${renderDampingRange(physicsSettings.linearDamping)}
+          ${renderRange("setting-flick", "Flick Power", physicsSettings.flickPower, MOVEMENT_SETTING_RANGES.flickPower)}
+          ${renderRange("setting-speed", "Max Speed", physicsSettings.maxSpeed, MOVEMENT_SETTING_RANGES.maxSpeed)}
+          ${renderRange("setting-gravity-strength", "Gravity", physicsSettings.gravityStrength, MOVEMENT_SETTING_RANGES.gravityStrength)}
+        </div>
+        <div class="tuning-section">
+          <h3>玉・親玉の性質</h3>
+          ${renderClassificationRatioRange("setting-density-ratio", "密度の相対比", physicsSettings.classificationDensityRatio)}
+          ${renderClassificationRatioRange("setting-class-damping-ratio", "ダンピング倍率の相対比", physicsSettings.classificationDampingRatio)}
+          ${renderRange("setting-class-buoyancy", "攪拌時の疑似浮力", physicsSettings.classificationBuoyancyStrength, 0, 1, 0.05)}
+          ${renderRange("setting-parent-diameter", "親玉直径 px", physicsSettings.parentBallDiameterPx, 40, 160, 4)}
+          ${renderRange("setting-parent-lifetime", "親玉残存秒", physicsSettings.parentBallLifetimeSeconds, 1, 30, 1)}
+        </div>
+        ${context.physicsSettingsProfile === "jutsu" ? `
+          <div class="jutsu-physics-reset-zone">
+            <button id="reset-jutsu-physics" class="ghost-action" type="button">術専用設定をデフォルト値に戻す</button>
+          </div>
+        ` : ""}
+      </details>
+
+      <details class="settings-group sound-settings"${renderDetailsOpen(context, "sound-settings")}>
+        <summary class="panel-title">
+          <h2>サウンド</h2>
+        </summary>
+        <div class="tuning-section">
           <label class="inline-toggle">
             <input id="setting-sound" type="checkbox" ${appSettings.soundEnabled ? "checked" : ""} />
             <span>Sound</span>
@@ -165,7 +206,10 @@ export function renderToolsPanel(context: ToolsPanelRenderContext): string {
           ${renderRange("setting-duration", "Sound Len.", appSettings.durationMs, 30, 420, 10)}
         </div>
       </details>
+      </section>
 
+      <section class="settings-cluster settings-cluster-management" aria-labelledby="settings-cluster-management-title">
+        <p class="settings-cluster-title" id="settings-cluster-management-title">管理</p>
       <details class="settings-group backup-settings"${renderDetailsOpen(context, "backup-settings")}>
         <summary class="panel-title">
           <h2>バックアップ・復元</h2>
@@ -231,12 +275,9 @@ export function renderToolsPanel(context: ToolsPanelRenderContext): string {
             <dt>公開版</dt>
             <dd>${escapeHtml(officialVersion)}</dd>
           </div>
-          <div>
-            <dt>Pages参考</dt>
-            <dd>0.8.0</dd>
-          </div>
         </dl>
       </details>
+      </section>
     </div>
   `;
 }
@@ -493,6 +534,23 @@ function renderDampingRange(value: number): string {
     <label class="range-control">
       <span>Damping <strong id="setting-damping-value">${formatSettingValue(value)}</strong></span>
       <input id="setting-damping" type="range" min="${DAMPING_SLIDER_RANGE.min}" max="${DAMPING_SLIDER_RANGE.max}" step="${DAMPING_SLIDER_RANGE.step}" value="${dampingValueToSlider(value)}" />
+    </label>
+  `;
+}
+
+function renderClassificationRatioRange(id: string, label: string, value: number): string {
+  const listId = `${id}-ticks`;
+  return `
+    <label class="range-control classification-ratio-control">
+      <span>${escapeHtml(label)} <strong id="${id}-value">${formatSettingValue(value)}</strong></span>
+      <input id="${id}" type="range" min="${CLASSIFICATION_RATIO_SLIDER.min}" max="${CLASSIFICATION_RATIO_SLIDER.max}" step="${CLASSIFICATION_RATIO_SLIDER.step}" value="${classificationRatioToSlider(value)}" list="${listId}" />
+      <datalist id="${listId}">
+        <option value="-2" label="1/4"></option>
+        <option value="-1" label="1/2"></option>
+        <option value="0" label="1"></option>
+        <option value="1" label="2"></option>
+        <option value="2" label="4"></option>
+      </datalist>
     </label>
   `;
 }
