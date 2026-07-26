@@ -1,4 +1,5 @@
 import type { HappyBall } from "./models";
+import { categoryColorPresets } from "./categories.js";
 import {
   renderBallDialog,
   renderReceiptDialog,
@@ -11,6 +12,7 @@ const context: DialogRenderContext = {
   currentUrl: "https://example.test/happy-ball/",
   showMemoField: true,
   emotionEchoStrength: "medium",
+  categories: categoryColorPresets,
 };
 
 const sampleBall: HappyBall = {
@@ -60,6 +62,21 @@ const sampleBall: HappyBall = {
   updatedAt: "2026-07-05T00:18:00.000Z",
   receiptCreatedAt: "2026-07-05T00:20:00.000Z",
 };
+
+const currentPaletteBall: HappyBall = {
+  ...sampleBall,
+  category: "よろこび",
+  visual: { ...sampleBall.visual, hue: 180, saturation: 10, lightness: 10, kind: "ring" },
+  emotionEcho: sampleBall.emotionEcho ? {
+    ...sampleBall.emotionEcho,
+    category: "先々・期待",
+    visual: { ...sampleBall.emotionEcho.visual, hue: 280, saturation: 10, lightness: 10, kind: "filled" },
+  } : undefined,
+};
+const currentPaletteHtml = renderBallDialog(currentPaletteBall, context);
+assertIncludes(currentPaletteHtml, "--ball-hue: 0; --ball-saturation: 70%; --ball-lightness: 57%;", "detail should render the current base category preset");
+assertIncludes(currentPaletteHtml, "--echo-hue: 41; --echo-saturation: 87%; --echo-lightness: 58%;", "detail should render the current echo category preset");
+assertIncludes(currentPaletteHtml, "dialog-ball lifecycle-active is-filled-ball", "detail should use the current preset visual kind");
 
 const detailHtml = renderBallDialog(sampleBall, context);
 assertIncludes(detailHtml, "app-modal-backdrop", "ball detail should use the shared fixed modal backdrop");

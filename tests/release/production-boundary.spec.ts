@@ -30,3 +30,9 @@ test("formal build exposes version 0.8.0 without development diagnostics", async
   await page.locator("[data-dialog-receipt-ball-id]").first().click();
   await expect(page.locator(".handoff-debug-controls")).toHaveCount(0);
 });
+
+test("formal build does not expose the ball color laboratory", async ({ page }) => {
+  await page.goto("./ball-color-lab.html");
+  await expect(page.locator("[data-ball-color-lab]")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "玉色ラボ" })).toHaveCount(0);
+});

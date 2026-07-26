@@ -32,7 +32,7 @@ test("Settings uses three tinted two-pixel clusters instead of individual cards"
   await expect(clusters.locator(":scope > .settings-cluster-title")).toHaveText(["玉の仕立て", "玉のふるまい", "管理"]);
   await expect(clusters.nth(0).locator(":scope > details.settings-group")).toHaveCount(4);
   await expect(clusters.nth(1).locator(":scope > details.settings-group")).toHaveCount(2);
-  await expect(clusters.nth(2).locator(":scope > details.settings-group")).toHaveCount(4);
+  await expect(clusters.nth(2).locator(":scope > details.settings-group")).toHaveCount(5);
 
   const clusterStyles = await clusters.evaluateAll((nodes) => nodes.map((node) => {
     const style = getComputedStyle(node);
@@ -98,7 +98,7 @@ test("the animated Settings brand ball keeps top clearance at its highest point"
   expect(clearance).toBeGreaterThanOrEqual(1);
 });
 
-test("settings ranges ignore track presses while keeping thumb and keyboard input", async ({ page }) => {
+test("settings ranges accept deliberate track taps while keeping thumb and keyboard input", async ({ page }) => {
   await openSettings(page);
   await page.locator("details.physics-settings summary").click();
   const range = page.locator<HTMLInputElement>("#setting-wall");
@@ -109,18 +109,24 @@ test("settings ranges ignore track presses while keeping thumb and keyboard inpu
   const geometry = await readRangeGeometry(range);
   const trackX = geometry.ratio < 0.5 ? geometry.right - 2 : geometry.left + 2;
   await page.mouse.click(trackX, geometry.centerY);
-  await expect(range).toHaveValue(initialValue);
+  await expect.poll(() => range.inputValue()).not.toBe(initialValue);
 
   if (test.info().project.name === "webkit") {
-    await page.touchscreen.tap(trackX, geometry.centerY);
-    await expect(range).toHaveValue(initialValue);
+    const valueAfterMouseTap = await range.inputValue();
+    const touchGeometry = await readRangeGeometry(range);
+    const touchX = touchGeometry.ratio < 0.5 ? touchGeometry.right - 2 : touchGeometry.left + 2;
+    await page.touchscreen.tap(touchX, touchGeometry.centerY);
+    await expect.poll(() => range.inputValue()).not.toBe(valueAfterMouseTap);
   }
 
-  await page.mouse.move(geometry.thumbX, geometry.centerY);
+  const dragGeometry = await readRangeGeometry(range);
+  const valueBeforeDrag = await range.inputValue();
+  const dragDelta = dragGeometry.ratio < 0.5 ? 50 : -50;
+  await page.mouse.move(dragGeometry.thumbX, dragGeometry.centerY);
   await page.mouse.down();
-  await page.mouse.move(geometry.thumbX - 50, geometry.centerY, { steps: 5 });
+  await page.mouse.move(dragGeometry.thumbX + dragDelta, dragGeometry.centerY, { steps: 5 });
   await page.mouse.up();
-  await expect.poll(() => range.inputValue()).not.toBe(initialValue);
+  await expect.poll(() => range.inputValue()).not.toBe(valueBeforeDrag);
 
   const draggedValue = await range.inputValue();
   await range.focus();
@@ -128,14 +134,36 @@ test("settings ranges ignore track presses while keeping thumb and keyboard inpu
   await expect.poll(() => range.inputValue()).not.toBe(draggedValue);
 });
 
-test("a track touch keeps its value through delayed iPad input change and click events", async ({ page }) => {
+test("iPad track taps ignore scroll motion and resist delayed native events", async ({ page }) => {
   await openSettings(page);
   await page.locator("details.physics-settings summary").click();
   const range = page.locator<HTMLInputElement>("#setting-wall");
   const initialValue = await range.inputValue();
-  const initialLabel = await page.locator("#setting-wall-value").textContent();
   const geometry = await readRangeGeometry(range);
   const trackX = geometry.ratio < 0.5 ? geometry.right - 2 : geometry.left + 2;
+
+  await range.dispatchEvent("pointerdown", {
+    pointerType: "touch",
+    pointerId: 6,
+    isPrimary: true,
+    clientX: trackX,
+    clientY: geometry.centerY,
+  });
+  await range.dispatchEvent("pointermove", {
+    pointerType: "touch",
+    pointerId: 6,
+    isPrimary: true,
+    clientX: trackX + 2,
+    clientY: geometry.centerY + 40,
+  });
+  await range.dispatchEvent("pointerup", {
+    pointerType: "touch",
+    pointerId: 6,
+    isPrimary: true,
+    clientX: trackX + 2,
+    clientY: geometry.centerY + 40,
+  });
+  await expect(range).toHaveValue(initialValue);
 
   await range.dispatchEvent("pointerdown", {
     pointerType: "touch",
@@ -152,9 +180,12 @@ test("a track touch keeps its value through delayed iPad input change and click 
     clientY: geometry.centerY,
   });
   await page.waitForTimeout(80);
+  const acceptedValue = await range.inputValue();
+  expect(acceptedValue).not.toBe(initialValue);
+  const acceptedLabel = await page.locator("#setting-wall-value").textContent();
 
-  const lateEventResult = await range.evaluate((input: HTMLInputElement) => {
-    const attemptedValue = input.min;
+  const lateEventResult = await range.evaluate((input: HTMLInputElement, accepted) => {
+    const attemptedValue = accepted === input.min ? input.max : input.min;
     input.value = attemptedValue;
     input.dispatchEvent(new Event("input", { bubbles: true }));
     const afterInput = input.value;
@@ -164,15 +195,15 @@ test("a track touch keeps its value through delayed iPad input change and click 
     input.value = attemptedValue;
     const clickAllowed = input.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     return { afterInput, afterChange, afterClick: input.value, clickAllowed };
-  });
+  }, acceptedValue);
 
   expect(lateEventResult).toEqual({
-    afterInput: initialValue,
-    afterChange: initialValue,
-    afterClick: initialValue,
+    afterInput: acceptedValue,
+    afterChange: acceptedValue,
+    afterClick: acceptedValue,
     clickAllowed: false,
   });
-  await expect(page.locator("#setting-wall-value")).toHaveText(initialLabel ?? "");
+  await expect(page.locator("#setting-wall-value")).toHaveText(acceptedLabel ?? "");
 });
 
 test("settings tuning rows use the shared compact scale", async ({ page }) => {
@@ -198,7 +229,7 @@ test("settings tuning rows use the shared compact scale", async ({ page }) => {
   expect(metrics.rangeWidth / (metrics.sectionWidth - 16)).toBeCloseTo(0.92, 2);
 });
 
-test("every native settings range receives the thumb-only interaction policy", async ({ page }) => {
+test("every native settings range receives the intentional-tap interaction policy", async ({ page }) => {
   await openSettings(page);
   const ranges = page.locator(".floating-panel-settings .range-control input[type='range']");
   await expect(ranges).toHaveCount(15);

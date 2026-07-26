@@ -3,7 +3,7 @@ import type { NameBookEntry } from "./models";
 import { dampingSliderToValue } from "./motion-tuning";
 import { classificationSliderToRatio } from "./play-physics-classification";
 import { readBackgroundTexture, readEchoStrength, readStartupScreen, type AppSettings, type PhysicsParameterSettings, type PhysicsSettingsProfile } from "./settings";
-import { bindThumbOnlyRangeInteraction } from "./settings-range-control";
+import { bindIntentionalRangeInteraction } from "./settings-range-control";
 import { formatSettingValue } from "./settings-renderers";
 
 interface SettingsPanelEventHandlers {
@@ -64,7 +64,9 @@ function bindTuningEvents(
 ): void {
   const sound = root.querySelector<HTMLInputElement>("#setting-sound");
   sound?.addEventListener("change", () => {
-    handlers.unlockAudio();
+    if (sound.checked) {
+      handlers.unlockAudio();
+    }
     handlers.updateAppSettings({ soundEnabled: sound.checked });
   });
 
@@ -322,7 +324,7 @@ function bindNumberSetting<T extends string>(
 ): void {
   const input = root.querySelector<HTMLInputElement>(`#${id}`);
   if (input) {
-    bindThumbOnlyRangeInteraction(input);
+    bindIntentionalRangeInteraction(input);
   }
   input?.addEventListener("input", () => {
     const value = readValue ? readValue(input) : Number(input.value);

@@ -4,9 +4,19 @@ import type { HappyBall, HappyBallLedger, NameBookEntry } from "./models";
 import { PACKET_TYPE, normalizePacketBall, reviewPacketImport } from "./packet.js";
 import { looksLikeAppSettings, normalizeAppSettings, type AppSettings } from "./settings.js";
 import { MAX_NAME_BOOK_ENTRIES } from "./storage.js";
+import { reviewWorkspaceShare, type WorkspaceShareReview } from "./workspace-transfer.js";
+import { normalizeWorkspaceStore, type HappyBallWorkspaceStore } from "./workspace.js";
 
 export type ExportSection = "ledger" | "appSettings" | "categories" | "activityLog";
 export type JsonImportSection = ExportSection;
+export const DEVICE_BACKUP_TYPE = "happy-ball-device-backup";
+
+export interface DeviceBackupPayload {
+  v: 1;
+  type: typeof DEVICE_BACKUP_TYPE;
+  exportedAt: string;
+  workspaceStore: HappyBallWorkspaceStore;
+}
 
 export interface JsonImportReview {
   fileName: string;
@@ -20,6 +30,10 @@ export interface JsonImportReview {
   };
   appSettings?: AppSettings;
   categories?: CategoryColorPreset[];
+  workspaceShare?: WorkspaceShareReview;
+  workspaceStore?: HappyBallWorkspaceStore;
+  deviceBackup?: HappyBallWorkspaceStore;
+  ignoredActivityLog?: boolean;
   error?: string;
 }
 
@@ -28,6 +42,7 @@ interface ExportPayloadSource {
   appSettings: AppSettings;
   categories: CategoryColorPreset[];
   activityLog: ActivityLogEntry[];
+  workspaceStore?: HappyBallWorkspaceStore;
 }
 
 const exportSectionSlugs: Record<ExportSection, string> = {
@@ -55,6 +70,9 @@ export function createExportPayload(
 
   if (sections.includes("ledger")) {
     payload.ledger = source.ledger;
+    if (source.workspaceStore) {
+      payload.workspaceStore = source.workspaceStore;
+    }
   }
   if (sections.includes("appSettings")) {
     payload.appSettings = source.appSettings;
@@ -78,6 +96,26 @@ export function createExportFileName(sections: ExportSection[], exportedAt = new
   return `emoi-dama-export-${selected}-${stamp}.json`;
 }
 
+export function createDeviceBackupPayload(
+  workspaceStore: HappyBallWorkspaceStore,
+  exportedAt = new Date().toISOString(),
+): DeviceBackupPayload {
+  return {
+    v: 1,
+    type: DEVICE_BACKUP_TYPE,
+    exportedAt,
+    workspaceStore,
+  };
+}
+
+export function createDeviceBackupFileName(exportedAt = new Date().toISOString()): string {
+  const stamp = exportedAt
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}Z$/, "")
+    .replace("T", "-");
+  return `emoi-dama-device-backup-${stamp}.json`;
+}
+
 export function reviewJsonImport(
   value: unknown,
   fileName: string,
@@ -85,6 +123,18 @@ export function reviewJsonImport(
 ): JsonImportReview {
   if (!isPlainObject(value)) {
     return { fileName, sections: [], error: "対応していないJSON形式です。" };
+  }
+
+  if (value.v === 1 && value.type === DEVICE_BACKUP_TYPE) {
+    const deviceBackup = normalizeWorkspaceStore(value.workspaceStore);
+    return deviceBackup
+      ? { fileName, sections: [], deviceBackup }
+      : { fileName, sections: [], error: "端末バックアップの利用環境データを読み込めませんでした。" };
+  }
+
+  const workspaceShare = reviewWorkspaceShare(value, existingLedger.balls);
+  if (workspaceShare) {
+    return { fileName, sections: [], workspaceShare };
   }
 
   const exportSections = readExportSections(value.sections);
@@ -95,7 +145,12 @@ export function reviewJsonImport(
   const review: JsonImportReview = {
     fileName,
     sections: [],
+    ignoredActivityLog: isExportPackage && exportSections.includes("activityLog"),
   };
+  const workspaceStore = isExportPackage ? normalizeWorkspaceStore(value.workspaceStore) : null;
+  if (workspaceStore && exportSections.includes("ledger")) {
+    review.workspaceStore = workspaceStore;
+  }
 
   const ledgerReview = reviewLedgerImport(ledgerSource, existingLedger);
   if (ledgerReview && (isExportPackage ? exportSections.includes("ledger") : true)) {
@@ -115,6 +170,9 @@ export function reviewJsonImport(
   }
 
   if (!review.ledger && !review.appSettings && !review.categories) {
+    if (review.ignoredActivityLog) {
+      return { fileName, sections: [], error: "操作ログは復元対象外です。ほかに読み込めるデータがありませんでした。" };
+    }
     return { fileName, sections: [], error: "読み込める台帳データ、アプリ設定、カテゴリ設定が見つかりませんでした。" };
   }
 

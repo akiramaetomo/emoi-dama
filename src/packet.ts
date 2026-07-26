@@ -276,12 +276,21 @@ export function normalizePacketBall(value: unknown): HappyBall | null {
     normalizedBall.receiptCreatedAt = receiptCreatedAt;
   }
 
+  if (isObject(value.provenance)) {
+    const sourceWorkspaceId = readRequiredString(value.provenance.sourceWorkspaceId);
+    const importedAt = readRequiredString(value.provenance.importedAt);
+    if (sourceWorkspaceId && importedAt && value.provenance.preserveVisualSnapshot === true) {
+      normalizedBall.provenance = { sourceWorkspaceId, importedAt, preserveVisualSnapshot: true };
+    }
+  }
+
   return normalizedBall;
 }
 
-function toComparableBall(ball: HappyBall): Omit<HappyBall, "receiptCreatedAt"> {
+function toComparableBall(ball: HappyBall): Omit<HappyBall, "receiptCreatedAt" | "provenance"> {
   const comparable: HappyBall = sanitizeBallForPacket(ball, true);
   delete comparable.receiptCreatedAt;
+  delete comparable.provenance;
   return comparable;
 }
 

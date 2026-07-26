@@ -1,4 +1,10 @@
 import { toneLabels, type CategoryColorPreset, type CategoryTone } from "./categories.js";
+import {
+  renderDisplayVisualKindClass,
+  renderDisplayVisualStyle,
+  resolveBallDisplayVisual,
+  resolveEchoDisplayVisual,
+} from "./ball-visual-display.js";
 import { createGoogleMapsUrl, hasDescentPosition } from "./descent.js";
 import {
   BALL_COUNT_SLIDER_MAX,
@@ -32,16 +38,9 @@ const nameRoleLabels: Record<NameRole, string> = {
   proxy: "代理",
 };
 
-export function renderCreateForm(draft: BallDraft, context: FormRenderContext): string {
-  return `
-    <form id="ball-form" class="create-form" autocomplete="off">
-      ${renderBallAuthoringFields(draft, context, "create")}
-
-      <div class="button-row">
-        <button class="primary-action" type="submit">玉を置く</button>
-      </div>
-    </form>
-  `;
+export function renderCreateForm(draft: BallDraft, context: FormRenderContext, pendingBall?: Pick<HappyBall, "id" | "descents">): string {
+  const descentBall = pendingBall ?? { id: "pending-ball", descents: [] };
+  return renderBallAuthoringForm(draft, descentBall, context, "create");
 }
 
 export function renderBallEditDialog(ball: HappyBall, context: FormRenderContext): string {
@@ -49,32 +48,40 @@ export function renderBallEditDialog(ball: HappyBall, context: FormRenderContext
     <div class="ball-dialog-backdrop ball-edit-dialog-backdrop app-modal-backdrop authoring-surface-backdrop" data-dialog-backdrop>
       <section class="ball-dialog ball-edit-dialog surface-shell authoring-surface" role="dialog" aria-modal="true" aria-labelledby="ball-edit-title">
         <div class="surface-fixed-header edit-surface-header authoring-surface-header">
-          <h2 id="ball-edit-title">玉を編集</h2>
+          <h2 id="ball-edit-title">玉の編集</h2>
           <div class="edit-header-actions">
             <button class="panel-header-action primary-action edit-header-save" type="submit" form="ball-edit-form">保存</button>
             <button class="dialog-close" type="button" data-dialog-close aria-label="閉じる">&times;</button>
           </div>
         </div>
         <div class="surface-scroll-body app-modal-scroll" data-scroll-owner>
-          <form id="ball-edit-form" class="edit-form" autocomplete="off" data-editing-ball-id="${escapeAttribute(ball.id)}">
-          ${renderBallAuthoringFields(ball, context, "edit")}
-
-          ${renderEditableDescentHistory(ball)}
-
-          <div class="edit-lifecycle-actions" aria-label="玉のしまい方">
-            ${renderArchiveToggleButton(ball)}
-            <button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-status="offered">供養</button>
-            <button class="delete-ball" type="button" data-delete-ball-id="${escapeAttribute(ball.id)}">お焚上</button>
-          </div>
-
-          <div class="dialog-actions">
-            <button class="primary-action" type="submit">保存</button>
-            <button class="ghost-action" type="button" data-dialog-close>キャンセル</button>
-          </div>
-          </form>
+          ${renderBallAuthoringForm(ball, ball, context, "edit")}
         </div>
       </section>
     </div>
+  `;
+}
+
+function renderBallAuthoringForm(
+  value: BallDraft | HappyBall,
+  descentBall: Pick<HappyBall, "id" | "descents">,
+  context: FormRenderContext,
+  mode: "create" | "edit",
+): string {
+  const formId = mode === "create" ? "ball-form" : "ball-edit-form";
+  const editingAttribute = mode === "edit" ? ` data-editing-ball-id="${escapeAttribute(descentBall.id)}"` : "";
+  const cancelAttribute = mode === "create" ? "data-close-panel" : "data-dialog-close";
+  return `
+    <form id="${formId}" class="${mode}-form ball-authoring-form" autocomplete="off" data-ball-authoring-form data-authoring-mode="${mode}" data-authoring-ball-id="${escapeAttribute(descentBall.id)}"${editingAttribute}>
+      ${renderBallAuthoringFields(value, context, mode)}
+
+      ${renderEditableDescentHistory(descentBall)}
+
+      <div class="dialog-actions authoring-bottom-actions">
+        <button class="primary-action" type="submit">保存</button>
+        <button class="ghost-action" type="button" ${cancelAttribute}>キャンセル</button>
+      </div>
+    </form>
   `;
 }
 
@@ -104,11 +111,11 @@ function renderBallAuthoringFields(
       <details class="authoring-category-fold ${mode}-category-fold" data-authoring-category-fold>
         <summary>
           <span>カテゴリ</span>
-          ${renderCurrentCategoryBadge(value.category, context)}
+          ${renderCurrentCategoryBadge(value, context)}
         </summary>
         ${renderCategoryPalette(value.category, context)}
       </details>
-      ${mode === "edit" ? renderEchoCategory((value as HappyBall).emotionEcho) : ""}
+      ${mode === "edit" ? renderEchoCategory((value as HappyBall).emotionEcho, context) : ""}
 
       <div class="authoring-datetime-group ${mode}-datetime-group" data-authoring-datetime-group>
         <label class="${inlineClass}">
@@ -141,13 +148,13 @@ function renderBallAuthoringFields(
   `;
 }
 
-function renderEchoCategory(emotionEcho: HappyBall["emotionEcho"]): string {
-  const visual = emotionEcho?.visual;
+function renderEchoCategory(emotionEcho: HappyBall["emotionEcho"], context: FormRenderContext): string {
+  const visual = emotionEcho ? resolveEchoDisplayVisual(emotionEcho, context.categories) : null;
   return `
     <div class="authoring-echo-category" data-authoring-echo-category>
       <span>余韻</span>
       <span class="authoring-echo-category-value">
-        ${visual ? `<span class="category-swatch ${renderVisualKindClass(visual)}" style="${renderVisualStyle(visual)}" aria-hidden="true"></span>` : ""}
+        ${visual ? `<span class="category-swatch ${renderDisplayVisualKindClass(visual)}" style="${renderDisplayVisualStyle(visual)}" aria-hidden="true"></span>` : ""}
         <strong>${escapeHtml(emotionEcho?.category ?? "なし")}</strong>
       </span>
     </div>
@@ -247,8 +254,21 @@ function renderSubjectField(subject: string, context: FormRenderContext, mode: "
   `;
 }
 
-export function renderEditSaveModeConfirm(reason: EditSaveConfirmReason): string {
+export function renderEditSaveModeConfirm(reason: EditSaveConfirmReason, descentOnly = false): string {
   const isClose = reason === "close";
+  if (descentOnly) {
+    return `
+      <section class="edit-unsaved-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-unsaved-title">
+        <h3 id="edit-unsaved-title">降臨を保存しますか？</h3>
+        <p>保存していない降臨の変更があります。</p>
+        <div class="edit-unsaved-actions">
+          <button class="primary-action" type="button" data-edit-save-correction>保存</button>
+          <button class="ghost-action" type="button" data-edit-continue>編集を続ける</button>
+          ${isClose ? `<button class="ghost-action danger-action" type="button" data-edit-discard-close>保存せず閉じる</button>` : ""}
+        </div>
+      </section>
+    `;
+  }
   return `
     <section class="edit-unsaved-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-unsaved-title">
       <h3 id="edit-unsaved-title">${isClose ? "保存しますか？" : "保存方法を選んでください"}</h3>
@@ -283,14 +303,7 @@ function renderTimeField(time: string | undefined, className = ""): string {
   `;
 }
 
-function renderArchiveToggleButton(ball: HappyBall): string {
-  if (ball.lifecycleStatus === "archived") {
-    return `<button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-status="active" aria-label="通常表示に戻す">戻す</button>`;
-  }
-  return `<button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-status="archived" aria-label="玉をしまう">しまう</button>`;
-}
-
-export function renderEditableDescentHistory(ball: HappyBall): string {
+export function renderEditableDescentHistory(ball: Pick<HappyBall, "id" | "descents">): string {
   const descents = ball.descents ?? [];
   const primary = descents[descents.length - 1];
   const folded = descents.slice(0, -1).reverse();
@@ -396,14 +409,15 @@ function renderNamePresetSelect(selectedName: string, context: FormRenderContext
   `;
 }
 
-function renderCurrentCategoryBadge(category: string, context: FormRenderContext): string {
-  const preset = context.categories.find((item) => item.name === category) ?? context.categories[0];
-  const visualStyle = preset ? renderVisualStyle(preset) : "";
+function renderCurrentCategoryBadge(value: BallDraft | HappyBall, context: FormRenderContext): string {
+  const preset = context.categories.find((item) => item.name === value.category);
+  const visual = preset ?? ("visual" in value ? resolveBallDisplayVisual(value, context.categories) : context.categories[0]);
+  const visualStyle = visual ? renderDisplayVisualStyle(visual) : "";
 
   return `
     <span class="edit-category-current">
-      <span class="category-swatch ${preset ? renderVisualKindClass(preset) : ""}" style="${visualStyle}" aria-hidden="true"></span>
-      <strong>${escapeHtml(category || preset?.name || "日常")}</strong>
+      <span class="category-swatch ${visual ? renderDisplayVisualKindClass(visual) : ""}" style="${visualStyle}" aria-hidden="true"></span>
+      <strong>${escapeHtml(value.category || preset?.name || "日常")}</strong>
     </span>
   `;
 }
@@ -428,8 +442,8 @@ function renderCategoryPalette(selectedCategory: string, context: FormRenderCont
                 return `
                   <label class="category-option">
                     <input type="radio" name="category" value="${escapeAttribute(preset.name)}"${checked} />
-                    <span class="category-swatch ${renderVisualKindClass(preset)}" style="${renderVisualStyle(preset)}" aria-hidden="true"></span>
-                    <span>${escapeHtml(preset.name)}</span>
+                    <span class="category-swatch ${renderDisplayVisualKindClass(preset)}" style="${renderDisplayVisualStyle(preset)}" aria-hidden="true"></span>
+                    <span class="category-option-label">${escapeHtml(preset.name)}</span>
                   </label>
                 `;
               }).join("")}
@@ -438,14 +452,6 @@ function renderCategoryPalette(selectedCategory: string, context: FormRenderCont
       `).join("")}
     </fieldset>
   `;
-}
-
-function renderVisualKindClass(visual: { visualKind?: string; kind?: string }): string {
-  return visual.visualKind === "ring" || visual.kind === "ring" ? "is-ring-ball" : "is-filled-ball";
-}
-
-function renderVisualStyle(visual: { hue: number; saturation: number; lightness: number }): string {
-  return `--ball-hue: ${visual.hue}; --ball-saturation: ${visual.saturation}%; --ball-lightness: ${visual.lightness}%;`;
 }
 
 function escapeHtml(value: string): string {

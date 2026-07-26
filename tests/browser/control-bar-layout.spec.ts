@@ -19,8 +19,8 @@ test("primary controls are enlarged and the create/settings utilities stay insid
 
   const pairs: Array<[Locator, Locator, number]> = [
     [page.locator("[data-cycle-ball-label-mode]"), page.locator("[data-cycle-ball-label-mode] .play-triple-ball-icon"), 30],
-    [page.locator("[data-open-panel='calendar']"), page.locator("[data-open-panel='calendar'] .calendar-screen-icon"), 30],
-    [page.locator("[data-open-calendar-day-list]"), page.locator("[data-open-calendar-day-list] .day-list-screen-icon"), 30],
+    [page.locator("[data-open-panel='calendar']"), page.locator("[data-open-panel='calendar'] .calendar-screen-icon"), 34],
+    [page.locator("[data-open-calendar-day-list]"), page.locator("[data-open-calendar-day-list] .day-list-screen-icon"), 34],
   ];
   for (const [button, icon, size] of pairs) {
     await expectCenteredIcon(button, icon, size);
@@ -122,6 +122,50 @@ test("primary controls are enlarged and the create/settings utilities stay insid
   expect(calendarPrimaryBox).not.toBeNull();
   expect(markerModeBox).not.toBeNull();
   expect(markerModeBox!.x - (calendarPrimaryBox!.x + calendarPrimaryBox!.width)).toBeLessThanOrEqual(8);
+});
+
+test("PC and iPad keep the primary group centered while side controls move inward", async ({ page }) => {
+  for (const viewport of [
+    { width: 768, height: 1024 },
+    { width: 1024, height: 768 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await page.locator("[data-calendar-main]").click();
+
+    const bar = page.locator(".app-control-bar");
+    const primary = bar.locator(".primary-screen-control-group");
+    const create = bar.locator("[data-open-panel='create']");
+    const playMode = bar.locator("[data-toggle-play-modes]");
+    const settings = bar.locator("[data-open-panel='settings']");
+    const [barBox, primaryBox, createBox, playModeBox, settingsBox] = await Promise.all([
+      bar.boundingBox(),
+      primary.boundingBox(),
+      create.boundingBox(),
+      playMode.boundingBox(),
+      settings.boundingBox(),
+    ]);
+    expect(barBox).not.toBeNull();
+    expect(primaryBox).not.toBeNull();
+    expect(createBox).not.toBeNull();
+    expect(playModeBox).not.toBeNull();
+    expect(settingsBox).not.toBeNull();
+    expect(Math.abs((primaryBox!.x + primaryBox!.width / 2) - (barBox!.x + barBox!.width / 2))).toBeLessThanOrEqual(1);
+    expect(primaryBox!.x - (createBox!.x + createBox!.width)).toBeCloseTo(27, 0);
+    expect(playModeBox!.x - (primaryBox!.x + primaryBox!.width)).toBeCloseTo(27, 0);
+    expect(settingsBox!.x).toBeGreaterThan(playModeBox!.x);
+    expect(settingsBox!.x + settingsBox!.width).toBeLessThan(barBox!.x + barBox!.width - 20);
+
+    const calendarIcon = bar.locator(".calendar-screen-icon");
+    const listIcon = bar.locator(".day-list-screen-icon");
+    await expectCenteredIcon(bar.locator("[data-open-panel='calendar']"), calendarIcon, 34);
+    await expectCenteredIcon(bar.locator("[data-open-calendar-day-list]"), listIcon, 34);
+    for (const iconButton of [bar.locator("[data-open-panel='calendar']"), bar.locator("[data-open-calendar-day-list]")]) {
+      const color = await iconButton.evaluate((element) => getComputedStyle(element).color);
+      expect(color).toBe("rgba(221, 248, 239, 0.94)");
+    }
+  }
 });
 
 test("period label cycles display mode and symmetric SVG chevrons shift the period", async ({ page }) => {

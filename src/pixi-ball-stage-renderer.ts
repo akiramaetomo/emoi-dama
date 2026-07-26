@@ -40,6 +40,7 @@ interface PixiBallVisual {
   echoIdleAngularVelocity: number;
   lastEchoUpdateTimeSeconds: number | null;
   overlay: Sprite | null;
+  labelVisible: boolean;
   starRing: Sprite | null;
   baseAlpha: number;
   lastPhysicsAngle: number | null;
@@ -121,7 +122,9 @@ export class PixiBallStageRenderer implements BallStageRenderer {
         `overlay:${source.visualKind}:${source.lifecycleStatus}:${source.descentBadgeCount > 0}:${labelKey}:${roundRadius(this.radius)}`,
         () => createFaithfulOverlayCanvas(source, this.radius, showLabel, this.renderResolution),
       );
+      visual.labelVisible = showLabel;
     }
+    this.syncVisualDiagnostics();
     return true;
   }
 
@@ -204,7 +207,8 @@ export class PixiBallStageRenderer implements BallStageRenderer {
   }
 
   updateSettings(settings: AppSettings): void {
-    const visualChanged = settings.emotionEchoStrength !== this.settings.emotionEchoStrength;
+    const visualChanged = settings.emotionEchoStrength !== this.settings.emotionEchoStrength
+      || settings.ballLabelMode !== this.settings.ballLabelMode;
     this.settings = settings;
     if (visualChanged && this.ready) {
       this.rebuildVisuals();
@@ -281,6 +285,7 @@ export class PixiBallStageRenderer implements BallStageRenderer {
       this.visuals.set(source.id, visual);
       this.app.stage.addChild(visual.root);
     }
+    this.syncVisualDiagnostics();
   }
 
   private createVisual(source: VisualBallSource): PixiBallVisual {
@@ -293,6 +298,14 @@ export class PixiBallStageRenderer implements BallStageRenderer {
     this.field.dataset.ballDensity = this.densityMode;
     this.field.dataset.ballAppearance = this.appearanceProfile;
     this.field.dataset.ballDiameter = (this.radius * 2).toFixed(2);
+  }
+
+  private syncVisualDiagnostics(): void {
+    if (!this.ready) {
+      return;
+    }
+    this.app.canvas.dataset.ballLabelMode = this.settings.ballLabelMode;
+    this.app.canvas.dataset.visibleBallLabelCount = `${Array.from(this.visuals.values()).filter((visual) => visual.labelVisible).length}`;
   }
 
   private createDenseVisual(source: VisualBallSource): PixiBallVisual {
@@ -317,6 +330,7 @@ export class PixiBallStageRenderer implements BallStageRenderer {
       echoIdleAngularVelocity: 0,
       lastEchoUpdateTimeSeconds: null,
       overlay: null,
+      labelVisible: false,
       starRing: null,
       baseAlpha,
       lastPhysicsAngle: null,
@@ -419,6 +433,7 @@ export class PixiBallStageRenderer implements BallStageRenderer {
       echoIdleAngularVelocity,
       lastEchoUpdateTimeSeconds: null,
       overlay,
+      labelVisible: showLabel,
       starRing,
       baseAlpha,
       lastPhysicsAngle: null,

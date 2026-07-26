@@ -1,5 +1,7 @@
 import { categoryColorPresets } from "./categories.js";
 import {
+  createDeviceBackupFileName,
+  createDeviceBackupPayload,
   createExportFileName,
   createExportPayload,
   isExportSection,
@@ -7,6 +9,7 @@ import {
 } from "./json-transfer.js";
 import type { HappyBall, HappyBallLedger } from "./models";
 import { DEFAULT_APP_SETTINGS, type AppSettings } from "./settings.js";
+import type { HappyBallWorkspaceStore } from "./workspace.js";
 
 const sampleBall: HappyBall = {
   id: "ball_20260626_self_ab12",
@@ -54,6 +57,25 @@ const existingLedger: HappyBallLedger = {
   updatedAt: "2026-06-26T10:00:00.000Z",
 };
 
+const workspaceStore: HappyBallWorkspaceStore = {
+  v: 1,
+  type: "happy-ball-workspace-store",
+  activeWorkspaceId: "workspace_self",
+  workspaces: [{
+    v: 1,
+    type: "happy-ball-workspace",
+    workspaceId: "workspace_self",
+    sourceWorkspaceId: "workspace_self",
+    role: "self",
+    displayName: "エモ次郎",
+    ledger: existingLedger,
+    categories: categoryColorPresets,
+    appSettings: DEFAULT_APP_SETTINGS,
+    createdAt: existingLedger.createdAt,
+    updatedAt: existingLedger.updatedAt,
+  }],
+};
+
 const newBall: HappyBall = {
   ...sampleBall,
   id: "ball_20260627_proxy_cd34",
@@ -87,6 +109,7 @@ const exportPayload = createExportPayload(
         sendMode: "casual",
       },
     ],
+    workspaceStore,
   },
   "2026-06-29T12:34:56.000Z",
 );
@@ -98,6 +121,60 @@ assertEqual((exportPayload.appSettings as AppSettings | undefined)?.includeDesce
 assertEqual((exportPayload.appSettings as AppSettings | undefined)?.jutsuPhysicsSettings.gravityStrength, 2220, "export should preserve customized jutsu physics");
 assertEqual(Boolean(exportPayload.categories), false, "export payload should omit unselected category data");
 assertEqual(Boolean(exportPayload.activityLog), true, "export payload should include selected activity log data");
+assertEqual((exportPayload.workspaceStore as HappyBallWorkspaceStore | undefined)?.workspaces.length, 1, "ledger backup should carry every stored workspace");
+
+const workspaceBackupReview = reviewJsonImport(exportPayload, "backup.json", existingLedger);
+assertEqual(workspaceBackupReview.workspaceStore?.workspaces.length, 1, "backup review should recognize a complete workspace store");
+assertEqual(workspaceBackupReview.ignoredActivityLog, true, "legacy mixed backups should identify operation logs as intentionally ignored");
+const activityOnlyReview = reviewJsonImport({ v: 1, type: "happy-ball-export", sections: ["activityLog"], activityLog: exportPayload.activityLog }, "activity.json", existingLedger);
+assertEqual(activityOnlyReview.error, "操作ログは復元対象外です。ほかに読み込めるデータがありませんでした。", "legacy activity-only backups should explain that logs are not restored");
+
+const deviceBackupPayload = createDeviceBackupPayload(workspaceStore, "2026-06-29T12:34:56.000Z");
+assertEqual(deviceBackupPayload.type, "happy-ball-device-backup", "new backup should use a dedicated device-backup type");
+assertEqual(deviceBackupPayload.workspaceStore.workspaces.length, 1, "device backup should include every workspace");
+assertEqual("activityLog" in deviceBackupPayload, false, "device backup should exclude operation logs");
+assertEqual(createDeviceBackupFileName(deviceBackupPayload.exportedAt), "emoi-dama-device-backup-20260629-123456.json", "device backup file name should be deterministic");
+const deviceBackupReview = reviewJsonImport(deviceBackupPayload, "device-backup.json", existingLedger);
+assertEqual(deviceBackupReview.deviceBackup?.workspaces.length, 1, "device backup review should expose an atomic restore source");
+const brokenDeviceBackupReview = reviewJsonImport({ ...deviceBackupPayload, workspaceStore: null }, "broken-device-backup.json", existingLedger);
+assertEqual(Boolean(brokenDeviceBackupReview.error), true, "invalid device backup should be rejected");
+
+const gpsBall: HappyBall = {
+  ...sampleBall,
+  id: "ball_external_with_gps",
+  descents: [{
+    id: "descent_external_1",
+    sequence: 1,
+    recordedAt: "2026-06-26T11:00:00.000Z",
+    latitude: 35.681236,
+    longitude: 139.767125,
+    accuracyMeters: 12,
+    badgeAwarded: true,
+    memo: "外部環境の地点",
+  }],
+  descentBadgeCount: 1,
+};
+const multiWorkspaceStore: HappyBallWorkspaceStore = {
+  ...workspaceStore,
+  activeWorkspaceId: "workspace_external",
+  workspaces: [
+    workspaceStore.workspaces[0],
+    {
+      ...workspaceStore.workspaces[0],
+      workspaceId: "workspace_external",
+      sourceWorkspaceId: "workspace_external",
+      role: "received",
+      displayName: "外部環境",
+      ledger: { ...existingLedger, ledgerId: "ledger_external", balls: [gpsBall] },
+      lastImportedAt: "2026-06-29T11:00:00.000Z",
+    },
+  ],
+};
+const multiDeviceBackup = createDeviceBackupPayload(multiWorkspaceStore, "2026-06-29T12:35:00.000Z");
+assertEqual(multiDeviceBackup.workspaceStore.workspaces.length, 2, "device backup should retain every self and external workspace");
+assertEqual(multiDeviceBackup.workspaceStore.activeWorkspaceId, "workspace_external", "device backup should retain the active workspace selection");
+assertEqual(multiDeviceBackup.workspaceStore.workspaces[1].ledger.balls[0].descents?.[0].latitude, 35.681236, "device backup should retain complete saved GPS data");
+assertEqual(multiDeviceBackup.workspaceStore.workspaces[1].lastImportedAt, "2026-06-29T11:00:00.000Z", "device backup should retain workspace receive metadata");
 
 const fileName = createExportFileName(["ledger", "categories"], "2026-06-29T12:34:56.000Z");
 assertEqual(fileName, "emoi-dama-export-ledger-categories-20260629-123456.json", "export file name should be deterministic");

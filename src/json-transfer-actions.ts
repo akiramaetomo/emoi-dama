@@ -1,6 +1,8 @@
 import type { CategoryColorPreset } from "./categories";
 import type { ActivityLogEntry } from "./activity-log";
 import {
+  createDeviceBackupFileName,
+  createDeviceBackupPayload,
   createExportFileName,
   createExportPayload,
   isExportSection,
@@ -11,17 +13,20 @@ import {
 import type { HappyBallLedger } from "./models";
 import type { AppSettings } from "./settings";
 import { importNewBalls, updateNameBook } from "./storage";
+import type { HappyBallWorkspaceStore } from "./workspace";
 
 export interface JsonExportSource {
   ledger: HappyBallLedger;
   appSettings: AppSettings;
   categories: CategoryColorPreset[];
   activityLog: ActivityLogEntry[];
+  workspaceStore?: HappyBallWorkspaceStore;
 }
 
 export interface JsonImportApplySource {
   ledger: HappyBallLedger;
   selectedBallId: string | null;
+  persistLegacyLedger?: boolean;
 }
 
 export interface JsonImportApplyResult {
@@ -42,6 +47,11 @@ export function exportSelectedJson(source: JsonExportSource): boolean {
   const payload = createExportPayload(sections, source);
   downloadJsonFile(payload, createExportFileName(sections));
   return true;
+}
+
+export function exportDeviceBackupJson(workspaceStore: HappyBallWorkspaceStore): void {
+  const payload = createDeviceBackupPayload(workspaceStore);
+  downloadJsonFile(payload, createDeviceBackupFileName(payload.exportedAt));
 }
 
 export async function reviewJsonImportFile(input: HTMLInputElement, ledger: HappyBallLedger): Promise<JsonImportReview | null> {
@@ -81,9 +91,9 @@ export function applyJsonImportReview(
   };
 
   if (selected.has("ledger") && review.ledger) {
-    ledger = importNewBalls(ledger, review.ledger.newItems);
+    ledger = importNewBalls(ledger, review.ledger.newItems, source.persistLegacyLedger !== false);
     if (review.ledger.nameBookToAdd.length > 0) {
-      ledger = updateNameBook(ledger, [...ledger.ownerProfile.nameBook, ...review.ledger.nameBookToAdd]);
+      ledger = updateNameBook(ledger, [...ledger.ownerProfile.nameBook, ...review.ledger.nameBookToAdd], source.persistLegacyLedger !== false);
     }
     selectedBallId = review.ledger.newItems[0]?.id ?? selectedBallId;
     result.ledger = ledger;
@@ -107,7 +117,7 @@ function readSelectedJsonSections(name: "export-section" | "json-import-section"
     .filter(isExportSection);
 }
 
-function downloadJsonFile(payload: unknown, fileName: string): void {
+export function downloadJsonFile(payload: unknown, fileName: string): void {
   const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");

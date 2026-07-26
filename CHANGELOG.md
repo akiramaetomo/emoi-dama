@@ -12,6 +12,83 @@ This project follows a lightweight changelog discipline:
 
 ## Unreleased
 
+## 0.9.0 - 2026-07-27
+
+- Promoted the accepted workspace-sharing, full workspace editing, and unified
+  ball-color work since `0.8.0` to the formal `0.9.0` Pages release.
+
+- Added workspace file sharing for one day or an inclusive date range, with the
+  sender's full name book, category definitions, and app settings attached.
+  The Ball List sharing fold now shows only start/end dates, a live summed ball
+  count, and share/download actions; the all-history checkbox list was removed.
+  Phone date labels stay beside their inputs and the file-share label no longer
+  wraps.
+  Imports now review new, registered, conflicting, and unreadable balls before
+  any save; cancel, Escape, and backdrop dismissal leave storage unchanged.
+  The destination is selected first. Existing environments default to adding
+  new balls only, with separate opt-in choices for missing name-book people,
+  category/settings replacement, and conditional conflict overwrite; a new
+  environment starts from the complete incoming snapshots.
+  Up to four self/received workspaces can be retained, and tapping the Emotion
+  Play, Calendar, or Ball List title cycles them with a compact blue-green ID
+  indicator. External workspaces now support the same ball creation, editing,
+  lifecycle, descent, sharing, name-book, category, and app-setting controls as
+  self. Play label-mode changes now update the actual Pixi visuals and persist
+  per workspace. The management list shows a short ID for self as well as
+  external environments and uses simplified beta, backup, and import wording.
+  New ball, ledger, person,
+  workspace, and bundle IDs now use prefixed 128-bit Web Crypto randomness,
+  while existing IDs remain compatible. Full backups now include all retained
+  workspaces in one dedicated file without ambiguous section checkboxes, and
+  exclude operation logs/development data. Restore is a separate confirmed
+  whole-device action, while legacy sectional JSON remains readable. The
+  existing one-ball URL/QR/image flow remains available.
+  The share disclosure is connected directly to the primary Ball List, and
+  making the three screen names tappable preserves their previous typography.
+- Unified known-category colors across Play, Calendar/List, detail/edit,
+  Settings, receive previews, and receipt output without rewriting saved ball
+  snapshots. Static CSS/Canvas balls now echo the faithful Pixi material more
+  closely, and authoring groups each tone family in one two-pixel frame while
+  selected categories use only a ball ring and accent text.
+
+- Applied the first reviewed `玉色ラボ` JSON handoff to 22 of the 24 factory
+  category colors, followed by a nine-color refinement from the reloaded lab.
+  The second pass also adjusts `ひらめき`, and a third reviewed pass refines 12
+  bright, dark, and neutral colors; `日常` remains unchanged.
+- Added the development-only `玉色ラボ`, an isolated faithful-Pixi comparison
+  grid for all 24 factory colors with live integer H/S/L tuning, session-only
+  drafts, border-only selection, provisional selected/all commits, discard and
+  Undo/redo history, individual/all reset, JSON copy/download, full-TypeScript
+  copy, and an in-lab Codex handoff guide. It does not touch normal app data and
+  is absent from production builds.
+- Promoted `玉色ラボ` to a permanently maintained repository tool with explicit
+  source ownership, app/schema version display, stable session-key policy,
+  schema migration rules, documentation-map links, and mandatory production-
+  boundary verification.
+- Unified `玉を置く` and `玉の編集` as one authoring experience with shared
+  `保存` actions, retained compact left-save/right-cancel footer controls, and
+  descent history available for both new and existing balls.
+- Authoring-surface descent additions, GPS changes, memos, and removals now
+  remain staged until save; canceling discards them without changing the ball
+  ledger or activity log. Lifecycle and final-delete controls now live only in
+  List management surfaces.
+- Simplified List status text by omitting the default active label while
+  retaining `しまい中` and `供養済み`. Enlarged all List action text, including
+  `編集`, at a lighter 700 weight, with lifecycle/delete actions slightly larger
+  again. The existing button and card dimensions remain, and iPad keeps the
+  complete action group on one line. List action groups use one non-wrapping
+  row and a common 9px gap on iPad, PC, and phone, with sufficient horizontal
+  padding for easier tapping.
+- Moved the wide-screen `new` and right-side function groups inward while
+  keeping the primary screen group centered and Settings rightmost. Calendar
+  and Ball List icons are larger and brighter when not selected.
+- Restored intentional Settings track taps without reintroducing changes from
+  vertical scrolling, track dragging, or delayed iPad events. iPad/Safari audio
+  now recovers on wake or the next ordinary gesture and recreates a stale
+  context once, without toggling the audio setting.
+- Enlarged only the clearly lighter 600-weight `術` label inside its unchanged
+  Control Bar button and added a broad soft amber-green glow while Jutsu is active.
+
 ## 0.8.0 - 2026-07-20
 
 - Release highlights: moved the ball world to density-aware Pixi/WebGL while

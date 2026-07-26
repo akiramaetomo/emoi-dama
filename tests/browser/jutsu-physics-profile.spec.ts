@@ -55,7 +55,7 @@ test("runtime automatically switches to the shared jutsu profile and back", asyn
   await expect(page.locator("[data-physics-settings-profile='jutsu']")).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#setting-gravity-strength")).toHaveValue("1000");
 
-  await page.locator("button[data-close-panel]").click();
+  await page.locator(".dialog-close[data-close-panel]").click();
   await page.locator("[data-disable-play-jutsu]").click();
   await expect(field).toHaveAttribute("data-runtime-physics-profile", "normal");
 });

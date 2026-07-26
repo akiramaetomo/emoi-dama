@@ -1,7 +1,16 @@
 import { findLatestBallSendMode, formatSendModeLabel, type ActivityLogEntry } from "./activity-log.js";
+import {
+  renderDisplayVisualKindClass,
+  renderDisplayVisualStyle,
+  renderEchoVisualStyle,
+  resolveBallDisplayVisual,
+  resolveEchoDisplayVisual,
+} from "./ball-visual-display.js";
+import type { CategoryColorPreset } from "./categories.js";
 import { formatBallDateTime, type HappyBall } from "./models.js";
 import type { DisplayMode } from "./display-period";
 import type { CalendarMarkerMode, EmotionEchoStrength } from "./settings";
+import { countWorkspaceShareBalls, selectWorkspaceShareBalls } from "./workspace-transfer.js";
 
 export type CalendarOverlayMode = "month" | "dayList";
 
@@ -19,6 +28,9 @@ export interface CalendarRenderContext {
   emotionEchoStrength: EmotionEchoStrength;
   calendarMarkerMode: CalendarMarkerMode;
   activityLog: ActivityLogEntry[];
+  categories: CategoryColorPreset[];
+  workspaceDisplayCode?: string | null;
+  shareBalls?: HappyBall[];
 }
 
 export interface CalendarPrimaryParts {
@@ -65,7 +77,7 @@ function renderCalendarMonthParts(context: CalendarRenderContext): CalendarPrima
     cells.push(`
       <button class="calendar-cell${selectedClass}${todayClass}" type="button" data-filter-date="${date}" aria-label="${date}${todayLabel} ${total}玉">
         <span class="calendar-day">${day}</span>
-        ${renderCalendarMarkers(balls, context.emotionEchoStrength, context.calendarMarkerMode)}
+        ${renderCalendarMarkers(balls, context)}
       </button>
     `);
   }
@@ -75,7 +87,7 @@ function renderCalendarMonthParts(context: CalendarRenderContext): CalendarPrima
       <div class="calendar-head calendar-month-head">
         <button class="calendar-nav" type="button" data-calendar-month="${escapeAttribute(shiftCalendarMonth(context.calendarMonth, -1))}" aria-label="前の月">‹</button>
         <div class="screen-heading-block">
-          <p class="screen-kicker">Calendar</p>
+          ${renderWorkspaceScreenName("Calendar", context.workspaceDisplayCode)}
           <h2>${year}年 ${month}月</h2>
         </div>
         <button class="calendar-nav" type="button" data-calendar-month="${escapeAttribute(shiftCalendarMonth(context.calendarMonth, 1))}" aria-label="次の月">›</button>
@@ -98,7 +110,7 @@ function renderCalendarDayListParts(context: CalendarRenderContext): CalendarPri
       <div class="calendar-head calendar-day-list-head">
         <button class="calendar-nav" type="button" data-calendar-shift-day="-1" aria-label="前の日">‹</button>
         <div class="screen-heading-block">
-          <p class="screen-kicker">Ball List</p>
+          ${renderWorkspaceScreenName("Ball List", context.workspaceDisplayCode)}
           <h2>${escapeHtml(context.selectedDate)}</h2>
         </div>
         <button class="calendar-nav" type="button" data-calendar-shift-day="1" aria-label="次の日">›</button>
@@ -109,11 +121,13 @@ function renderCalendarDayListParts(context: CalendarRenderContext): CalendarPri
 }
 
 function renderCalendarDayListItems(context: CalendarRenderContext): string {
+  const sharePanel = renderWorkspaceSharePanel(context.shareBalls ?? [], context.selectedDate);
   if (context.dayListBalls.length === 0) {
-    return `<p class="empty-copy">この日の玉はまだありません。</p>`;
+    return `${sharePanel}<p class="empty-copy">この日の玉はまだありません。</p>`;
   }
 
   return `
+    ${sharePanel}
     <div class="calendar-day-ball-list">
       ${context.dayListBalls.map((ball) => renderCalendarDayListItem(ball, context)).join("")}
     </div>
@@ -126,13 +140,13 @@ function renderCalendarDayListItem(ball: HappyBall, context: CalendarRenderConte
     <article class="calendar-day-ball-item lifecycle-${ball.lifecycleStatus}${selectedClass}">
       <span class="calendar-day-ball-visual-wrap">
         ${renderCompactDescentBadge(ball)}
-        <span class="mini-ball calendar-day-ball-visual lifecycle-${ball.lifecycleStatus} ${renderVisualKindClass(ball.visual)} ${renderEchoClass(ball, context.emotionEchoStrength)}" style="${renderBallVisualStyle(ball, context.emotionEchoStrength)}" aria-hidden="true"></span>
+        <span class="mini-ball calendar-day-ball-visual lifecycle-${ball.lifecycleStatus} ${renderDisplayVisualKindClass(resolveBallDisplayVisual(ball, context.categories))} ${renderEchoClass(ball, context.emotionEchoStrength)}" style="${renderBallVisualStyle(ball, context)}" aria-hidden="true"></span>
         ${renderBallCountUnderIcon(ball, "calendar-day-count-under-icon")}
       </span>
       <div class="calendar-day-ball-main">
         <div class="calendar-day-ball-title-row">
           <strong>${escapeHtml(ball.title)}</strong>
-          <span>${escapeHtml(renderCalendarBallMeta(ball))} / ${escapeHtml(renderLifecycleLabel(ball.lifecycleStatus))}</span>
+          <span>${escapeHtml(renderCalendarBallMeta(ball))}${renderCalendarLifecycleStatus(ball.lifecycleStatus)}</span>
         </div>
         <p class="calendar-day-ball-relation">${escapeHtml(renderCalendarBallRelationMeta(ball, context.activityLog))}</p>
         <p class="calendar-day-ball-time">${escapeHtml(formatBallDateTime(ball.date, ball.time))}</p>
@@ -182,7 +196,12 @@ function renderLifecycleLabel(status: HappyBall["lifecycleStatus"]): string {
   if (status === "memorial") {
     return "記憶";
   }
-  return "表示中";
+  return "";
+}
+
+function renderCalendarLifecycleStatus(status: HappyBall["lifecycleStatus"]): string {
+  const label = renderLifecycleLabel(status);
+  return label ? ` / <b class="list-lifecycle-status lifecycle-${status}">${escapeHtml(label)}</b>` : "";
 }
 
 function renderCalendarBallMeta(ball: HappyBall): string {
@@ -226,6 +245,35 @@ function renderCalendarControlDock(context: CalendarRenderContext): string {
         </span>
       </div>
     </div>
+  `;
+}
+
+function renderWorkspaceSharePanel(balls: HappyBall[], anchorDate: string): string {
+  const selectedBalls = selectWorkspaceShareBalls(balls, anchorDate, anchorDate);
+  const targetBallCount = countWorkspaceShareBalls(selectedBalls);
+  return `
+    <details class="workspace-share-panel">
+      <summary>玉をまとめて送る</summary>
+      <form id="workspace-share-form">
+        <div class="workspace-share-period">
+          <label><span>開始日</span><input name="workspace-share-from" type="date" value="${escapeAttribute(anchorDate)}" required /></label>
+          <label><span>終了日</span><input name="workspace-share-to" type="date" value="${escapeAttribute(anchorDate)}" required /></label>
+        </div>
+        <p class="workspace-share-count" data-workspace-share-count aria-live="polite">対象 ${targetBallCount}玉</p>
+        <div class="settings-group-actions">
+          <button class="primary-action workspace-share-action" type="submit" data-workspace-share-mode="share" ${selectedBalls.length > 0 ? "" : "disabled"}>ファイルで送る</button>
+          <button class="ghost-action workspace-share-action" type="submit" data-workspace-share-mode="download" ${selectedBalls.length > 0 ? "" : "disabled"}>JSON保存</button>
+        </div>
+      </form>
+    </details>
+  `;
+}
+
+function renderWorkspaceScreenName(label: string, displayCode: string | null | undefined): string {
+  return `
+    <button class="screen-kicker workspace-screen-name${displayCode ? " is-received" : ""}" type="button" data-cycle-workspace aria-label="次の利用環境へ切り替える">
+      <span>${escapeHtml(label)}</span>${displayCode ? `<small>ID=${escapeHtml(displayCode)}</small>` : ""}
+    </button>
   `;
 }
 
@@ -305,32 +353,31 @@ function renderCalendarScreenIcon(): string {
 
 function renderCalendarMarkers(
   balls: HappyBall[],
-  emotionEchoStrength: EmotionEchoStrength,
-  markerMode: CalendarMarkerMode,
+  context: CalendarRenderContext,
 ): string {
   const total = countVisualBalls(balls);
   if (total === 0) {
     return `<span class="mini-ball-row" aria-hidden="true"></span>`;
   }
 
-  if (markerMode === "meter") {
-    return renderCalendarMeterMarkers(balls, emotionEchoStrength);
+  if (context.calendarMarkerMode === "meter") {
+    return renderCalendarMeterMarkers(balls, context);
   }
 
   return `
     <span class="calendar-marker-set" aria-hidden="true">
-      ${renderCalendarMarkerVariant(balls, total, DESKTOP_MARKER_LIMIT, "desktop", emotionEchoStrength)}
-      ${renderCalendarMarkerVariant(balls, total, MOBILE_MARKER_LIMIT, "mobile", emotionEchoStrength)}
+      ${renderCalendarMarkerVariant(balls, total, DESKTOP_MARKER_LIMIT, "desktop", context)}
+      ${renderCalendarMarkerVariant(balls, total, MOBILE_MARKER_LIMIT, "mobile", context)}
     </span>
   `;
 }
 
-function renderCalendarMeterMarkers(balls: HappyBall[], emotionEchoStrength: EmotionEchoStrength): string {
+function renderCalendarMeterMarkers(balls: HappyBall[], context: CalendarRenderContext): string {
   const sorted = [...balls].sort(compareCalendarMarkerBalls);
   return `
     <span class="calendar-marker-set calendar-meter-marker-set" aria-hidden="true">
-      ${renderCalendarMeterMarkerVariant(sorted, 5, "desktop", emotionEchoStrength)}
-      ${renderCalendarMeterMarkerVariant(sorted, 2, "mobile", emotionEchoStrength)}
+      ${renderCalendarMeterMarkerVariant(sorted, 5, "desktop", context)}
+      ${renderCalendarMeterMarkerVariant(sorted, 2, "mobile", context)}
     </span>
   `;
 }
@@ -339,13 +386,13 @@ function renderCalendarMeterMarkerVariant(
   balls: HappyBall[],
   rowLimit: number,
   variant: "desktop" | "mobile",
-  emotionEchoStrength: EmotionEchoStrength,
+  context: CalendarRenderContext,
 ): string {
   const visible = balls.slice(0, 3);
   const hiddenTotal = countVisualBalls(balls.slice(3));
   return `
     <span class="calendar-meter-list calendar-marker-variant calendar-marker-${variant}">
-      ${visible.map((ball) => renderCalendarMeterMarkerRow(ball, rowLimit, emotionEchoStrength)).join("")}
+      ${visible.map((ball) => renderCalendarMeterMarkerRow(ball, rowLimit, context)).join("")}
       ${hiddenTotal > 0 ? `<span class="calendar-meter-overflow">+${hiddenTotal}</span>` : ""}
     </span>
   `;
@@ -354,13 +401,13 @@ function renderCalendarMeterMarkerVariant(
 function renderCalendarMeterMarkerRow(
   ball: HappyBall,
   rowLimit: number,
-  emotionEchoStrength: EmotionEchoStrength,
+  context: CalendarRenderContext,
 ): string {
   const count = normalizeBallCount(ball);
   if (count > rowLimit) {
     return `
       <span class="calendar-meter-row" data-calendar-meter-ball-id="${escapeAttribute(ball.id)}">
-        ${renderCalendarMeterMiniBall(ball, emotionEchoStrength)}
+        ${renderCalendarMeterMiniBall(ball, context)}
         <span class="calendar-meter-count">${count}</span>
       </span>
     `;
@@ -368,13 +415,14 @@ function renderCalendarMeterMarkerRow(
 
   return `
     <span class="calendar-meter-row" data-calendar-meter-ball-id="${escapeAttribute(ball.id)}">
-      ${Array.from({ length: count }, () => renderCalendarMeterMiniBall(ball, emotionEchoStrength)).join("")}
+      ${Array.from({ length: count }, () => renderCalendarMeterMiniBall(ball, context)).join("")}
     </span>
   `;
 }
 
-function renderCalendarMeterMiniBall(ball: HappyBall, emotionEchoStrength: EmotionEchoStrength): string {
-  return `<span class="mini-ball lifecycle-${ball.lifecycleStatus} ${renderVisualKindClass(ball.visual)} ${renderEchoClass(ball, emotionEchoStrength)}" style="${renderBallVisualStyle(ball, emotionEchoStrength)}"></span>`;
+function renderCalendarMeterMiniBall(ball: HappyBall, context: CalendarRenderContext): string {
+  const visual = resolveBallDisplayVisual(ball, context.categories);
+  return `<span class="mini-ball lifecycle-${ball.lifecycleStatus} ${renderDisplayVisualKindClass(visual)} ${renderEchoClass(ball, context.emotionEchoStrength)}" style="${renderBallVisualStyle(ball, context)}"></span>`;
 }
 
 function renderBallCountUnderIcon(ball: HappyBall, className: string): string {
@@ -389,7 +437,7 @@ function renderCalendarMarkerVariant(
   total: number,
   limit: number,
   variant: "desktop" | "mobile",
-  emotionEchoStrength: EmotionEchoStrength,
+  context: CalendarRenderContext,
 ): string {
   if (total > limit) {
     return `<span class="calendar-marker-variant calendar-marker-${variant}"><span class="calendar-overflow">${total}</span></span>`;
@@ -398,7 +446,10 @@ function renderCalendarMarkerVariant(
   const markers = createCalendarMarkerBalls(balls, limit);
   return `
     <span class="mini-ball-row calendar-marker-variant calendar-marker-${variant}">
-      ${markers.map((ball) => `<span class="mini-ball lifecycle-${ball.lifecycleStatus} ${renderVisualKindClass(ball.visual)} ${renderEchoClass(ball, emotionEchoStrength)}" style="${renderBallVisualStyle(ball, emotionEchoStrength)}"></span>`).join("")}
+      ${markers.map((ball) => {
+        const visual = resolveBallDisplayVisual(ball, context.categories);
+        return `<span class="mini-ball lifecycle-${ball.lifecycleStatus} ${renderDisplayVisualKindClass(visual)} ${renderEchoClass(ball, context.emotionEchoStrength)}" style="${renderBallVisualStyle(ball, context)}"></span>`;
+      }).join("")}
     </span>
   `;
 }
@@ -436,21 +487,15 @@ function normalizeBallCount(ball: HappyBall): number {
   return Math.max(1, Number.isFinite(ball.count) ? Math.floor(ball.count) : 1);
 }
 
-function renderBallVisualStyle(ball: HappyBall, emotionEchoStrength: EmotionEchoStrength): string {
-  const base = renderVisualStyle(ball.visual);
-  const echo = shouldShowEmotionEcho(ball, emotionEchoStrength) ? ball.emotionEcho?.visual : null;
+function renderBallVisualStyle(ball: HappyBall, context: CalendarRenderContext): string {
+  const base = renderDisplayVisualStyle(resolveBallDisplayVisual(ball, context.categories));
+  const echo = shouldShowEmotionEcho(ball, context.emotionEchoStrength) && ball.emotionEcho
+    ? resolveEchoDisplayVisual(ball.emotionEcho, context.categories)
+    : null;
   if (!echo) {
     return base;
   }
-  return `${base} --echo-hue: ${echo.hue}; --echo-saturation: ${echo.saturation}%; --echo-lightness: ${echo.lightness}%;`;
-}
-
-function renderVisualStyle(visual: { hue: number; saturation: number; lightness: number }): string {
-  return `--ball-hue: ${visual.hue}; --ball-saturation: ${visual.saturation}%; --ball-lightness: ${visual.lightness}%;`;
-}
-
-function renderVisualKindClass(visual: { kind?: string }): string {
-  return visual.kind === "ring" ? "is-ring-ball" : "is-filled-ball";
+  return `${base} ${renderEchoVisualStyle(echo)}`;
 }
 
 function renderEchoClass(ball: HappyBall, emotionEchoStrength: EmotionEchoStrength): string {

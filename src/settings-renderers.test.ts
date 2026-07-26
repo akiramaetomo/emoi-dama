@@ -28,8 +28,21 @@ const defaultRenderContext = {
   physicsSettingsProfile: "normal",
 } satisfies ToolsPanelRenderContext;
 const html = renderToolsPanel(defaultRenderContext);
+const workspaceHtml = renderToolsPanel({
+  ...defaultRenderContext,
+  workspaces: [{
+    workspaceId: "workspace_self",
+    displayName: "自分",
+    displayCode: "ABC",
+    role: "self",
+    active: true,
+    ballCount: 2,
+  }],
+});
 
 assert(html.includes("<h2>バックアップ・復元</h2>"), "backup/restore group title should be rendered");
+assert(workspaceHtml.includes("自分 / ID=ABC") && workspaceHtml.includes("/ 2件"), "workspace management should show the self display ID and ball count");
+assert(!workspaceHtml.includes("閲覧用") && !workspaceHtml.includes("閲覧専用"), "workspace management should not describe external origins as read-only");
 assert(html.includes('id="setting-startup-screen"'), "startup screen setting should be rendered");
 assert(html.includes('<option value="calendarMonth" selected>カレンダー</option>'), "calendar should be the default startup screen");
 assert(html.includes("<h2>降臨</h2>"), "descent settings group should be rendered");
@@ -53,7 +66,15 @@ assert(html.includes('id="setting-parent-lifetime" type="range" min="1" max="30"
 assert(html.includes('Damping <strong id="setting-damping-value">0.30</strong>'), "damping should display the real physics value");
 assert(html.includes('id="export-json"'), "backup export action should be rendered");
 assert(html.includes('id="import-json"'), "backup import action should be rendered");
-assert(html.includes('value="activityLog"'), "backup export options should include activity logs");
+assert(html.includes("端末全体のバックアップ"), "backup should identify its full-device scope");
+assert(html.includes("玉、設定（環境データ含む）を保存します。"), "backup should use the concise approved explanation");
+assert(html.includes("内容を確認してから適用方法を選びます。"), "import should explain the review flow concisely");
+assert(!html.includes("ファイルを選んだだけでは"), "import should omit the removed explanatory tail");
+assert(html.includes("利用環境（β版）"), "workspace management should use the beta label");
+assert(html.includes("画面上部の画面タイトルをタップすることで利用環境を順に切り替えられます。"), "workspace management should explain title switching");
+assert(html.includes("編集・削除の扱いを相手と確認してください"), "workspace management should show the concise human-operation rule");
+assert(!html.includes('name="export-section"'), "new device backup UI should not render ambiguous export checkboxes");
+assert(!html.includes('value="activityLog"'), "operation logs should not be offered as part of a restorable device backup");
 assert(html.includes("<h2>操作ログ</h2>"), "activity log group should be rendered");
 assert(html.includes("操作ログの簡易仕様を見る"), "activity log group should render a help trigger");
 assert(html.includes('data-toggle-activity-log-help'), "activity log help should render as a normal button");
@@ -75,7 +96,7 @@ assert(behaviorClusterHtml.includes(">玉のふるまい</p>"), "the second Sett
 assert(managementClusterHtml.includes(">管理</p>"), "the final Settings cluster should be named management");
 assertSettingsClusterMembership(tailoringClusterHtml, ["name-book-settings", "category-settings", "display-settings", "descent-settings"]);
 assertSettingsClusterMembership(behaviorClusterHtml, ["physics-settings", "sound-settings"]);
-assertSettingsClusterMembership(managementClusterHtml, ["backup-settings", "ball-management-panel", "activity-log-panel", "app-about-panel"]);
+assertSettingsClusterMembership(managementClusterHtml, ["workspace-management", "backup-settings", "ball-management-panel", "activity-log-panel", "app-about-panel"]);
 
 const physicsPanelHtml = readDetailsGroup(html, "physics-settings");
 const soundPanelHtml = readDetailsGroup(html, "sound-settings");
@@ -114,9 +135,9 @@ assert(summaryStart >= 0 && summaryEnd > summaryStart, "backup/restore group sho
 const summaryHtml = exportPanelHtml.slice(summaryStart, summaryEnd);
 assert(!summaryHtml.includes("<button"), "backup/restore summary should not contain buttons");
 assert(exportPanelHtml.indexOf('class="settings-copy"') > summaryEnd, "backup/restore body should start with explanatory copy");
-assert(exportPanelHtml.indexOf('class="export-options"') > summaryEnd, "backup/restore options should live in the opened panel body");
-assert(exportPanelHtml.indexOf('id="export-json"') > exportPanelHtml.indexOf('class="export-options"'), "export button should follow the backup options");
-assert(exportPanelHtml.indexOf('id="import-json"') > exportPanelHtml.indexOf('class="export-options"'), "import button should follow the backup options");
+assert(exportPanelHtml.indexOf('class="backup-operation-block"') > summaryEnd, "backup operations should live in the opened panel body");
+assert(exportPanelHtml.indexOf('id="export-json"') > exportPanelHtml.indexOf("端末全体のバックアップ"), "export button should follow the backup explanation");
+assert(exportPanelHtml.indexOf('id="import-json"') > exportPanelHtml.indexOf("ファイルを読み込む"), "import button should follow the import explanation");
 
 const sampleBall: HappyBall = {
   id: "ball_20260703_sample",
@@ -175,10 +196,12 @@ const ledgerListHtml = renderLedgerList([descendedSampleBall], sampleBall.id, {
     },
   ],
 });
+assert(!ledgerListHtml.includes('id="workspace-share-form"'), "the legacy saved-ball panel should not duplicate the primary Ball List sharing route");
 assert(ledgerListHtml.includes("2026-07-03 の保存された玉"), "ledger list should show the selected calendar day scope");
 assert(ledgerListHtml.includes("ledger-descent-badge"), "ledger list should show a descent star badge");
 assert(ledgerListHtml.includes("✦1"), "ledger list should show descent star count");
 assert(ledgerListHtml.includes("ledger-ball-visual"), "ledger list should show a ball icon beside each row");
+assert(ledgerListHtml.includes("--ball-hue: 92; --ball-saturation: 22%; --ball-lightness: 54%;"), "ledger list should render known categories with the current preset");
 assert(ledgerListHtml.includes("ledger-count-under-icon"), "ledger list should show multi-ball counts below the ball icon");
 assert(ledgerListHtml.includes("3玉"), "ledger list should show multi-ball counts only when needed");
 assert(!ledgerListHtml.includes("ledger-count-badge"), "ledger list should not show the old title-row count badge");
@@ -186,16 +209,21 @@ assert(ledgerListHtml.includes("降臨1回"), "ledger list should show descent c
 assert(ledgerListHtml.includes("発行者: エモ次郎"), "ledger list should show issuer metadata");
 assert(ledgerListHtml.includes("送り手段: お預け"), "ledger list should show latest send method metadata");
 assert(ledgerListHtml.includes("data-clear-ledger-list-date"), "ledger list should offer a way back to all saved balls");
+assert(!ledgerListHtml.includes("現役"), "ledger list should omit the default active lifecycle label");
 assert(ledgerListHtml.includes('data-lifecycle-status="archived"'), "ledger list should render the archive/shimau action");
 assert(ledgerListHtml.includes(">しまう</button>"), "active balls should show the shimau action");
 assert(ledgerListHtml.includes('data-lifecycle-status="offered"'), "ledger list should render the kuyoh action");
 assert(ledgerListHtml.includes('data-delete-ball-id="ball_20260703_sample"'), "ledger list should render the otakiage action");
 assert(ledgerListHtml.includes('data-descend-ball-id="ball_20260703_sample"'), "ledger list should render the kourin action");
 
+const externalWorkspaceLedgerListHtml = renderLedgerList([sampleBall], sampleBall.id, { dateFilter: null });
+assert(externalWorkspaceLedgerListHtml.includes("ledger-actions"), "external-origin workspaces should retain every ledger action");
+
 const archivedLedgerListHtml = renderLedgerList([{ ...sampleBall, lifecycleStatus: "archived" }], sampleBall.id, { dateFilter: null });
 assert(archivedLedgerListHtml.includes('data-lifecycle-status="active"'), "archived balls should render the restore action");
 assert(archivedLedgerListHtml.includes(">戻す</button>"), "archived balls should show the restore label");
 assert(!archivedLedgerListHtml.includes(">しまう</button>"), "archived balls should not show the shimau label");
+assert(archivedLedgerListHtml.includes("しまい中"), "archived balls should retain their exceptional lifecycle label");
 
 const emptyActivityLogPanelHtml = renderToolsPanel({
   appSettings: DEFAULT_APP_SETTINGS,

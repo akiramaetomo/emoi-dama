@@ -1,4 +1,12 @@
 import { formatBallDateTime, visibilityLabels, type HappyBall, type IssuerType, type SendMode } from "./models.js";
+import {
+  renderDisplayVisualKindClass,
+  renderDisplayVisualStyle,
+  renderEchoVisualStyle,
+  resolveBallDisplayVisual,
+  resolveEchoDisplayVisual,
+} from "./ball-visual-display.js";
+import type { CategoryColorPreset } from "./categories.js";
 import { createGoogleMapsUrl, hasDescentPosition } from "./descent.js";
 import { createPacketImportUrl, type HandoffOptions } from "./packet.js";
 import { createQrSvg } from "./qr-code.js";
@@ -11,6 +19,7 @@ export interface DialogRenderContext {
   emotionEchoStrength: EmotionEchoStrength;
   includeDescentGpsInHandoff?: boolean;
   handoffDebugEnabled?: boolean;
+  categories: CategoryColorPreset[];
 }
 
 export const receiptTitleLabels: Record<IssuerType, string> = {
@@ -44,7 +53,7 @@ export function renderBallDialog(ball: HappyBall, context: DialogRenderContext):
         <div class="surface-scroll-body app-modal-scroll" data-scroll-owner>
           <div class="dialog-head">
           <div class="dialog-ball-stack">
-            <div class="dialog-ball ${renderLifecycleClass(ball)} ${renderVisualKindClass(ball.visual)} ${renderEchoClass(ball, context)}" style="${renderBallVisualStyle(ball, context)} --ball-rotation: 0.34rad;" aria-hidden="true">
+            <div class="dialog-ball ${renderLifecycleClass(ball)} ${renderDisplayVisualKindClass(resolveBallDisplayVisual(ball, context.categories))} ${renderEchoClass(ball, context)}" style="${renderBallVisualStyle(ball, context)} --ball-rotation: 0.34rad;" aria-hidden="true">
               <span class="ball-body">
                 <span class="ball-core"></span>
                 <span class="ball-shade"></span>
@@ -73,11 +82,11 @@ export function renderBallDialog(ball: HappyBall, context: DialogRenderContext):
           <article class="detail-info-card detail-feeling-card">
             <div class="detail-info-row">
               <span>カテゴリ</span>
-              ${renderDetailCategory(ball)}
+              ${renderDetailCategory(ball, context)}
             </div>
             <div class="detail-info-row">
               <span>余韻</span>
-              ${renderDetailEcho(ball)}
+              ${renderDetailEcho(ball, context)}
             </div>
           </article>
           <article class="detail-info-card detail-receipt-card">
@@ -298,7 +307,7 @@ export function renderReceiptPaper(
         <p class="receipt-gps-state">降臨GPS ${context.includeDescentGpsInHandoff ? "あり" : "なし"}</p>
       ` : ""}
       <div class="receipt-hero">
-        <div class="dialog-ball receipt-ball ${renderVisualKindClass(ball.visual)} ${renderEchoClass(ball, context)}" style="${renderBallVisualStyle(ball, context)} --ball-rotation: 0.18rad;" aria-hidden="true">
+        <div class="dialog-ball receipt-ball ${renderDisplayVisualKindClass(resolveBallDisplayVisual(ball, context.categories))} ${renderEchoClass(ball, context)}" style="${renderBallVisualStyle(ball, context)} --ball-rotation: 0.18rad;" aria-hidden="true">
           <span class="ball-body">
             <span class="ball-core"></span>
             <span class="ball-shade"></span>
@@ -406,14 +415,15 @@ function renderPrivateMemoSurface(mode: Extract<MemoSurfaceMode, "private-obscur
   `;
 }
 
-function renderDetailCategory(ball: HappyBall): string {
+function renderDetailCategory(ball: HappyBall, context: DialogRenderContext): string {
+  const visual = resolveBallDisplayVisual(ball, context.categories);
   return `
-    <span class="mini-ball detail-info-ball ${renderVisualKindClass(ball.visual)}" style="${renderVisualStyle(ball.visual)}" aria-hidden="true"></span>
+    <span class="mini-ball detail-info-ball ${renderDisplayVisualKindClass(visual)}" style="${renderDisplayVisualStyle(visual)}" aria-hidden="true"></span>
     <strong class="detail-feeling-text">${escapeHtml(ball.category)}</strong>
   `;
 }
 
-function renderDetailEcho(ball: HappyBall): string {
+function renderDetailEcho(ball: HappyBall, context: DialogRenderContext): string {
   if (!ball.emotionEcho) {
     return `
       <span class="detail-info-ball-placeholder" aria-hidden="true"></span>
@@ -421,8 +431,9 @@ function renderDetailEcho(ball: HappyBall): string {
     `;
   }
 
+  const visual = resolveEchoDisplayVisual(ball.emotionEcho, context.categories);
   return `
-    <span class="mini-ball detail-info-ball ${renderVisualKindClass(ball.emotionEcho.visual)}" style="${renderVisualStyle(ball.emotionEcho.visual)}" aria-hidden="true"></span>
+    <span class="mini-ball detail-info-ball ${renderDisplayVisualKindClass(visual)}" style="${renderDisplayVisualStyle(visual)}" aria-hidden="true"></span>
     <strong class="detail-feeling-text">${escapeHtml(ball.emotionEcho.category)}</strong>
   `;
 }
@@ -564,20 +575,14 @@ function renderReceiptRow(label: string, value: string, layout: "normal" | "wide
 }
 
 function renderBallVisualStyle(ball: HappyBall, context: DialogRenderContext): string {
-  const base = renderVisualStyle(ball.visual);
-  const echo = shouldShowEmotionEcho(ball, context) ? ball.emotionEcho?.visual : null;
+  const base = renderDisplayVisualStyle(resolveBallDisplayVisual(ball, context.categories));
+  const echo = shouldShowEmotionEcho(ball, context) && ball.emotionEcho
+    ? resolveEchoDisplayVisual(ball.emotionEcho, context.categories)
+    : null;
   if (!echo) {
     return base;
   }
-  return `${base} --echo-hue: ${echo.hue}; --echo-saturation: ${echo.saturation}%; --echo-lightness: ${echo.lightness}%;`;
-}
-
-function renderVisualStyle(visual: { hue: number; saturation: number; lightness: number }): string {
-  return `--ball-hue: ${visual.hue}; --ball-saturation: ${visual.saturation}%; --ball-lightness: ${visual.lightness}%;`;
-}
-
-function renderVisualKindClass(visual: { kind?: string }): string {
-  return visual.kind === "ring" ? "is-ring-ball" : "is-filled-ball";
+  return `${base} ${renderEchoVisualStyle(echo)}`;
 }
 
 function renderLifecycleClass(ball: HappyBall): string {

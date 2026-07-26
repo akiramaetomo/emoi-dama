@@ -21,10 +21,15 @@ import {
   renderBallLabelModeCycleAriaLabel,
 } from "./ball-labels";
 import { bindBallCountSliderControls } from "./ball-count-slider";
+import {
+  findDisplayCategoryPreset,
+  resolveBallDisplayVisual,
+  resolveEchoDisplayVisual,
+} from "./ball-visual-display";
 import { renderCalendarOverlay, renderCalendarPrimaryParts, type CalendarRenderContext } from "./calendar-renderers";
 import {
-  categoryColorPresets,
   loadCategoryColorPresets,
+  normalizeCategoryColorPresets,
   resetCategoryColorPresets,
   saveCategoryColorPresets,
   type CategoryColorPreset,
@@ -36,7 +41,8 @@ import {
 } from "./json-transfer";
 import {
   applyJsonImportReview,
-  exportSelectedJson,
+  downloadJsonFile,
+  exportDeviceBackupJson,
   readSelectedJsonImportSections,
   reviewJsonImportFile,
 } from "./json-transfer-actions";
@@ -118,6 +124,7 @@ import {
   saveAppSettings,
   updatePhysicsProfileSettings,
   type AppSettings,
+  type BallLabelMode,
   type PhysicsParameterSettings,
   type PhysicsSettingsProfile,
 } from "./settings";
@@ -136,6 +143,7 @@ import {
   addBall,
   clearBallData,
   createDefaultDraft,
+  createPendingBall,
   currentLocalTime,
   DEFAULT_SAMPLE_NAME,
   deleteBall,
@@ -154,15 +162,72 @@ import {
   updateNameBook,
   type BallSaveMode,
 } from "./storage";
+import {
+  addWorkspace,
+  activateNextWorkspace,
+  findWorkspaceBySourceId,
+  getActiveWorkspace,
+  getSelfWorkspace,
+  getWorkspaceDisplayCode,
+  isReceivedWorkspace,
+  loadOrCreateWorkspaceStore,
+  saveWorkspaceStore,
+  replaceWorkspace,
+  removeReceivedWorkspace,
+  updateActiveWorkspaceSnapshot,
+  updateSelfWorkspaceSnapshot,
+  workspaceSnapshotFingerprint,
+  type HappyBallWorkspaceStore,
+} from "./workspace";
+import {
+  applyWorkspaceShareToExisting,
+  countWorkspaceShareBalls,
+  createWorkspaceFromShare,
+  createWorkspaceShareBundle,
+  reviewWorkspaceShare,
+  selectWorkspaceShareBalls,
+  type WorkspaceImportSelection,
+  type WorkspaceSharePeriod,
+} from "./workspace-transfer";
 
 const appRoot = getAppRoot();
 
-let ledger = loadLedger();
+const legacyLedger = loadLedger();
+const legacyAppSettings = loadAppSettings();
+const legacyCategories = loadCategoryColorPresets();
+let workspaceStore: HappyBallWorkspaceStore = loadOrCreateWorkspaceStore({
+  ledger: legacyLedger,
+  categories: legacyCategories,
+  appSettings: legacyAppSettings,
+});
+const legacySnapshot = {
+  ledger: legacyLedger,
+  categories: legacyCategories,
+  appSettings: legacyAppSettings,
+};
+const legacyFingerprint = workspaceSnapshotFingerprint(legacySnapshot);
+const storedSelf = getSelfWorkspace(workspaceStore);
+const storedSelfFingerprint = workspaceSnapshotFingerprint(storedSelf);
+if (!workspaceStore.selfLegacyFingerprint || workspaceStore.selfLegacyFingerprint !== legacyFingerprint) {
+  workspaceStore = updateSelfWorkspaceSnapshot(workspaceStore, legacySnapshot);
+  saveWorkspaceStore(workspaceStore);
+} else if (storedSelfFingerprint !== workspaceStore.selfLegacyFingerprint) {
+  saveLedger(storedSelf.ledger);
+  saveCategoryColorPresets(storedSelf.categories);
+  saveAppSettings(storedSelf.appSettings);
+  workspaceStore = { ...workspaceStore, selfLegacyFingerprint: storedSelfFingerprint };
+  saveWorkspaceStore(workspaceStore);
+}
+const initialWorkspace = getActiveWorkspace(workspaceStore);
+let ledger = initialWorkspace.ledger;
 let activityLog: ActivityLogEntry[] = loadActivityLog();
-let appSettings: AppSettings = loadAppSettings();
-const startupScreenState = createStartupScreenState(ledger.balls, todayIsoDate(), appSettings.startupScreen);
+let appSettings: AppSettings = normalizeAppSettings(initialWorkspace.appSettings);
+let editableCategories: CategoryColorPreset[] = normalizeCategoryColorPresets(initialWorkspace.categories);
+const startupScreenSetting = getSelfWorkspace(workspaceStore).appSettings.startupScreen;
+const startupScreenState = createStartupScreenState(ledger.balls, todayIsoDate(), startupScreenSetting);
 let draft = createDefaultDraft(getPrimarySelfName(ledger));
-let editableCategories: CategoryColorPreset[] = loadCategoryColorPresets();
+let createDraftBeforeOpen: BallDraft | null = null;
+let createAuthoringBall: HappyBall | null = null;
 let selectedBallId: string | null = startupScreenState.selectedBallId;
 let uiState: AppUiState = createInitialAppUiState(startupScreenState.startupScreen);
 let displayMode: DisplayMode = "day";
@@ -172,6 +237,7 @@ let subfeatureReturnScreen: PrimaryScreenState = createMainPrimaryScreen(calenda
 let pendingUrlPacket: UrlPacketParseResult | null = parsePacketLocation(window.location.search, window.location.hash);
 let snoozedUrlPacket: UrlPacketParseResult | null = null;
 let pendingJsonImport: JsonImportReview | null = null;
+let pendingWorkspaceImportTarget: string | null = null;
 let physicsStage: RapierStage | null = null;
 const physicsRuntime = new PhysicsRuntimeController<RapierStage>();
 const physicsSnapshots = new Map<string, PhysicsBallSnapshot>();
@@ -230,6 +296,7 @@ const SETTINGS_GROUP_CLASSES = [
   "descent-settings",
   "physics-settings",
   "sound-settings",
+  "workspace-management",
   "backup-settings",
   "ball-management-panel",
   "activity-log-panel",
@@ -282,12 +349,28 @@ function installAudioLifecycleHandlers(): void {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {
       audioEngine.suspend();
+    } else if (appSettings.soundEnabled) {
+      audioEngine.recoverExistingContext();
     }
   });
 
   window.addEventListener("pagehide", () => {
     audioEngine.close();
   });
+
+  window.addEventListener("pageshow", () => {
+    if (appSettings.soundEnabled) {
+      audioEngine.recoverExistingContext();
+    }
+  });
+
+  const recoverFromGesture = () => {
+    if (appSettings.soundEnabled) {
+      audioEngine.unlock();
+    }
+  };
+  document.addEventListener("pointerdown", recoverFromGesture, { capture: true, passive: true });
+  document.addEventListener("keydown", recoverFromGesture, { capture: true });
 }
 
 function bindModalKeyboardFocusAssist(root: ParentNode = document): void {
@@ -314,7 +397,61 @@ function bindModalKeyboardFocusAssist(root: ParentNode = document): void {
   });
 }
 
+function persistActiveWorkspaceSnapshot(): void {
+  const nextStore = updateActiveWorkspaceSnapshot(workspaceStore, {
+    ledger,
+    categories: editableCategories,
+    appSettings,
+  });
+  if (nextStore === workspaceStore) {
+    return;
+  }
+  saveWorkspaceStore(nextStore);
+  workspaceStore = nextStore;
+  syncSelfLegacySnapshot(workspaceStore);
+}
+
+function syncSelfLegacySnapshot(store: HappyBallWorkspaceStore): void {
+  const self = getSelfWorkspace(store);
+  saveLedger(self.ledger);
+  saveCategoryColorPresets(self.categories);
+  saveAppSettings(self.appSettings);
+}
+
+function renderWorkspaceScreenName(label: string, extraClass = ""): string {
+  const received = isReceivedWorkspace(workspaceStore);
+  const code = received ? getWorkspaceDisplayCode(workspaceStore, workspaceStore.activeWorkspaceId) : "";
+  return `
+    <button class="screen-kicker workspace-screen-name ${extraClass}${received ? " is-received" : ""}" type="button" data-cycle-workspace aria-label="次の利用環境へ切り替える">
+      <span>${escapeHtml(label)}</span>${received ? `<small>ID=${escapeHtml(code)}</small>` : ""}
+    </button>
+  `;
+}
+
+function activateNextWorkspaceRuntime(): void {
+  if (workspaceStore.workspaces.length < 2) {
+    return;
+  }
+  persistActiveWorkspaceSnapshot();
+  workspaceStore = activateNextWorkspace(workspaceStore);
+  saveWorkspaceStore(workspaceStore);
+  const workspace = getActiveWorkspace(workspaceStore);
+  ledger = workspace.ledger;
+  editableCategories = normalizeCategoryColorPresets(workspace.categories);
+  appSettings = normalizeAppSettings(workspace.appSettings);
+  selectedBallId = null;
+  draft = createDefaultDraft(getPrimarySelfName(ledger));
+  physicsSnapshots.clear();
+  playJutsuState = createInitialPlayJutsuState();
+  playControlsOpen = false;
+  baseRenderSignature = "";
+  syncGravityController();
+  render();
+}
+
 function render(): void {
+  persistActiveWorkspaceSnapshot();
+  appRoot.classList.toggle("is-received-workspace", isReceivedWorkspace(workspaceStore));
   openSettingsGroups = uiState.primary === "settings" ? readOpenSettingsGroups() : [];
   clearModalLayers(false);
   const visibleBalls = getVisibleBalls();
@@ -331,8 +468,14 @@ function render(): void {
   restorePendingSettingsScroll();
 }
 
+function getEffectiveBallLabelMode(): BallLabelMode {
+  return appSettings.ballLabelMode;
+}
+
 function ensureBaseRendered(visibleBalls: HappyBall[], selectedBall: HappyBall | null): void {
+  const ballLabelMode = getEffectiveBallLabelMode();
   const nextSignature = JSON.stringify({
+    workspaceId: workspaceStore.activeWorkspaceId,
     balls: visibleBalls,
     selectedBallId,
     displayMode,
@@ -352,10 +495,10 @@ function ensureBaseRendered(visibleBalls: HappyBall[], selectedBall: HappyBall |
 
   uiHosts.renderBase(`
     <main class="app-shell ball-world-shell">
-      <section class="stage ${appSettings.ballLabelMode !== "none" ? "show-ball-labels" : ""} label-mode-${appSettings.ballLabelMode}" aria-label="えもい玉">
+      <section class="stage ${ballLabelMode !== "none" ? "show-ball-labels" : ""} label-mode-${ballLabelMode}" aria-label="えもい玉">
         <div class="stage-topline">
           <div>
-            <p class="screen-kicker play-screen-kicker">Emotion Play</p>
+            ${renderWorkspaceScreenName("Emotion Play", "play-screen-kicker")}
             ${renderPlayPeriodNav()}
             <h1 id="stage-title">${escapeHtml(selectedBall ? createVisibilitySafeSummaryLabel(selectedBall) : "今日のえもい玉は？")}</h1>
             ${renderPopulationStatus(visualPopulation)}
@@ -416,7 +559,7 @@ function ensureBaseRendered(visibleBalls: HappyBall[], selectedBall: HappyBall |
               <button class="dock-symbol-button dock-create-button" type="button" data-open-panel="create" aria-label="玉を作る">${renderCreateBallIcon()}</button>
             </span>
             <span class="primary-screen-control-group" aria-label="主要3画面">
-              <button class="calendar-main-ball-button ${appSettings.ballLabelMode !== "none" ? "is-label-on" : ""}" type="button" data-cycle-ball-label-mode aria-current="page" aria-label="${escapeHtml(renderBallLabelModeCycleAriaLabel(appSettings.ballLabelMode))}">
+              <button class="calendar-main-ball-button ${ballLabelMode !== "none" ? "is-label-on" : ""}" type="button" data-cycle-ball-label-mode aria-current="page" aria-label="${escapeHtml(renderBallLabelModeCycleAriaLabel(ballLabelMode))}">
                 ${renderPlayScreenIcon()}
               </button>
               <button class="calendar-screen-button" type="button" data-open-panel="calendar" aria-label="カレンダー">
@@ -478,6 +621,11 @@ function getCalendarRenderContext(): CalendarRenderContext {
     emotionEchoStrength: appSettings.emotionEchoStrength,
     calendarMarkerMode: appSettings.calendarMarkerMode,
     activityLog,
+    categories: editableCategories,
+    shareBalls: ledger.balls,
+    workspaceDisplayCode: isReceivedWorkspace(workspaceStore)
+      ? getWorkspaceDisplayCode(workspaceStore, workspaceStore.activeWorkspaceId)
+      : null,
   };
 }
 
@@ -502,18 +650,27 @@ function updateCalendarPrimarySurface(surface: HTMLElement, context: CalendarRen
 
   const template = document.createElement("template");
   template.innerHTML = renderCalendarOverlay(context);
-  const nextState = template.content.querySelector<HTMLElement>("[data-calendar-marker-state]");
-  const currentState = surface.querySelector<HTMLElement>("[data-calendar-marker-state]");
-  if (currentState && nextState) {
-    currentState.hidden = nextState.hidden;
-    currentState.textContent = nextState.textContent;
-  }
-  const nextMarker = template.content.querySelector<HTMLButtonElement>("[data-calendar-cycle-marker-mode]");
-  const currentMarker = surface.querySelector<HTMLButtonElement>("[data-calendar-cycle-marker-mode]");
-  if (currentMarker && nextMarker) {
-    currentMarker.hidden = nextMarker.hidden;
-    currentMarker.innerHTML = nextMarker.innerHTML;
-    currentMarker.setAttribute("aria-label", nextMarker.getAttribute("aria-label") ?? "玉表示を切り替え");
+  const nextDock = template.content.querySelector<HTMLElement>(".calendar-control-dock");
+  const currentDock = surface.querySelector<HTMLElement>(".calendar-control-dock");
+  const dockShapeChanged = Boolean(currentDock?.querySelector("[data-calendar-open-panel='create']"))
+    !== Boolean(nextDock?.querySelector("[data-calendar-open-panel='create']"));
+  if (currentDock && nextDock && dockShapeChanged) {
+    currentDock.replaceWith(nextDock);
+    bindEvents(nextDock);
+  } else {
+    const nextState = template.content.querySelector<HTMLElement>("[data-calendar-marker-state]");
+    const currentState = surface.querySelector<HTMLElement>("[data-calendar-marker-state]");
+    if (currentState && nextState) {
+      currentState.hidden = nextState.hidden;
+      currentState.textContent = nextState.textContent;
+    }
+    const nextMarker = template.content.querySelector<HTMLButtonElement>("[data-calendar-cycle-marker-mode]");
+    const currentMarker = surface.querySelector<HTMLButtonElement>("[data-calendar-cycle-marker-mode]");
+    if (currentMarker && nextMarker) {
+      currentMarker.hidden = nextMarker.hidden;
+      currentMarker.innerHTML = nextMarker.innerHTML;
+      currentMarker.setAttribute("aria-label", nextMarker.getAttribute("aria-label") ?? "玉表示を切り替え");
+    }
   }
   bindEvents(header);
   bindEvents(body);
@@ -532,11 +689,12 @@ function setAriaCurrent(button: HTMLButtonElement | null, current: boolean): voi
 
 function renderActivePrimaryPanel(): string {
   if (uiState.primary === "create") {
+    createAuthoringBall ??= createPendingBall(ledger, draft);
     return renderPanelOverlay(
       "玉を置く",
-      renderCreateForm(draft, getFormRenderContext()),
+      renderCreateForm(draft, getFormRenderContext(), createAuthoringBall),
       "create",
-      { label: "玉を置く", formId: "ball-form" },
+      { label: "保存", formId: "ball-form" },
     );
   }
   if (uiState.primary === "saved-list") {
@@ -544,7 +702,11 @@ function renderActivePrimaryPanel(): string {
     const title = ledgerListDateFilter ? `${ledgerListDateFilter} の保存された玉` : "保存された玉";
     return renderPanelOverlay(
       title,
-      renderLedgerList(managedBalls, selectedBallId, { dateFilter: ledgerListDateFilter, activityLog }),
+      renderLedgerList(managedBalls, selectedBallId, {
+        dateFilter: ledgerListDateFilter,
+        activityLog,
+        categories: editableCategories,
+      }),
       "list",
     );
   }
@@ -560,9 +722,56 @@ function syncPendingImportSurface(): void {
   }
   if (pendingJsonImport) {
     dispatchUi({ type: "replace-modal", route: "json-import" }, false);
-    const root = uiHosts.replaceModal("json-import", renderPendingJsonImportDialog(pendingJsonImport, appSettings.emotionEchoStrength));
+    const root = uiHosts.replaceModal("json-import", renderPendingJsonImportDialog(
+      pendingJsonImport,
+      appSettings.emotionEchoStrength,
+      editableCategories,
+      getWorkspaceImportDialogContext(),
+    ));
     bindEvents(root);
+    installBallDialogEscapeHandler(() => {
+      pendingJsonImport = null;
+      pendingWorkspaceImportTarget = null;
+      render();
+    });
   }
+}
+
+function getWorkspaceImportDialogContext() {
+  const workspaceShare = pendingJsonImport?.workspaceShare;
+  if (!workspaceShare) {
+    return undefined;
+  }
+  const active = getActiveWorkspace(workspaceStore);
+  const matching = findWorkspaceBySourceId(workspaceStore, workspaceShare.bundle.sourceWorkspaceId);
+  const targets = [{ value: active.workspaceId, label: `現在の利用環境：${active.displayName}` }];
+  if (matching && matching.workspaceId !== active.workspaceId) {
+    targets.push({ value: matching.workspaceId, label: `保存済み ID=${getWorkspaceDisplayCode(workspaceStore, matching.workspaceId)}：${matching.displayName}` });
+  }
+  if (!matching && workspaceStore.workspaces.length < 4) {
+    targets.push({ value: "new", label: "新しい別利用環境" });
+  }
+  const selectedTarget = targets.some((target) => target.value === pendingWorkspaceImportTarget)
+    ? pendingWorkspaceImportTarget!
+    : matching?.workspaceId ?? active.workspaceId;
+  const selectedWorkspace = selectedTarget === "new"
+    ? null
+    : workspaceStore.workspaces.find((workspace) => workspace.workspaceId === selectedTarget) ?? active;
+  const selectedReview = reviewWorkspaceShare(workspaceShare.bundle, selectedWorkspace?.ledger.balls ?? [])?.review
+    ?? workspaceShare.review;
+  const existingNameIds = new Set(selectedWorkspace?.ledger.ownerProfile.nameBook.map((entry) => entry.id) ?? []);
+  const missingNameCount = workspaceShare.bundle.ledger.ownerProfile.nameBook
+    .filter((entry) => !existingNameIds.has(entry.id)).length;
+  return {
+    targets,
+    selectedTarget,
+    selectedReview,
+    selectedTargetIsNew: selectedTarget === "new",
+    missingNameCount,
+    displayCode: matching
+      ? getWorkspaceDisplayCode(workspaceStore, matching.workspaceId)
+      : workspaceShare.bundle.sourceDisplayCode,
+  };
 }
 
 function dispatchUi(action: AppUiAction, apply = true): void {
@@ -717,6 +926,7 @@ function getDialogRenderContext(): DialogRenderContext {
     emotionEchoStrength: appSettings.emotionEchoStrength,
     includeDescentGpsInHandoff: appSettings.includeDescentGpsInHandoff,
     handoffDebugEnabled: isHandoffDebugEnabled(window.location.search),
+    categories: editableCategories,
   };
 }
 
@@ -799,6 +1009,15 @@ function getToolsPanelRenderContext(): ToolsPanelRenderContext {
     maxNameBookEntries: MAX_NAME_BOOK_ENTRIES,
     defaultSampleName: DEFAULT_SAMPLE_NAME,
     physicsSettingsProfile,
+    workspaces: workspaceStore.workspaces.map((workspace) => ({
+      workspaceId: workspace.workspaceId,
+      displayName: workspace.displayName,
+      displayCode: getWorkspaceDisplayCode(workspaceStore, workspace.workspaceId),
+      role: workspace.role,
+      active: workspace.workspaceId === workspaceStore.activeWorkspaceId,
+      ballCount: workspace.ledger.balls.length,
+      lastImportedAt: workspace.lastImportedAt,
+    })),
   };
 }
 
@@ -893,7 +1112,17 @@ function renderNextDisplayModeName(mode: DisplayMode): string {
 }
 
 function prepareCreateDraftForOpen(): void {
+  createDraftBeforeOpen = { ...draft };
   draft = refreshCreateDraftForOpen(draft, displayAnchorDate);
+  createAuthoringBall = createPendingBall(ledger, draft);
+}
+
+function cancelCreateAuthoringSession(): void {
+  if (createDraftBeforeOpen) {
+    draft = createDraftBeforeOpen;
+  }
+  createDraftBeforeOpen = null;
+  createAuthoringBall = null;
 }
 
 function getCalendarBalls(): HappyBall[] {
@@ -1035,7 +1264,8 @@ function showReceiptDialog(ballId: string, sendMode: SendMode = "formal"): void 
 }
 
 function showReceiptQrDialog(ballId: string, sendMode: SendMode = "formal"): void {
-  ledger = markReceiptCreated(ledger, ballId);
+  ledger = markReceiptCreated(ledger, ballId, getActiveWorkspace(workspaceStore).role === "self");
+  persistActiveWorkspaceSnapshot();
   const ball = ledger.balls.find((item) => item.id === ballId);
   if (!ball) {
     return;
@@ -1097,8 +1327,6 @@ function showBallEditDialog(ballId: string): void {
     event.preventDefault();
     requestSaveBallEditDialog(root, form, ball);
   });
-  bindLifecycleActionEvents(root);
-  bindDeleteBallEvents(root);
   bindDescendBallEvents(root);
   bindNamePresetEvents(root);
   bindTimeControlEvents(root);
@@ -1135,28 +1363,60 @@ function saveBallEditForm(form: HTMLFormElement | null, saveMode: BallSaveMode):
   if (!form || !editingId) {
     return;
   }
-  const deletedDescents = readPendingDeletedDescents(form);
-  ledger = updateBall(ledger, editingId, readDraft(form), saveMode);
+  const previousBall = ledger.balls.find((ball) => ball.id === editingId);
+  if (!previousBall) {
+    return;
+  }
+  const nextDescents = readEditedDescentRecords(form);
+  ledger = updateBall(ledger, editingId, readDraft(form), saveMode, nextDescents, getActiveWorkspace(workspaceStore).role === "self");
   const editedBall = ledger.balls.find((ball) => ball.id === editingId);
   if (editedBall) {
-    const updatedBall = applyDescentRecordsToBall(editedBall, readEditedDescentRecords(form));
-    ledger = {
-      ...ledger,
-      balls: ledger.balls.map((ball) => ball.id === editingId ? updatedBall : ball),
-      updatedAt: updatedBall.updatedAt,
-    };
-    saveLedger(ledger);
-    for (const deleted of deletedDescents) {
-      appendActivity(createBallActivityInput(updatedBall, {
-        action: "descent-delete",
-        descentSequence: deleted.sequence,
-        message: deleted.id,
-      }));
-    }
+    recordStagedDescentActivities(previousBall.descents ?? [], editedBall);
   }
   selectedBallId = editingId;
   render();
   showBallDialog(editingId);
+}
+
+function recordStagedDescentActivities(previousRecords: HappyBallDescentRecord[], nextBall: HappyBall): void {
+  const nextRecords = nextBall.descents ?? [];
+  const previousById = new Map(previousRecords.map((record) => [record.id, record]));
+  const nextById = new Map(nextRecords.map((record) => [record.id, record]));
+
+  for (const record of previousRecords) {
+    if (!nextById.has(record.id)) {
+      appendActivity(createBallActivityInput(nextBall, {
+        action: "descent-delete",
+        descentSequence: record.sequence,
+        message: record.id,
+      }));
+    }
+  }
+
+  for (const record of nextRecords) {
+    const previous = previousById.get(record.id);
+    if (!previous) {
+      appendActivity(createBallActivityInput(nextBall, {
+        action: "descent-create",
+        descentSequence: record.sequence,
+        message: hasDescentPosition(record) ? "GPS取得成功" : "仮降臨",
+      }));
+      continue;
+    }
+
+    const previousPosition = hasDescentPosition(previous)
+      ? [previous.latitude, previous.longitude, previous.accuracyMeters]
+      : null;
+    const nextPosition = hasDescentPosition(record)
+      ? [record.latitude, record.longitude, record.accuracyMeters]
+      : null;
+    if (JSON.stringify(previousPosition) !== JSON.stringify(nextPosition)) {
+      appendActivity(createBallActivityInput(nextBall, {
+        action: nextPosition ? "descent-gps-update" : "descent-gps-clear",
+        descentSequence: record.sequence,
+      }));
+    }
+  }
 }
 
 function requestSaveBallEditDialog(root: HTMLElement, form: HTMLFormElement | null, originalBall: HappyBall): void {
@@ -1169,6 +1429,11 @@ function requestSaveBallEditDialog(root: HTMLElement, form: HTMLFormElement | nu
     return;
   }
 
+  if (!hasEditDraftChanged(originalBall, readDraft(form))) {
+    saveBallEditForm(form, "correction");
+    return;
+  }
+
   showEditSaveModeConfirm(root, form, "save");
 }
 
@@ -1178,15 +1443,15 @@ function requestCloseBallEditDialog(root: HTMLElement, form: HTMLFormElement | n
     return;
   }
 
-  showEditSaveModeConfirm(root, form, "close");
+  showEditSaveModeConfirm(root, form, "close", !hasEditDraftChanged(originalBall, readDraft(form)));
 }
 
-function showEditSaveModeConfirm(root: HTMLElement, form: HTMLFormElement, reason: "save" | "close"): void {
+function showEditSaveModeConfirm(root: HTMLElement, form: HTMLFormElement, reason: "save" | "close", descentOnly = false): void {
   uiHosts.clearConfirm();
   dispatchUi({ type: "open-confirm", route: "edit-save" }, false);
   const confirmRoot = uiHosts.renderConfirm(
     "edit-save",
-    `<div class="edit-unsaved-backdrop" data-edit-unsaved-confirm>${renderEditSaveModeConfirm(reason)}</div>`,
+    `<div class="edit-unsaved-backdrop" data-edit-unsaved-confirm>${renderEditSaveModeConfirm(reason, descentOnly)}</div>`,
   );
   applyUiState();
   confirmRoot.querySelector<HTMLButtonElement>("[data-edit-save-echo]")?.addEventListener("click", () => {
@@ -1219,8 +1484,7 @@ function hasEditDraftChanged(ball: HappyBall, next: BallDraft): boolean {
 }
 
 function hasEditFormChanged(ball: HappyBall, form: HTMLFormElement): boolean {
-  const latestBall = ledger.balls.find((item) => item.id === ball.id) ?? ball;
-  return hasEditDraftChanged(ball, readDraft(form)) || haveDescentRecordsChanged(latestBall.descents ?? [], readEditedDescentRecords(form));
+  return hasEditDraftChanged(ball, readDraft(form)) || haveDescentRecordsChanged(ball.descents ?? [], readEditedDescentRecords(form));
 }
 
 function haveDescentRecordsChanged(previous: NonNullable<HappyBall["descents"]>, next: NonNullable<HappyBall["descents"]>): boolean {
@@ -1460,12 +1724,11 @@ function expandVisualBalls(balls: HappyBall[]): VisualBallSource[] {
   return sortNewestFirst(balls).flatMap((ball) => {
     const count = Math.max(1, Math.min(ball.count, 200));
     return Array.from({ length: count }, (_, index) => {
-      const label = createBallDisplayLabel(ball, appSettings.ballLabelMode);
+      const label = createBallDisplayLabel(ball, getEffectiveBallLabelMode());
       const baseInstanceId = `${ball.id}_${index}`;
-      const category = editableCategories.find((preset) => preset.name === ball.category)
-        ?? categoryColorPresets.find((preset) => preset.name === ball.category)
-        ?? editableCategories.find((preset) => preset.visualKind === ball.visual.kind && preset.hue === ball.visual.hue);
-      const motionClass = resolveMotionClass(category?.tone ?? (ball.visual.kind === "ring" ? "future" : "neutral"), ball.visual.kind);
+      const visual = resolveBallDisplayVisual(ball, editableCategories);
+      const category = findDisplayCategoryPreset(ball.category, editableCategories);
+      const motionClass = resolveMotionClass(category?.tone ?? (visual.kind === "ring" ? "future" : "neutral"), visual.kind);
       return {
         id: baseInstanceId,
         ballId: ball.id,
@@ -1475,14 +1738,16 @@ function expandVisualBalls(balls: HappyBall[]): VisualBallSource[] {
         fragmentOrdinal: 0,
         radius: appSettings.radius,
         motionClass,
-        hue: ball.visual.hue,
-        saturation: ball.visual.saturation,
-        lightness: ball.visual.lightness,
-        visualKind: ball.visual.kind,
+        hue: visual.hue,
+        saturation: visual.saturation,
+        lightness: visual.lightness,
+        visualKind: visual.kind,
         lifecycleStatus: ball.lifecycleStatus,
         descentBadgeCount: ball.descentBadgeCount ?? 0,
         isKamiBall: ball.isKamiBall === true,
-        echo: shouldShowEmotionEcho(ball) ? ball.emotionEcho?.visual ?? null : null,
+        echo: shouldShowEmotionEcho(ball) && ball.emotionEcho
+          ? resolveEchoDisplayVisual(ball.emotionEcho, editableCategories)
+          : null,
         snapshot: physicsSnapshots.get(`${ball.id}_${index}`) ?? null,
         label,
         labelClass: createBallLabelClass(label),
@@ -1694,25 +1959,28 @@ function createBallLabelClass(label: string): string {
 }
 
 function syncBallLabelModeWithoutPhysicsRebuild(): boolean {
+  const ballLabelMode = getEffectiveBallLabelMode();
   const stage = uiHosts.base.querySelector<HTMLElement>(".stage");
   const button = uiHosts.base.querySelector<HTMLButtonElement>("[data-cycle-ball-label-mode]");
   if (!stage || !button) {
     return false;
   }
 
-  stage.classList.toggle("show-ball-labels", appSettings.ballLabelMode !== "none");
+  stage.classList.toggle("show-ball-labels", ballLabelMode !== "none");
   for (const mode of ["none", "date", "title", "name"] as const) {
-    stage.classList.toggle(`label-mode-${mode}`, appSettings.ballLabelMode === mode);
+    stage.classList.toggle(`label-mode-${mode}`, ballLabelMode === mode);
   }
-  button.classList.toggle("is-label-on", appSettings.ballLabelMode !== "none");
-  button.setAttribute("aria-label", renderBallLabelModeCycleAriaLabel(appSettings.ballLabelMode));
+  button.classList.toggle("is-label-on", ballLabelMode !== "none");
+  button.setAttribute("aria-label", renderBallLabelModeCycleAriaLabel(ballLabelMode));
   button.innerHTML = renderPlayScreenIcon();
 
   if (!physicsStage) {
     return true;
   }
   const population = createVisualPopulation(getVisibleBalls());
-  return physicsStage.updateVisualSources(population.displayed);
+  const updated = physicsStage.updateVisualSources(population.displayed);
+  physicsStage.updateSettings(getRuntimeAppSettings());
+  return updated;
 }
 
 function updateSelectedState(): void {
@@ -1732,6 +2000,25 @@ function updateSelectedSummary(): void {
 
 function bindEvents(root: ParentNode): void {
   bindPlayModePopover(root);
+  root.querySelectorAll<HTMLButtonElement>("[data-cycle-workspace]").forEach((button) => {
+    button.addEventListener("click", activateNextWorkspaceRuntime);
+  });
+  const workspaceShareForm = root.querySelector<HTMLFormElement>("#workspace-share-form");
+  if (workspaceShareForm) {
+    workspaceShareForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const submitter = (event as SubmitEvent).submitter as HTMLElement | null;
+      void exportWorkspaceSelection(
+        event.currentTarget as HTMLFormElement,
+        submitter?.dataset.workspaceShareMode === "download" ? "download" : "share",
+      );
+    });
+    workspaceShareForm.querySelectorAll<HTMLInputElement>("input[type='date']").forEach((input) => {
+      input.addEventListener("input", () => syncWorkspaceShareFormState(workspaceShareForm));
+      input.addEventListener("change", () => syncWorkspaceShareFormState(workspaceShareForm));
+    });
+    syncWorkspaceShareFormState(workspaceShareForm);
+  }
   root.querySelector<HTMLButtonElement>("[data-toggle-play-modes]")?.addEventListener("click", () => {
     playControlsOpen = !playControlsOpen;
     syncPlayModeControls();
@@ -1858,6 +2145,9 @@ function bindEvents(root: ParentNode): void {
       const isBackdrop = element.classList.contains("panel-backdrop");
       if (isBackdrop && event.target !== element) {
         return;
+      }
+      if (uiState.primary === "create") {
+        cancelCreateAuthoringSession();
       }
       if (uiState.primary === "create" || uiState.primary === "settings" || uiState.primary === "saved-list") {
         restoreSubfeatureReturnScreen();
@@ -1996,11 +2286,24 @@ function bindEvents(root: ParentNode): void {
     event.preventDefault();
     audioEngine.unlock();
     draft = readDraft(form);
-    ledger = addBall(ledger, draft);
-    selectedBallId = ledger.balls[0]?.id ?? null;
+    const pendingBall = createAuthoringBall ?? createPendingBall(ledger, draft);
+    const descents = readEditedDescentRecords(form);
+    ledger = addBall(ledger, draft, {
+      id: pendingBall.id,
+      createdAt: pendingBall.createdAt,
+      descents,
+      persist: getActiveWorkspace(workspaceStore).role === "self",
+    });
+    const savedBall = ledger.balls[0] ?? null;
+    if (savedBall) {
+      recordStagedDescentActivities([], savedBall);
+    }
+    selectedBallId = savedBall?.id ?? null;
     displayMode = "day";
     restoreSubfeatureReturnScreen(draft.date);
     draft = { ...createDefaultDraft(getPrimarySelfName(ledger)), subject: draft.subject, issuerType: draft.issuerType };
+    createDraftBeforeOpen = null;
+    createAuthoringBall = null;
     render();
   });
 
@@ -2010,6 +2313,7 @@ function bindEvents(root: ParentNode): void {
   if (form) {
     bindTimeControlEvents(form);
     bindBallCountSliderControls(form);
+    bindEditDescentEvents(form);
   }
 
   bindSettingsGroupDisclosureEvents(root);
@@ -2048,15 +2352,15 @@ function bindEvents(root: ParentNode): void {
       action: "clear-ball-data",
       message: `${ledger.balls.length}件`,
     });
-    ledger = clearBallData(ledger);
+    ledger = clearBallData(ledger, getActiveWorkspace(workspaceStore).role === "self");
     selectedBallId = null;
     render();
   });
 
   root.querySelector("#export-json")?.addEventListener("click", () => {
-    if (exportSelectedJson({ ledger, appSettings, categories: editableCategories, activityLog })) {
-      appendActivity({ action: "json-export" });
-    }
+    persistActiveWorkspaceSnapshot();
+    exportDeviceBackupJson(workspaceStore);
+    appendActivity({ action: "json-export" });
   });
 
   root.querySelector("#import-json")?.addEventListener("click", () => {
@@ -2132,6 +2436,75 @@ function bindEvents(root: ParentNode): void {
   bindDescendBallEvents(root);
 }
 
+async function exportWorkspaceSelection(form: HTMLFormElement, mode: "share" | "download"): Promise<void> {
+  const { from, to, balls } = readWorkspaceShareFormSelection(form);
+  if (!from || !to || from > to) {
+    alert("開始日と終了日を正しい順序で指定してください。");
+    return;
+  }
+  if (balls.length === 0) {
+    alert("指定期間に送る玉がありません。");
+    return;
+  }
+  persistActiveWorkspaceSnapshot();
+  const workspace = getActiveWorkspace(workspaceStore);
+  const period: WorkspaceSharePeriod = {
+    from,
+    to,
+    selection: "period",
+  };
+  const bundle = createWorkspaceShareBundle(
+    workspace,
+    balls,
+    period,
+    getWorkspaceDisplayCode(workspaceStore, workspace.workspaceId),
+  );
+  const fileName = createWorkspaceShareFileName(from, to, bundle.exportedAt);
+  if (mode === "share") {
+    const file = new File([`${JSON.stringify(bundle, null, 2)}\n`], fileName, { type: "application/json" });
+    if (typeof navigator.share === "function" && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: "えもい玉 利用環境" });
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+      }
+    }
+  }
+  downloadJsonFile(bundle, fileName);
+}
+
+function readWorkspaceShareFormSelection(form: HTMLFormElement): {
+  from: string;
+  to: string;
+  balls: HappyBall[];
+} {
+  const data = new FormData(form);
+  const from = String(data.get("workspace-share-from") ?? "");
+  const to = String(data.get("workspace-share-to") ?? "");
+  return { from, to, balls: selectWorkspaceShareBalls(ledger.balls, from, to) };
+}
+
+function syncWorkspaceShareFormState(form: HTMLFormElement): void {
+  const { balls } = readWorkspaceShareFormSelection(form);
+  const targetCount = countWorkspaceShareBalls(balls);
+  const count = form.querySelector<HTMLElement>("[data-workspace-share-count]");
+  if (count) {
+    count.textContent = `対象 ${targetCount}玉`;
+  }
+  form.querySelectorAll<HTMLButtonElement>("[data-workspace-share-mode]").forEach((button) => {
+    button.disabled = balls.length === 0;
+  });
+}
+
+function createWorkspaceShareFileName(from: string, to: string, exportedAt: string): string {
+  const period = from === to ? from.replace(/-/g, "") : `${from.replace(/-/g, "")}-${to.replace(/-/g, "")}`;
+  const stamp = exportedAt.replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "").replace("T", "-");
+  return `emoi-dama-workspace-${period}-${stamp}.json`;
+}
+
 function primaryRouteFromPanel(panel: string | undefined): PrimaryRoute | null {
   if (panel === "calendar") return "calendar-month";
   if (panel === "create") return "create";
@@ -2161,7 +2534,7 @@ function bindLifecycleActionEvents(root: ParentNode = document): void {
         previousLifecycleStatus: target.lifecycleStatus,
         lifecycleStatus: status,
       }));
-      ledger = updateBallLifecycleStatus(ledger, id, status);
+      ledger = updateBallLifecycleStatus(ledger, id, status, getActiveWorkspace(workspaceStore).role === "self");
       selectedBallId = status === "offered" ? getVisibleBalls()[0]?.id ?? null : id;
       closeBallDialog();
       render();
@@ -2185,7 +2558,7 @@ function bindDeleteBallEvents(root: ParentNode = document): void {
         action: "delete-ball",
         ballSnapshot: createBallActivitySnapshot(target),
       }));
-      ledger = deleteBall(ledger, id);
+      ledger = deleteBall(ledger, id, getActiveWorkspace(workspaceStore).role === "self");
       selectedBallId = getVisibleBalls()[0]?.id ?? ledger.balls[0]?.id ?? null;
       closeBallDialog();
       render();
@@ -2197,16 +2570,11 @@ function bindDescendBallEvents(root: ParentNode = document): void {
   root.querySelectorAll<HTMLButtonElement>("[data-descend-ball-id]").forEach((button) => {
     button.addEventListener("click", () => {
       const id = button.dataset.descendBallId;
-      const target = ledger.balls.find((ball) => ball.id === id);
+      const authoringForm = button.closest<HTMLFormElement>("[data-ball-authoring-form]");
+      const target = authoringForm
+        ? createWorkingAuthoringBall(authoringForm)
+        : ledger.balls.find((ball) => ball.id === id) ?? null;
       if (!target) {
-        return;
-      }
-      const editForm = button.closest<HTMLFormElement>("#ball-edit-form");
-      if (editForm?.querySelector("[data-deleted-descent-id]")) {
-        const feedback = editForm.querySelector<HTMLElement>("[data-edit-descent-feedback]");
-        if (feedback) {
-          feedback.textContent = "消去を保存してから降臨してください";
-        }
         return;
       }
       void requestDescendLocation(target, button);
@@ -2214,11 +2582,27 @@ function bindDescendBallEvents(root: ParentNode = document): void {
   });
 }
 
+function createWorkingAuthoringBall(form: HTMLFormElement): HappyBall | null {
+  const records = readEditedDescentRecords(form);
+  if (form.dataset.authoringMode === "create") {
+    const seed = createAuthoringBall ?? createPendingBall(ledger, readDraft(form));
+    createAuthoringBall = seed;
+    return createPendingBall(ledger, readDraft(form), {
+      id: seed.id,
+      createdAt: seed.createdAt,
+      descents: records,
+    });
+  }
+  const ballId = form.dataset.editingBallId;
+  const ball = ledger.balls.find((item) => item.id === ballId);
+  return ball ? applyDescentRecordsToBall(ball, records, ball.updatedAt) : null;
+}
+
 function bindEditDescentEvents(root: ParentNode = document): void {
   root.querySelectorAll<HTMLButtonElement>("[data-descent-delete-record-id]").forEach((button) => {
     button.addEventListener("click", () => {
       const item = button.closest<HTMLElement>("[data-descent-edit-item]");
-      const form = item?.closest<HTMLFormElement>("#ball-edit-form");
+      const form = item?.closest<HTMLFormElement>("[data-ball-authoring-form]");
       if (!item || !form) {
         return;
       }
@@ -2259,7 +2643,6 @@ function bindEditDescentEvents(root: ParentNode = document): void {
       writeDescentField(item, "distanceFromPreviousMeters", "");
       updateEditDescentGpsUi(item, null);
       updateDescentActionFeedback(item, "GPSを削除しました");
-      recordEditDescentGpsActivity(item, "descent-gps-clear");
     });
   });
 }
@@ -2283,7 +2666,6 @@ async function updateEditDescentGps(item: HTMLElement, button: HTMLButtonElement
     writeDescentField(item, "distanceFromPreviousMeters", "");
     updateEditDescentGpsUi(item, input);
     updateDescentActionFeedback(item, "GPS取得できました");
-    recordEditDescentGpsActivity(item, "descent-gps-update");
   } catch (error) {
     alert(`位置情報を取得できませんでした。時間をおいて、同じ降臨カードからもう一度GPS取得を試せます。\n${formatGeolocationError(error)}`);
   } finally {
@@ -2392,12 +2774,13 @@ function bindSettingsGroupDisclosureEvents(root: ParentNode): void {
 }
 
 async function handleJsonImportFile(input: HTMLInputElement): Promise<void> {
-  const review = await reviewJsonImportFile(input, ledger);
+  const review = await reviewJsonImportFile(input, getActiveWorkspace(workspaceStore).ledger);
   if (!review) {
     return;
   }
 
   pendingJsonImport = review;
+  pendingWorkspaceImportTarget = null;
   dispatchUi({ type: "open-primary", route: "play" }, false);
   render();
 }
@@ -2405,11 +2788,84 @@ async function handleJsonImportFile(input: HTMLInputElement): Promise<void> {
 function bindJsonImportEvents(root: ParentNode): void {
   root.querySelector("#dismiss-json-import")?.addEventListener("click", () => {
     pendingJsonImport = null;
+    pendingWorkspaceImportTarget = null;
     render();
   });
 
   root.querySelector("#confirm-json-import")?.addEventListener("click", () => {
     applyPendingJsonImport();
+  });
+
+  root.querySelectorAll<HTMLInputElement>("[data-workspace-display-name]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const workspaceId = input.dataset.workspaceDisplayName;
+      const workspace = workspaceStore.workspaces.find((item) => item.workspaceId === workspaceId);
+      const displayName = input.value.trim().slice(0, 24);
+      if (!workspace || workspace.role !== "received" || !displayName) {
+        input.value = workspace?.displayName ?? "";
+        return;
+      }
+      const nextStore = replaceWorkspace(workspaceStore, { ...workspace, displayName, updatedAt: new Date().toISOString() });
+      if (commitWorkspaceStore(nextStore)) {
+        render();
+      }
+    });
+  });
+
+  root.querySelectorAll<HTMLButtonElement>("[data-delete-workspace-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const workspaceId = button.dataset.deleteWorkspaceId;
+      const workspace = workspaceStore.workspaces.find((item) => item.workspaceId === workspaceId);
+      if (!workspace || workspace.role !== "received" || !confirm(`「${workspace.displayName}」の利用環境を削除します。バックアップがない限り戻せません。実行しますか？`)) {
+        return;
+      }
+      const nextStore = removeReceivedWorkspace(workspaceStore, workspace.workspaceId);
+      if (commitWorkspaceStore(nextStore)) {
+        selectedBallId = null;
+        render();
+      }
+    });
+  });
+
+  root.querySelectorAll<HTMLInputElement>("input[name='workspace-import-target']").forEach((input) => {
+    input.addEventListener("change", () => {
+      if (input.checked) {
+        pendingWorkspaceImportTarget = input.value;
+        render();
+      }
+    });
+  });
+
+  root.querySelectorAll<HTMLInputElement>("input[name='workspace-import-option']").forEach((input) => {
+    input.addEventListener("change", () => {
+      const confirmButton = root.querySelector<HTMLButtonElement>("#confirm-workspace-import");
+      if (confirmButton) {
+        confirmButton.disabled = root.querySelectorAll("input[name='workspace-import-option']:checked").length === 0;
+      }
+    });
+  });
+
+  root.querySelector("#confirm-workspace-import")?.addEventListener("click", () => {
+    applyPendingWorkspaceImport();
+  });
+
+  root.querySelector("#confirm-device-backup-import")?.addEventListener("click", () => {
+    applyPendingDeviceBackupImport();
+  });
+
+  root.querySelector<HTMLElement>("[data-cancel-workspace-import]")?.addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) {
+      pendingJsonImport = null;
+      pendingWorkspaceImportTarget = null;
+      render();
+    }
+  });
+
+  root.querySelector<HTMLElement>("[data-cancel-device-backup-import]")?.addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) {
+      pendingJsonImport = null;
+      render();
+    }
   });
 }
 
@@ -2417,7 +2873,9 @@ function applyPendingJsonImport(): void {
   if (!pendingJsonImport || pendingJsonImport.error) {
     return;
   }
-
+  if (pendingJsonImport.workspaceShare) {
+    return;
+  }
   const selectedSections = readSelectedJsonImportSections();
 
   if (selectedSections.length === 0) {
@@ -2425,17 +2883,42 @@ function applyPendingJsonImport(): void {
     return;
   }
 
-  const result = applyJsonImportReview(pendingJsonImport, selectedSections, { ledger, selectedBallId });
+  if (selectedSections.includes("ledger") && pendingJsonImport.workspaceStore) {
+    const restored = pendingJsonImport.workspaceStore;
+    const restoredSelf = getSelfWorkspace(restored);
+    const selfActiveStore = {
+      ...restored,
+      activeWorkspaceId: restoredSelf.workspaceId,
+      selfLegacyFingerprint: workspaceSnapshotFingerprint({ ledger, categories: editableCategories, appSettings }),
+    };
+    if (!commitWorkspaceStore(selfActiveStore)) {
+      return;
+    }
+    pendingJsonImport = null;
+    dispatchUi({ type: "open-primary", route: "play" }, false);
+    render();
+    return;
+  }
+
+  const result = applyJsonImportReview(pendingJsonImport, selectedSections, {
+    ledger,
+    selectedBallId,
+    persistLegacyLedger: getActiveWorkspace(workspaceStore).role === "self",
+  });
   ledger = result.ledger;
   selectedBallId = result.selectedBallId;
 
   if (result.appSettings) {
     appSettings = result.appSettings;
-    saveAppSettings(appSettings);
+    if (getActiveWorkspace(workspaceStore).role === "self") {
+      saveAppSettings(appSettings);
+    }
   }
 
   if (result.categories) {
-    editableCategories = saveCategoryColorPresets(result.categories);
+    editableCategories = getActiveWorkspace(workspaceStore).role === "self"
+      ? saveCategoryColorPresets(result.categories)
+      : normalizeCategoryColorPresets(result.categories);
   }
 
   appendActivity({
@@ -2445,6 +2928,109 @@ function applyPendingJsonImport(): void {
   pendingJsonImport = null;
   dispatchUi({ type: "open-primary", route: "play" }, false);
   render();
+}
+
+function readWorkspaceImportSelection(): WorkspaceImportSelection {
+  const selected = new Set(Array.from(document.querySelectorAll<HTMLInputElement>("input[name='workspace-import-option']:checked"))
+    .map((input) => input.value));
+  return {
+    addNewBalls: selected.has("newBalls"),
+    addNameBookEntries: selected.has("nameBook"),
+    replaceCategories: selected.has("categories"),
+    replaceAppSettings: selected.has("appSettings"),
+    replaceConflicts: selected.has("conflicts"),
+  };
+}
+
+function applyPendingWorkspaceImport(): void {
+  const workspaceShare = pendingJsonImport?.workspaceShare;
+  if (!workspaceShare) {
+    return;
+  }
+  persistActiveWorkspaceSnapshot();
+  const context = getWorkspaceImportDialogContext();
+  if (!context) {
+    return;
+  }
+  const importedAt = new Date().toISOString();
+  if (context.selectedTarget === "new") {
+    const nextStore = addWorkspace(workspaceStore, createWorkspaceFromShare(workspaceShare.bundle, importedAt));
+    if (!nextStore || !commitWorkspaceStore(nextStore)) {
+      if (!nextStore) {
+        alert("利用環境の保存枠がいっぱいです。既存の利用環境を整理してから再度お試しください。");
+      }
+      return;
+    }
+    finishWorkspaceImport(workspaceShare.bundle.ledger.balls.length, 0, 0, workspaceShare.rejectedItemCount);
+    return;
+  }
+
+  const target = workspaceStore.workspaces.find((workspace) => workspace.workspaceId === context.selectedTarget);
+  if (!target) {
+    return;
+  }
+  const result = applyWorkspaceShareToExisting(target, workspaceShare.bundle, readWorkspaceImportSelection(), importedAt);
+  if (!result.changed || !commitWorkspaceStore(replaceWorkspace(workspaceStore, result.workspace))) {
+    return;
+  }
+  finishWorkspaceImport(
+    result.addedCount,
+    result.duplicateCount,
+    result.conflictCount,
+    workspaceShare.rejectedItemCount,
+    result.replacedConflictCount,
+  );
+}
+
+function applyPendingDeviceBackupImport(): void {
+  const backup = pendingJsonImport?.deviceBackup;
+  if (!backup) {
+    return;
+  }
+  const restoredSelf = getSelfWorkspace(backup);
+  const restoredStore: HappyBallWorkspaceStore = {
+    ...backup,
+    activeWorkspaceId: restoredSelf.workspaceId,
+    selfLegacyFingerprint: workspaceSnapshotFingerprint({ ledger, categories: editableCategories, appSettings }),
+  };
+  if (!commitWorkspaceStore(restoredStore)) {
+    return;
+  }
+  selectedBallId = null;
+  pendingJsonImport = null;
+  pendingWorkspaceImportTarget = null;
+  dispatchUi({ type: "open-primary", route: "play" }, false);
+  render();
+  alert(`端末全体を復元しました。\n利用環境 ${restoredStore.workspaces.length}件`);
+}
+
+function commitWorkspaceStore(nextStore: HappyBallWorkspaceStore): boolean {
+  try {
+    saveWorkspaceStore(nextStore);
+  } catch {
+    alert("保存容量が不足したため、何も変更しませんでした。");
+    return false;
+  }
+  workspaceStore = nextStore;
+  syncSelfLegacySnapshot(workspaceStore);
+  const active = getActiveWorkspace(workspaceStore);
+  ledger = active.ledger;
+  editableCategories = normalizeCategoryColorPresets(active.categories);
+  appSettings = normalizeAppSettings(active.appSettings);
+  baseRenderSignature = "";
+  return true;
+}
+
+function finishWorkspaceImport(newCount: number, duplicateCount: number, conflictCount: number, rejectedCount: number, replacedCount = 0): void {
+  appendActivity({
+    action: "json-import",
+    message: `新規${newCount} / 登録済み${duplicateCount} / 競合${conflictCount} / 上書き${replacedCount} / 読取不可${rejectedCount}`,
+  });
+  pendingJsonImport = null;
+  pendingWorkspaceImportTarget = null;
+  dispatchUi({ type: "open-primary", route: "play" }, false);
+  render();
+  alert(`読み込み結果\n新規 ${newCount}件\n登録済み ${duplicateCount}件\n競合 ${conflictCount}件\n上書き ${replacedCount}件\n読取不可 ${rejectedCount}件`);
 }
 
 async function shareReceiptImage(ballId: string, sendMode: SendMode = "formal"): Promise<void> {
@@ -2497,30 +3083,18 @@ function updateDescentActionFeedback(item: HTMLElement, message: string): void {
   }
 }
 
-function recordEditDescentGpsActivity(item: HTMLElement, action: "descent-gps-update" | "descent-gps-clear"): void {
-  const form = item.closest<HTMLFormElement>("#ball-edit-form");
-  const ballId = form?.dataset.editingBallId;
-  const ball = ballId ? ledger.balls.find((entry) => entry.id === ballId) : null;
-  const sequence = readPositiveInteger(readDescentField(item, "sequence"), 1);
-  if (!ball) {
-    return;
-  }
-  appendActivity(createBallActivityInput(ball, {
-    action,
-    descentSequence: sequence,
-  }));
-}
-
 function getReceiptImageContext() {
   return {
     currentUrl: window.location.href,
     showMemoField: appSettings.showMemoField,
     includeDescentGpsInHandoff: appSettings.includeDescentGpsInHandoff,
+    categories: editableCategories,
   };
 }
 
 function prepareReceiptImageBall(ballId: string): { ball: HappyBall } | null {
-  ledger = markReceiptCreated(ledger, ballId);
+  ledger = markReceiptCreated(ledger, ballId, getActiveWorkspace(workspaceStore).role === "self");
+  persistActiveWorkspaceSnapshot();
   const ball = ledger.balls.find((item) => item.id === ballId);
   if (!ball) {
     return null;
@@ -2563,7 +3137,7 @@ function bindPendingUrlPacketEvents(root: ParentNode): void {
       return;
     }
     const review = reviewPacketImport(pendingUrlPacket.packet, ledger.balls);
-    ledger = importNewBalls(ledger, review.newItems);
+    ledger = importNewBalls(ledger, review.newItems, getActiveWorkspace(workspaceStore).role === "self");
     for (const ball of review.newItems) {
       appendActivity(createBallActivityInput(ball, {
         action: "url-receive",
@@ -2588,7 +3162,7 @@ function bindPendingUrlPacketEvents(root: ParentNode): void {
     if (review.conflicts.length === 0) {
       return;
     }
-    ledger = importNewAndReplaceBalls(ledger, review.newItems, review.conflicts);
+    ledger = importNewAndReplaceBalls(ledger, review.newItems, review.conflicts, getActiveWorkspace(workspaceStore).role === "self");
     for (const ball of [...review.newItems, ...review.conflicts]) {
       appendActivity(createBallActivityInput(ball, {
         action: "url-replace-receive",
@@ -2607,7 +3181,8 @@ function bindPendingUrlPacketEvents(root: ParentNode): void {
 }
 
 async function copyBallUrl(ballId: string, sendMode: SendMode = "formal"): Promise<void> {
-  ledger = markReceiptCreated(ledger, ballId);
+  ledger = markReceiptCreated(ledger, ballId, getActiveWorkspace(workspaceStore).role === "self");
+  persistActiveWorkspaceSnapshot();
   const ball = ledger.balls.find((item) => item.id === ballId);
   if (!ball) {
     return;
@@ -2623,7 +3198,8 @@ async function copyBallUrl(ballId: string, sendMode: SendMode = "formal"): Promi
 }
 
 async function copyBallLineUrl(ballId: string, sendMode: SendMode = "formal"): Promise<void> {
-  ledger = markReceiptCreated(ledger, ballId);
+  ledger = markReceiptCreated(ledger, ballId, getActiveWorkspace(workspaceStore).role === "self");
+  persistActiveWorkspaceSnapshot();
   const ball = ledger.balls.find((item) => item.id === ballId);
   if (!ball) {
     return;
@@ -2773,7 +3349,7 @@ async function requestDescendLocation(ball: HappyBall, sourceButton?: HTMLButton
     return;
   }
 
-  const editForm = sourceButton?.closest<HTMLFormElement>("#ball-edit-form") ?? null;
+  const authoringForm = sourceButton?.closest<HTMLFormElement>("[data-ball-authoring-form]") ?? null;
   const memo = window.prompt("降臨メモ（任意・80文字まで）", "") ?? "";
   pendingDescentBallIds.add(ball.id);
   updateDescentButtonsBusy(ball.id, true, sourceButton);
@@ -2792,8 +3368,12 @@ async function requestDescendLocation(ball: HappyBall, sourceButton?: HTMLButton
     if (!result.ok) {
       const keepGpsless = confirm(`現在位置が前回地点から十分に離れたと確認できませんでした。\n直近の降臨地から約${Math.round(result.distanceFromPreviousMeters)}mです。\n設定距離: ${result.requiredDistanceMeters}m\nGPSなしの仮降臨として、メモと星を残しますか？`);
       if (keepGpsless) {
-        saveGpslessDescent(ball, memo);
+        saveGpslessDescent(ball, memo, authoringForm);
       }
+      return;
+    }
+    if (authoringForm) {
+      updateAuthoringAfterNewDescent(authoringForm, result.record, `GPS取得できました / No.${result.record.sequence}を保存予定です`);
       return;
     }
     saveDescentResult(ball, result.ball);
@@ -2802,11 +3382,6 @@ async function requestDescendLocation(ball: HappyBall, sourceButton?: HTMLButton
       descentSequence: result.record.sequence,
       message: hasDescentPosition(result.record) ? "GPS取得成功" : "位置未取得",
     }));
-    if (editForm) {
-      refreshPersistentSurfacesAfterLedgerMutation();
-      updateEditDialogAfterNewDescent(editForm, result.record, `GPS取得できました / No.${result.record.sequence}を記録しました`);
-      return;
-    }
     const locationText = hasDescentPosition(result.record)
       ? `現在地: ${formatCoordinatesForUi(result.record.latitude, result.record.longitude)}`
       : "現在地: 位置未取得";
@@ -2818,16 +3393,20 @@ async function requestDescendLocation(ball: HappyBall, sourceButton?: HTMLButton
     if (!confirm(`位置情報を取得できませんでした。${detailText}\nGPSなしの仮降臨として、メモと星を残しますか？`)) {
       return;
     }
-    saveGpslessDescent(ball, memo, editForm);
+    saveGpslessDescent(ball, memo, authoringForm);
   } finally {
     pendingDescentBallIds.delete(ball.id);
     updateDescentButtonsBusy(ball.id, false, sourceButton);
   }
 }
 
-function saveGpslessDescent(ball: HappyBall, memo: string, editForm: HTMLFormElement | null = null): void {
+function saveGpslessDescent(ball: HappyBall, memo: string, authoringForm: HTMLFormElement | null = null): void {
   const result = appendDescentToBall(ball, null, appSettings.descentMinDistanceMeters, memo);
   if (!result.ok) {
+    return;
+  }
+  if (authoringForm) {
+    updateAuthoringAfterNewDescent(authoringForm, result.record, `仮降臨を保存予定です / No.${result.record.sequence}`);
     return;
   }
   saveDescentResult(ball, result.ball);
@@ -2836,26 +3415,19 @@ function saveGpslessDescent(ball: HappyBall, memo: string, editForm: HTMLFormEle
     descentSequence: result.record.sequence,
     message: "仮降臨",
   }));
-  if (editForm) {
-    refreshPersistentSurfacesAfterLedgerMutation();
-    updateEditDialogAfterNewDescent(editForm, result.record, `仮降臨を記録しました / No.${result.record.sequence}`);
-    return;
-  }
   alert(`「${ball.title}」に第${result.record.sequence}回の仮降臨を記録しました。\n位置は後で編集画面から取得できます。`);
   render();
 }
 
-function updateEditDialogAfterNewDescent(form: HTMLFormElement, record: HappyBallDescentRecord, message: string): void {
+function updateAuthoringAfterNewDescent(form: HTMLFormElement, record: HappyBallDescentRecord, message: string): void {
   replaceEditableDescentHistory(form, [...readEditedDescentRecords(form), record], message);
 }
 
 function replaceEditableDescentHistory(form: HTMLFormElement, records: HappyBallDescentRecord[], message: string): void {
-  const editingId = form.dataset.editingBallId;
-  const ball = ledger.balls.find((item) => item.id === editingId);
-  if (!ball) {
+  const displayBall = createAuthoringDisplayBall(form, records);
+  if (!displayBall) {
     return;
   }
-  const displayBall = applyDescentRecordsToBall(ball, normalizeDescentRecords(records), ball.updatedAt);
   const template = document.createElement("template");
   template.innerHTML = renderEditableDescentHistory(displayBall).trim();
   const nextHistory = template.content.firstElementChild as HTMLElement | null;
@@ -2866,7 +3438,7 @@ function replaceEditableDescentHistory(form: HTMLFormElement, records: HappyBall
   if (currentHistory) {
     currentHistory.replaceWith(nextHistory);
   } else {
-    form.querySelector(".edit-lifecycle-actions")?.insertAdjacentElement("beforebegin", nextHistory);
+    form.querySelector(".authoring-bottom-actions")?.insertAdjacentElement("beforebegin", nextHistory);
   }
   bindDescendBallEvents(nextHistory);
   bindEditDescentEvents(nextHistory);
@@ -2876,13 +3448,20 @@ function replaceEditableDescentHistory(form: HTMLFormElement, records: HappyBall
   }
 }
 
-function refreshPersistentSurfacesAfterLedgerMutation(): void {
-  const visibleBalls = getVisibleBalls();
-  const selectedBall = visibleBalls.find((ball) => ball.id === selectedBallId) ?? visibleBalls[0] ?? null;
-  ensureBaseRendered(visibleBalls, selectedBall);
-  renderPrimarySurface();
-  applyUiState();
-  applyBallFieldTextureSetting();
+function createAuthoringDisplayBall(form: HTMLFormElement, records: HappyBallDescentRecord[]): HappyBall | null {
+  const normalizedRecords = normalizeDescentRecords(records);
+  if (form.dataset.authoringMode === "create") {
+    const seed = createAuthoringBall ?? createPendingBall(ledger, readDraft(form));
+    createAuthoringBall = seed;
+    return createPendingBall(ledger, readDraft(form), {
+      id: seed.id,
+      createdAt: seed.createdAt,
+      descents: normalizedRecords,
+    });
+  }
+  const editingId = form.dataset.editingBallId;
+  const ball = ledger.balls.find((item) => item.id === editingId);
+  return ball ? applyDescentRecordsToBall(ball, normalizedRecords, ball.updatedAt) : null;
 }
 
 function saveDescentResult(previousBall: HappyBall, nextBall: HappyBall): void {
@@ -2899,7 +3478,10 @@ function saveDescentResult(previousBall: HappyBall, nextBall: HappyBall): void {
     balls: ledger.balls.map((item) => item.id === previousBall.id ? mergedBall : item),
     updatedAt: mergedBall.updatedAt,
   };
-  saveLedger(ledger);
+  if (getActiveWorkspace(workspaceStore).role === "self") {
+    saveLedger(ledger);
+  }
+  persistActiveWorkspaceSnapshot();
 }
 
 function updateDescentButtonsBusy(ballId: string, busy: boolean, sourceButton?: HTMLButtonElement): void {
@@ -3010,32 +3592,40 @@ function syncGravityController(): void {
 }
 
 function applyCategorySettings(nextCategories: CategoryColorPreset[]): CategoryColorPreset[] {
-  editableCategories = saveCategoryColorPresets(nextCategories);
+  editableCategories = getActiveWorkspace(workspaceStore).role === "self"
+    ? saveCategoryColorPresets(nextCategories)
+    : normalizeCategoryColorPresets(nextCategories);
+  persistActiveWorkspaceSnapshot();
   return editableCategories;
 }
 
 function resetCategorySettings(): void {
-  editableCategories = resetCategoryColorPresets();
+  editableCategories = getActiveWorkspace(workspaceStore).role === "self"
+    ? resetCategoryColorPresets()
+    : normalizeCategoryColorPresets([]);
+  persistActiveWorkspaceSnapshot();
   render();
 }
 
 function applyNameBookSettings(entries: NameBookEntry[]): NameBookEntry[] {
   const previousDefaultName = getPrimarySelfName(ledger);
-  ledger = updateNameBook(ledger, entries);
+  ledger = updateNameBook(ledger, entries, getActiveWorkspace(workspaceStore).role === "self");
   const nextDefaultName = getPrimarySelfName(ledger);
   if (!draft.subject.trim() || draft.subject === previousDefaultName || draft.subject === "自分") {
     draft = { ...draft, subject: nextDefaultName };
   }
+  persistActiveWorkspaceSnapshot();
   return ledger.ownerProfile.nameBook;
 }
 
 function resetNameBookSettings(): void {
   const previousDefaultName = getPrimarySelfName(ledger);
-  ledger = resetNameBook(ledger);
+  ledger = resetNameBook(ledger, getActiveWorkspace(workspaceStore).role === "self");
   const nextDefaultName = getPrimarySelfName(ledger);
   if (!draft.subject.trim() || draft.subject === previousDefaultName || draft.subject === "自分") {
     draft = { ...draft, subject: nextDefaultName };
   }
+  persistActiveWorkspaceSnapshot();
   render();
 }
 
@@ -3118,7 +3708,10 @@ function bindTimeControlEvents(root: ParentNode = document): void {
 
 function updateAppSettings(patch: Partial<AppSettings>): void {
   appSettings = normalizeAppSettings({ ...appSettings, ...patch });
-  saveAppSettings(appSettings);
+  if (getActiveWorkspace(workspaceStore).role === "self") {
+    saveAppSettings(appSettings);
+  }
+  persistActiveWorkspaceSnapshot();
   syncGravityController();
   applyBallFieldTextureSetting();
   syncRuntimePhysicsSettings();
@@ -3130,7 +3723,10 @@ function updateSelectedPhysicsSettings(
   patch: Partial<PhysicsParameterSettings>,
 ): void {
   appSettings = updatePhysicsProfileSettings(appSettings, profile, patch);
-  saveAppSettings(appSettings);
+  if (getActiveWorkspace(workspaceStore).role === "self") {
+    saveAppSettings(appSettings);
+  }
+  persistActiveWorkspaceSnapshot();
   if (profile === "normal") {
     syncGravityController();
   }
@@ -3140,7 +3736,10 @@ function updateSelectedPhysicsSettings(
 function resetJutsuPhysicsProfile(): void {
   rememberSettingsScroll();
   appSettings = resetJutsuPhysicsSettingsToDefault(appSettings);
-  saveAppSettings(appSettings);
+  if (getActiveWorkspace(workspaceStore).role === "self") {
+    saveAppSettings(appSettings);
+  }
+  persistActiveWorkspaceSnapshot();
   syncRuntimePhysicsSettings();
   render();
 }
@@ -3256,13 +3855,6 @@ function readEditedDescentRecords(form: HTMLFormElement): HappyBallDescentRecord
     }
     return record;
   });
-}
-
-function readPendingDeletedDescents(form: HTMLFormElement): Array<{ id: string; sequence: number }> {
-  return Array.from(form.querySelectorAll<HTMLInputElement>("[data-deleted-descent-id]")).map((marker) => ({
-    id: marker.dataset.deletedDescentId ?? "",
-    sequence: readPositiveInteger(marker.dataset.deletedDescentSequence ?? "", 1),
-  }));
 }
 
 function readDescentField(root: HTMLElement, field: string): string {

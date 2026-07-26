@@ -26,6 +26,11 @@ const draft: BallDraft = {
 };
 
 const createHtml = renderCreateForm(draft, context);
+assert(createHtml.includes('data-authoring-mode="create"'), "create form should use the shared authoring contract");
+assert(createHtml.includes('class="edit-descent-history" aria-label="降臨"'), "create form should expose the shared descent group");
+assert(createHtml.includes("降臨なし"), "create form should explain that a new ball has no descents yet");
+assert(createHtml.includes('class="dialog-actions authoring-bottom-actions"'), "create form should keep the shared footer actions");
+assert(createHtml.indexOf(">保存</button>") < createHtml.indexOf(">キャンセル</button>"), "create footer should place save left of cancel");
 assert(createHtml.includes("<span>日時</span>"), "create form should label date as datetime");
 assert(createHtml.includes('<span class="ball-count-field-label">玉数</span>'), "create form should keep ball count label");
 assert(!createHtml.includes('type="number"'), "create form should not use a numeric text field for ball count");
@@ -58,6 +63,8 @@ assert(createHtml.includes("キーボードは入力欄以外タップで閉じ�
 assert(!createHtml.includes("小さなえもいゴト"), "create form should remove the old example title placeholder");
 assert(createHtml.includes("<span>見せる範囲</span>"), "create form should label visibility");
 assert(createHtml.includes("data-authoring-category-fold"), "create form should use the shared folded category control");
+assert(countOccurrences(createHtml, 'class="category-tone"') === 4, "category palette should group options into four tone families");
+assert(createHtml.includes('class="category-option-label"'), "category options should expose a separate label for text-only selection emphasis");
 assert(createHtml.includes('class="timestamp-field create-timestamp-field create-inline-field"'), "create form should render compact horizontal timestamp controls");
 assert(createHtml.includes('name="timeEnabled" checked'), "create form should enable timestamp recording when draft has time");
 assert(createHtml.includes('name="time" type="time" value="09:35"'), "create form should render a visible time input value");
@@ -104,6 +111,7 @@ const sampleBall: HappyBall = {
 };
 
 const editHtml = renderBallEditDialog(sampleBall, context);
+assert(editHtml.includes("玉の編集"), "edit form should use the accepted edit title");
 assert(editHtml.includes("ball-edit-dialog-backdrop"), "edit form should render a dedicated edit backdrop class");
 assert(editHtml.includes("ball-edit-dialog surface-shell"), "edit form should render a fixed Surface Shell");
 assert(editHtml.includes("app-modal-backdrop"), "edit form should use the shared fixed modal backdrop");
@@ -163,8 +171,10 @@ assertAuthoringOrder(editHtml, "edit form");
 assert(editHtml.includes('class="edit-descent-history" aria-label="降臨"'), "edit form should always render the descent group");
 assert(editHtml.includes('data-descend-ball-id="ball_20260705_sample">降臨</button>'), "empty edit descent group should expose its descent action as the group heading");
 assert(editHtml.includes("降臨なし"), "empty edit descent group should explain that it has no records");
-const lifecycleHtml = sliceBetween(editHtml, 'class="edit-lifecycle-actions"', "</div>");
-assert(!lifecycleHtml.includes("data-descend-ball-id"), "edit lifecycle row should no longer contain the descent action");
+assert(!editHtml.includes('class="edit-lifecycle-actions"'), "edit form should leave lifecycle management to list surfaces");
+assert(!editHtml.includes("data-lifecycle-status"), "edit form should not render lifecycle actions");
+assert(!editHtml.includes("data-delete-ball-id"), "edit form should not render the final delete action");
+assert(editHtml.includes('class="dialog-actions authoring-bottom-actions"'), "edit form should keep the shared footer actions");
 
 const fiveBallEditHtml = renderBallEditDialog({ ...sampleBall, count: 5 }, context);
 assert(fiveBallEditHtml.includes('value="5"\n              aria-label="玉数"'), "five balls should load at its native range detent");
@@ -173,6 +183,14 @@ assert(fiveBallEditHtml.includes('class="ball-count-tick is-emphasized" style="-
 assert(fiveBallEditHtml.indexOf("data-ball-count-output") < fiveBallEditHtml.indexOf("ball-count-range-stack"), "the live count should render to the left of the range stack");
 assert(fiveBallEditHtml.includes("data-ball-count-track"), "the slider should render a pointer-inert visual track");
 assert(fiveBallEditHtml.includes("data-ball-count-thumb data-horizontal-drag-control"), "the slider should expose a thumb-only horizontal drag target");
+
+const unknownCategoryEditHtml = renderBallEditDialog({
+  ...sampleBall,
+  category: "改名前カテゴリ",
+  visual: { ...sampleBall.visual, hue: 17, saturation: 18, lightness: 19, kind: "ring" },
+}, context);
+assert(unknownCategoryEditHtml.includes("--ball-hue: 17; --ball-saturation: 18%; --ball-lightness: 19%;"), "unknown edit category should show its stored snapshot");
+assert(unknownCategoryEditHtml.includes("edit-category-current"), "unknown edit category should retain the current-category badge");
 
 const echoEditHtml = renderBallEditDialog({
   ...sampleBall,
@@ -199,6 +217,7 @@ const echoEditHtml = renderBallEditDialog({
 assert(echoEditHtml.includes('<span>余韻</span>'), "edit form should label the echo explicitly");
 assert(!echoEditHtml.includes('<span>余韻カテゴリ</span>'), "edit form should remove the longer echo-category label");
 assert(echoEditHtml.includes('<strong>よろこび</strong>'), "edit form should show the stored echo category read-only");
+assert(echoEditHtml.includes("--ball-hue: 0; --ball-saturation: 70%; --ball-lightness: 57%;"), "edit form should render echo swatches with the current category preset");
 
 const legacyCountEditHtml = renderBallEditDialog({ ...sampleBall, count: 12 }, context);
 assert(legacyCountEditHtml.includes("既存値 12玉"), "legacy count should be shown without truncation");
@@ -215,6 +234,11 @@ assert(closeConfirmHtml.indexOf("訂正として保存") < closeConfirmHtml.inde
 assert(closeConfirmHtml.includes('class="primary-action" type="button" data-edit-save-correction'), "correction save should be the primary action");
 assert(!closeConfirmHtml.includes("保存して閉じる"), "edit confirmation should use concise save labels");
 assert(closeConfirmHtml.includes("保存せず閉じる"), "close confirmation should retain the discard action");
+
+const descentOnlyCloseHtml = renderEditSaveModeConfirm("close", true);
+assert(descentOnlyCloseHtml.includes("降臨を保存しますか？"), "descent-only close should explain the staged descent change");
+assert(descentOnlyCloseHtml.includes(">保存</button>"), "descent-only close should offer a direct correction save");
+assert(!descentOnlyCloseHtml.includes("余韻として保存"), "descent-only close should not offer an echo save");
 
 const descentEditHtml = renderBallEditDialog({
   ...sampleBall,

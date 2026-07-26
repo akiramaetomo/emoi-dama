@@ -1,5 +1,5 @@
 import type { HappyBall, HappyBallLedger } from "./models";
-import { clearBallData, createDefaultDraft, DEFAULT_SAMPLE_NAME, normalizeStoredLedger, refreshCreateDraftForOpen, resetNameBook, updateBall, updateBallLifecycleStatus } from "./storage.js";
+import { addBall, clearBallData, createDefaultDraft, createPendingBall, DEFAULT_SAMPLE_NAME, loadLedger, normalizeStoredLedger, refreshCreateDraftForOpen, resetNameBook, updateBall, updateBallLifecycleStatus, updateNameBook } from "./storage.js";
 
 Object.defineProperty(globalThis, "localStorage", {
   value: {
@@ -13,6 +13,14 @@ Object.defineProperty(globalThis, "localStorage", {
   },
   configurable: true,
 });
+
+const durableIdPattern = /^(ball|ledger|person)_[0-9a-f]{32}$/;
+const freshLedger = loadLedger();
+assert(durableIdPattern.test(freshLedger.ledgerId), "new ledgers should use a prefixed 128-bit random ID");
+const freshBall = createPendingBall(freshLedger, createDefaultDraft(DEFAULT_SAMPLE_NAME));
+assert(durableIdPattern.test(freshBall.id), "new balls should use a prefixed 128-bit random ID");
+const freshNameBook = updateNameBook(freshLedger, [{ id: "", name: "新しい人", role: "proxy" }]);
+assert(durableIdPattern.test(freshNameBook.ownerProfile.nameBook[0]?.id ?? ""), "new name-book people should use a prefixed 128-bit random ID");
 
 const sampleBall: HappyBall = {
   id: "ball_20260626_self_ab12",
@@ -235,6 +243,33 @@ assertEqual(descentBall?.descents?.[1]?.memo, "位置なしで残す", "stored G
 assertEqual(descentBall?.descents?.[1]?.latitude, undefined, "stored GPS-less descent should not invent latitude");
 assertEqual(descentBall?.descentBadgeCount, 2, "missing stored badge count should derive from descent records");
 assertEqual(descentBall?.isKamiBall, false, "two descent badges should not normalize to kami ball");
+
+const stagedDescent = {
+  id: "ball_pending_descent_01",
+  sequence: 1,
+  recordedAt: "2026-07-24T08:15:00.000Z",
+  badgeAwarded: true,
+  memo: "保存前の降臨",
+};
+const pendingBall = createPendingBall(sampleLedger, editedDraft, {
+  id: "ball_pending",
+  createdAt: "2026-07-24T08:00:00.000Z",
+  descents: [stagedDescent],
+});
+assertEqual(pendingBall.id, "ball_pending", "pending creation should keep a stable ball ID");
+assertEqual(pendingBall.descents?.[0]?.memo, "保存前の降臨", "pending creation should carry staged descents without persistence");
+
+const addedWithDescent = addBall({ ...sampleLedger, balls: [] }, editedDraft, {
+  id: pendingBall.id,
+  createdAt: pendingBall.createdAt,
+  descents: pendingBall.descents,
+});
+assertEqual(addedWithDescent.balls[0]?.id, "ball_pending", "saving a pending ball should preserve its staged ID");
+assertEqual(addedWithDescent.balls[0]?.descentBadgeCount, 1, "saving a pending ball should atomically derive its descent badge");
+
+const updatedWithDescent = updateBall(sampleLedger, sampleBall.id, editedDraft, "correction", [stagedDescent]);
+assertEqual(updatedWithDescent.balls[0]?.title, editedDraft.title, "atomic edit save should update ball fields");
+assertEqual(updatedWithDescent.balls[0]?.descents?.[0]?.memo, stagedDescent.memo, "atomic edit save should update staged descents");
 
 const sakisakiDraft = {
   ...editedDraft,

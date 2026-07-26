@@ -22,7 +22,7 @@ Open the prototype:
 https://akiramaetomo.github.io/emoi-dama/
 ```
 
-Current formal release: **0.8.0**. See [CHANGELOG.md](CHANGELOG.md) for the
+Current formal release: **0.9.0**. See [CHANGELOG.md](CHANGELOG.md) for the
 complete release history.
 
 ## Keep It As A Ball
@@ -86,7 +86,12 @@ The current prototype runs entirely in the browser.
   images. Descent GPS stays excluded unless explicitly enabled in Settings.
 - Exchange the one-ball packet carried by a receipt QR without a server
   database.
-- Export and import JSON for manual backup and review.
+- Share a complete workspace for a selected date range, retain up to four
+  local workspaces, and create or edit balls and settings in any of them.
+- Back up and restore all retained workspaces as a local file while keeping
+  legacy JSON imports readable.
+- Keep known category colors consistent across Play, Calendar, lists, details,
+  editing, Settings, receipts, and receive previews.
 
 Prototype safety notes:
 

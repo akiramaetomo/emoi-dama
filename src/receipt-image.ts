@@ -4,6 +4,8 @@ import {
   createVisibilitySafeSummaryLabel,
   getReceiptTitle,
 } from "./dialog-renderers";
+import { resolveBallDisplayVisual, type DisplayVisual } from "./ball-visual-display.js";
+import type { CategoryColorPreset } from "./categories.js";
 import { formatBallDateTime } from "./models.js";
 import type { HappyBall, SendMode } from "./models";
 import { createPacketImportUrl } from "./packet";
@@ -13,6 +15,7 @@ export interface ReceiptImageContext {
   currentUrl: string;
   showMemoField: boolean;
   includeDescentGpsInHandoff: boolean;
+  categories: CategoryColorPreset[];
 }
 
 export function createReceiptImageFileName(ball: HappyBall, sendMode: SendMode = "formal"): string {
@@ -111,7 +114,7 @@ function drawReceiptImage(
   context.textAlign = "left";
   y += 52;
 
-  drawReceiptHero(context, ball, margin, y, contentWidth, sendMode);
+  drawReceiptHero(context, ball, receiptContext, margin, y, contentWidth, sendMode);
   y += 174;
 
   const rows = createReceiptImageRows(ball, receiptContext.showMemoField, sendMode);
@@ -138,6 +141,7 @@ function drawReceiptStamp(context: CanvasRenderingContext2D, x: number, y: numbe
 function drawReceiptHero(
   context: CanvasRenderingContext2D,
   ball: HappyBall,
+  receiptContext: ReceiptImageContext,
   x: number,
   y: number,
   width: number,
@@ -150,7 +154,7 @@ function drawReceiptHero(
   context.fill();
   context.stroke();
 
-  drawReceiptBall(context, ball, x + 76, y + 66, 84);
+  drawReceiptBall(context, resolveBallDisplayVisual(ball, receiptContext.categories), x + 76, y + 66, 84);
   context.fillStyle = "#6b5638";
   context.font = "900 28px sans-serif";
   context.fillText(formatBallDateTime(ball.date, ball.time), x + 154, y + 48);
@@ -159,34 +163,73 @@ function drawReceiptHero(
   drawWrappedText(context, createReceiptHeroLabel(ball, sendMode), x + 154, y + 92, width - 190, 45, 2);
 }
 
-function drawReceiptBall(context: CanvasRenderingContext2D, ball: HappyBall, cx: number, cy: number, size: number): void {
+function drawReceiptBall(context: CanvasRenderingContext2D, visual: DisplayVisual, cx: number, cy: number, size: number): void {
   const radius = size / 2;
-  if (ball.visual.kind === "ring") {
-    const fill = context.createRadialGradient(cx - radius * 0.3, cy - radius * 0.34, 4, cx, cy, radius);
-    fill.addColorStop(0, "rgba(255, 255, 255, 0.72)");
-    fill.addColorStop(0.54, `hsl(${ball.visual.hue} ${Math.max(ball.visual.saturation - 16, 8)}% ${Math.min(ball.visual.lightness + 16, 94)}% / 0.12)`);
-    fill.addColorStop(1, `hsl(${ball.visual.hue} ${ball.visual.saturation}% ${ball.visual.lightness}% / 0.04)`);
-    context.fillStyle = fill;
-    context.beginPath();
-    context.arc(cx, cy, radius, 0, Math.PI * 2);
-    context.fill();
-
-    context.strokeStyle = `hsl(${ball.visual.hue} ${Math.min(ball.visual.saturation + 6, 92)}% ${Math.min(ball.visual.lightness + 8, 88)}% / 0.96)`;
-    context.lineWidth = Math.max(7, size * 0.11);
-    context.beginPath();
-    context.arc(cx, cy, radius - context.lineWidth / 2, 0, Math.PI * 2);
-    context.stroke();
+  if (visual.kind === "ring") {
+    drawReceiptRingBall(context, visual, cx, cy, radius, size);
     return;
   }
 
+  context.save();
+  context.shadowColor = "rgba(28, 38, 34, 0.24)";
+  context.shadowBlur = size * 0.15;
+  context.shadowOffsetX = size * 0.055;
+  context.shadowOffsetY = size * 0.09;
   const gradient = context.createRadialGradient(cx - radius * 0.34, cy - radius * 0.38, 6, cx, cy, radius);
-  gradient.addColorStop(0, "#fff8dd");
-  gradient.addColorStop(0.28, `hsl(${ball.visual.hue} ${ball.visual.saturation}% ${Math.min(ball.visual.lightness + 12, 86)}%)`);
-  gradient.addColorStop(1, `hsl(${ball.visual.hue} ${ball.visual.saturation}% ${Math.max(ball.visual.lightness - 14, 18)}%)`);
+  gradient.addColorStop(0, "rgba(255, 252, 232, 0.96)");
+  gradient.addColorStop(0.18, `hsl(${visual.hue} ${Math.min(visual.saturation + 8, 100)}% ${Math.min(visual.lightness + 16, 94)}%)`);
+  gradient.addColorStop(0.58, `hsl(${visual.hue} ${visual.saturation}% ${visual.lightness}%)`);
+  gradient.addColorStop(1, `hsl(${visual.hue} ${Math.max(visual.saturation - 8, 0)}% ${Math.max(visual.lightness - 18, 12)}%)`);
   context.fillStyle = gradient;
   context.beginPath();
   context.arc(cx, cy, radius, 0, Math.PI * 2);
   context.fill();
+  context.restore();
+
+  const highlight = context.createRadialGradient(cx - radius * 0.36, cy - radius * 0.42, 0, cx - radius * 0.28, cy - radius * 0.34, radius * 0.48);
+  highlight.addColorStop(0, "rgba(255, 255, 255, 0.78)");
+  highlight.addColorStop(0.42, "rgba(255, 255, 255, 0.22)");
+  highlight.addColorStop(1, "rgba(255, 255, 255, 0)");
+  context.fillStyle = highlight;
+  context.beginPath();
+  context.arc(cx, cy, radius, 0, Math.PI * 2);
+  context.fill();
+}
+
+function drawReceiptRingBall(
+  context: CanvasRenderingContext2D,
+  visual: DisplayVisual,
+  cx: number,
+  cy: number,
+  radius: number,
+  size: number,
+): void {
+  const lineWidth = Math.max(7, size * 0.105);
+  const ringRadius = radius - lineWidth / 2;
+  context.save();
+  context.shadowColor = "rgba(28, 38, 34, 0.2)";
+  context.shadowBlur = size * 0.13;
+  context.shadowOffsetX = size * 0.045;
+  context.shadowOffsetY = size * 0.075;
+  context.strokeStyle = `hsl(${visual.hue} ${visual.saturation}% ${visual.lightness}%)`;
+  context.lineWidth = lineWidth;
+  context.beginPath();
+  context.arc(cx, cy, ringRadius, 0, Math.PI * 2);
+  context.stroke();
+  context.restore();
+
+  context.save();
+  context.lineCap = "round";
+  context.lineWidth = lineWidth * 0.32;
+  context.strokeStyle = `hsl(${visual.hue} ${Math.min(visual.saturation + 8, 100)}% ${Math.min(visual.lightness + 25, 97)}% / 0.88)`;
+  context.beginPath();
+  context.arc(cx, cy, ringRadius, Math.PI * 1.05, Math.PI * 1.72);
+  context.stroke();
+  context.strokeStyle = `hsl(${visual.hue} ${Math.max(visual.saturation - 6, 0)}% ${Math.max(visual.lightness - 20, 10)}% / 0.5)`;
+  context.beginPath();
+  context.arc(cx, cy, ringRadius, Math.PI * 0.04, Math.PI * 0.72);
+  context.stroke();
+  context.restore();
 }
 
 function createReceiptImageRows(

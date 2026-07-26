@@ -22,9 +22,19 @@ export class TinyImpactAudio {
   private voices = 0;
   private lastPlayedAt = 0;
   private lastFailureReportedAt = 0;
+  private lastGestureUnlockAt = Number.NEGATIVE_INFINITY;
 
   unlock(): void {
-    void this.resumeFromGesture();
+    const now = performance.now();
+    if (now - this.lastGestureUnlockAt < 16) {
+      return;
+    }
+    this.lastGestureUnlockAt = now;
+    void this.resumeContext(true);
+  }
+
+  recoverExistingContext(): void {
+    void this.resumeContext(false);
   }
 
   suspend(): void {
@@ -40,16 +50,10 @@ export class TinyImpactAudio {
 
   close(): void {
     const context = this.getOpenContext();
-    this.context = null;
-    this.voices = 0;
-
     if (!context) {
       return;
     }
-
-    void context.close().catch((error: unknown) => {
-      this.handleAudioFailure(error);
-    });
+    this.discardContext(context);
   }
 
   play(impacts: ImpactEvent[], settings: AppSettings): void {
@@ -82,19 +86,43 @@ export class TinyImpactAudio {
     }
   }
 
-  private async resumeFromGesture(): Promise<void> {
-    const context = this.ensureContext();
-    if (!context || context.state === "closed") {
+  private async resumeContext(allowCreate: boolean): Promise<void> {
+    const context = allowCreate ? this.ensureContext() : this.getOpenContext();
+    if (!context) {
       return;
     }
 
-    if (context.state !== "running") {
-      try {
-        await context.resume();
-      } catch (error) {
-        this.handleAudioFailure(error);
-        this.close();
-      }
+    if (await this.tryResumeContext(context)) {
+      return;
+    }
+
+    this.discardContext(context);
+    if (!allowCreate) {
+      return;
+    }
+
+    const retryContext = this.ensureContext();
+    if (!retryContext) {
+      return;
+    }
+    if (!await this.tryResumeContext(retryContext)) {
+      this.discardContext(retryContext);
+    }
+  }
+
+  private async tryResumeContext(context: AudioContext): Promise<boolean> {
+    if (context.state === "running") {
+      return true;
+    }
+    if (context.state === "closed") {
+      return false;
+    }
+    try {
+      await context.resume();
+      return String(context.state) === "running";
+    } catch (error) {
+      this.handleAudioFailure(error);
+      return false;
     }
   }
 
@@ -126,6 +154,19 @@ export class TinyImpactAudio {
     }
 
     return this.context;
+  }
+
+  private discardContext(context: AudioContext): void {
+    if (this.context === context) {
+      this.context = null;
+      this.voices = 0;
+    }
+    if (context.state === "closed") {
+      return;
+    }
+    void context.close().catch((error: unknown) => {
+      this.handleAudioFailure(error);
+    });
   }
 
   private handleAudioFailure(error: unknown): void {

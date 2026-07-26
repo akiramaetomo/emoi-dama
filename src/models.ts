@@ -61,6 +61,11 @@ export interface HappyBall {
   descents?: HappyBallDescentRecord[];
   descentBadgeCount?: number;
   isKamiBall?: boolean;
+  provenance?: {
+    sourceWorkspaceId: string;
+    importedAt: string;
+    preserveVisualSnapshot: boolean;
+  };
   receiptCreatedAt?: string;
   lifecycleStatus: LifecycleStatus;
   createdAt: string;

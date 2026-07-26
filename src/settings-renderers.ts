@@ -1,5 +1,10 @@
-import { toneLabels, type CategoryColorPreset, type CategoryTone } from "./categories.js";
+import { categoryColorPresets, toneLabels, type CategoryColorPreset, type CategoryTone } from "./categories.js";
 import { findLatestBallSendMode, formatActivityActionLabel, formatSendModeLabel, type ActivityLogEntry } from "./activity-log.js";
+import {
+  renderDisplayVisualKindClass,
+  renderDisplayVisualStyle,
+  resolveBallDisplayVisual,
+} from "./ball-visual-display.js";
 import { renderOptions } from "./form-renderers.js";
 import { issuerLabels, type HappyBall, type LifecycleStatus, type NameBookEntry, type NameRole } from "./models.js";
 import { DAMPING_SLIDER_RANGE, MOVEMENT_SETTING_RANGES, dampingValueToSlider } from "./motion-tuning.js";
@@ -18,6 +23,15 @@ export interface ToolsPanelRenderContext {
   maxNameBookEntries: number;
   defaultSampleName: string;
   physicsSettingsProfile: PhysicsSettingsProfile;
+  workspaces?: Array<{
+    workspaceId: string;
+    displayName: string;
+    displayCode: string;
+    role: "self" | "received";
+    active: boolean;
+    ballCount: number;
+    lastImportedAt?: string;
+  }>;
 }
 
 const nameRoleLabels: Record<NameRole, string> = {
@@ -26,7 +40,7 @@ const nameRoleLabels: Record<NameRole, string> = {
 };
 
 const lifecycleLabels: Record<LifecycleStatus, string> = {
-  active: "現役",
+  active: "",
   archived: "しまい中",
   memorial: "記憶",
   offered: "供養済み",
@@ -38,6 +52,7 @@ export interface LedgerListRenderOptions {
   activityLog?: ActivityLogEntry[];
   showAllControl?: boolean;
   showScope?: boolean;
+  categories?: CategoryColorPreset[];
 }
 
 export function renderToolsPanel(context: ToolsPanelRenderContext): string {
@@ -210,32 +225,40 @@ export function renderToolsPanel(context: ToolsPanelRenderContext): string {
 
       <section class="settings-cluster settings-cluster-management" aria-labelledby="settings-cluster-management-title">
         <p class="settings-cluster-title" id="settings-cluster-management-title">管理</p>
+      <details class="settings-group workspace-management"${renderDetailsOpen(context, "workspace-management")}>
+        <summary class="panel-title">
+          <h2>利用環境（β版）</h2>
+        </summary>
+        <p class="settings-copy">画面上部の画面タイトルをタップすることで利用環境を順に切り替えられます。</p>
+        <p class="settings-copy">他の人へデータを返すときは、編集・削除の扱いを相手と確認してください。</p>
+        <div class="workspace-management-list">
+          ${(context.workspaces ?? []).map((workspace) => `
+            <article class="workspace-management-item${workspace.active ? " is-active" : ""}">
+              <div>
+                <strong>${escapeHtml(workspace.displayName || (workspace.role === "self" ? "自分" : "受信環境"))}</strong>
+                <small>${workspace.role === "self" ? `自分 / ID=${escapeHtml(workspace.displayCode)}` : `ID=${escapeHtml(workspace.displayCode)}`} / ${workspace.ballCount}件${workspace.lastImportedAt ? ` / 最終受信 ${escapeHtml(formatActivityLogTime(workspace.lastImportedAt))}` : ""}</small>
+              </div>
+              ${workspace.role === "received" ? `
+                <label>表示名<input type="text" maxlength="24" value="${escapeAttribute(workspace.displayName)}" data-workspace-display-name="${escapeAttribute(workspace.workspaceId)}" /></label>
+                <button class="danger-action" type="button" data-delete-workspace-id="${escapeAttribute(workspace.workspaceId)}">この利用環境を削除</button>
+              ` : ""}
+            </article>
+          `).join("")}
+        </div>
+      </details>
       <details class="settings-group backup-settings"${renderDetailsOpen(context, "backup-settings")}>
         <summary class="panel-title">
           <h2>バックアップ・復元</h2>
         </summary>
-        <p class="settings-copy">選んだ内容を1つのバックアップファイルにまとめて書き出します。</p>
-        <div class="export-options">
-          <label class="inline-toggle">
-            <input type="checkbox" name="export-section" value="ledger" checked />
-            <span>台帳データ</span>
-          </label>
-          <label class="inline-toggle">
-            <input type="checkbox" name="export-section" value="appSettings" />
-            <span>アプリ設定</span>
-          </label>
-          <label class="inline-toggle">
-            <input type="checkbox" name="export-section" value="categories" />
-            <span>カテゴリ設定</span>
-          </label>
-          <label class="inline-toggle">
-            <input type="checkbox" name="export-section" value="activityLog" />
-            <span>操作ログ</span>
-          </label>
+        <div class="backup-operation-block">
+          <h3>端末全体のバックアップ</h3>
+          <p class="settings-copy">玉、設定（環境データ含む）を保存します。</p>
+          <button id="export-json" class="primary-action" type="button">バックアップを書き出す</button>
         </div>
-        <div class="settings-group-actions">
-          <button id="export-json" class="primary-action" type="button">書き出し</button>
-          <button id="import-json" class="ghost-action" type="button">読み込み</button>
+        <div class="backup-operation-block">
+          <h3>ファイルを読み込む</h3>
+          <p class="settings-copy">バックアップまたは玉の共有ファイルを選び、内容を確認してから適用方法を選びます。</p>
+          <button id="import-json" class="ghost-action" type="button">ファイルを選ぶ</button>
           <input id="import-json-file" type="file" accept="application/json,.json" hidden />
         </div>
       </details>
@@ -291,6 +314,7 @@ export function renderLedgerList(
   selectedBallId: string | null,
   options: LedgerListRenderOptions = { dateFilter: null },
 ): string {
+  const categories = options.categories ?? categoryColorPresets;
   if (balls.length === 0) {
     return `
       ${renderLedgerListScope(options)}
@@ -303,18 +327,20 @@ export function renderLedgerList(
     <div class="ledger-list">
       ${balls
         .map(
-          (ball) => `
+          (ball) => {
+            const visual = resolveBallDisplayVisual(ball, categories);
+            return `
             <article class="ledger-item lifecycle-${ball.lifecycleStatus} ${ball.id === selectedBallId ? "is-selected" : ""}">
               <button class="ledger-select" type="button" data-select-ball-id="${escapeAttribute(ball.id)}">
                 <span class="ledger-ball-visual-wrap">
                   ${renderCompactDescentBadge(ball)}
-                  <span class="mini-ball ledger-ball-visual lifecycle-${ball.lifecycleStatus} ${renderVisualKindClass(ball.visual)}" style="${renderVisualStyle(ball.visual)}" aria-hidden="true"></span>
+                  <span class="mini-ball ledger-ball-visual lifecycle-${ball.lifecycleStatus} ${renderDisplayVisualKindClass(visual)}" style="${renderDisplayVisualStyle(visual)}" aria-hidden="true"></span>
                   ${renderBallCountUnderIcon(ball, "ledger-count-under-icon")}
                 </span>
                 <span class="ledger-text-block">
                   <span>${escapeHtml(ball.date)} / ${escapeHtml(ball.subject)}</span>
                   <strong>${escapeHtml(ball.title)}</strong>
-                  <small>${escapeHtml(issuerLabels[ball.issuerType])} / ${escapeHtml(ball.category)} / ${escapeHtml(lifecycleLabels[ball.lifecycleStatus])}${renderLedgerDescentText(ball)}</small>
+                  <small>${escapeHtml(issuerLabels[ball.issuerType])} / ${escapeHtml(ball.category)}${renderLedgerLifecycleStatus(ball.lifecycleStatus)}${renderLedgerDescentText(ball)}</small>
                   <small>${escapeHtml(renderLedgerRelationshipMeta(ball, options.activityLog ?? []))}</small>
                 </span>
               </button>
@@ -328,7 +354,8 @@ export function renderLedgerList(
                 <button class="descend-ball" type="button" data-descend-ball-id="${escapeAttribute(ball.id)}" aria-label="${escapeAttribute(ball.title)}に降臨">降臨</button>
               </div>
             </article>
-          `,
+          `;
+          },
         )
         .join("")}
     </div>
@@ -342,6 +369,11 @@ function renderLedgerDescentText(ball: HappyBall): string {
     return "";
   }
   return count > 0 ? ` / 降臨${count}回` : ` / ${badges}星`;
+}
+
+function renderLedgerLifecycleStatus(status: LifecycleStatus): string {
+  const label = lifecycleLabels[status];
+  return label ? ` / <span class="list-lifecycle-status lifecycle-${status}">${escapeHtml(label)}</span>` : "";
 }
 
 function renderLedgerRelationshipMeta(ball: HappyBall, activityLog: ActivityLogEntry[]): string {
@@ -379,7 +411,6 @@ function renderActivityLogHelp(isOpen: boolean): string {
       ${isOpen ? `<div id="activity-log-help-body" class="feature-help-body">
         <p>操作ログは、受領、送付準備、JSON読み書き、しまう・供養・お焚上、降臨/GPS操作など、原因調査に必要な操作をこの端末だけに残します。</p>
         <p>玉を置くだけの通常作成は、現在は操作ログに記録しません。</p>
-        <p>バックアップJSONには「操作ログ」を選んだ場合だけ含めます。URL、LINE、QRで渡す1玉データには含めません。</p>
       </div>` : ""}
     </div>
   `;
@@ -501,7 +532,7 @@ function renderCategorySettingsFields(categories: CategoryColorPreset[]): string
           .filter(({ preset }) => preset.tone === tone)
           .map(({ preset, index }) => `
             <label class="category-edit-item">
-              <span class="category-swatch ${renderVisualKindClass(preset)}" style="${renderVisualStyle(preset)}" aria-hidden="true"></span>
+              <span class="category-swatch ${renderDisplayVisualKindClass(preset)}" style="${renderDisplayVisualStyle(preset)}" aria-hidden="true"></span>
               <input name="category-${index}" type="text" maxlength="12" value="${escapeAttribute(preset.name)}" />
             </label>
           `).join("")}
@@ -577,14 +608,6 @@ function renderStartupScreenOption(
   label: string,
 ): string {
   return `<option value="${value}"${selected === value ? " selected" : ""}>${escapeHtml(label)}</option>`;
-}
-
-function renderVisualStyle(visual: { hue: number; saturation: number; lightness: number }): string {
-  return `--ball-hue: ${visual.hue}; --ball-saturation: ${visual.saturation}%; --ball-lightness: ${visual.lightness}%;`;
-}
-
-function renderVisualKindClass(visual: { visualKind?: string; kind?: string }): string {
-  return visual.visualKind === "ring" || visual.kind === "ring" ? "is-ring-ball" : "is-filled-ball";
 }
 
 function escapeHtml(value: string): string {

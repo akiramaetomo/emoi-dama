@@ -306,7 +306,7 @@ test("160 phone balls use faithful Pixi and route changes stay responsive", asyn
   const createTransitionMs = await clickAndMeasure(page, "[data-open-panel='create']");
   expect(createTransitionMs).toBeLessThan(250);
   await expect(page.locator("#app")).toHaveAttribute("data-primary-route", "create");
-  await page.locator("button[data-close-panel]").click();
+  await page.locator(".dialog-close[data-close-panel]").click();
 
   const settingsTransitionMs = await clickAndMeasure(page, "[data-open-panel='settings']");
   expect(settingsTransitionMs).toBeLessThan(250);

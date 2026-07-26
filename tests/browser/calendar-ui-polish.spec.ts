@@ -62,3 +62,38 @@ test("iPad portrait and landscape center the full month header", async ({ page }
     expect(geometry.overflow).toBeLessThanOrEqual(1);
   }
 });
+
+test("phone and iPad keep lifecycle actions readable without adding an action row", async ({ page }) => {
+  await page.locator("[data-calendar-open-panel='create']").click();
+  await page.locator("#ball-form input[name='title']").fill("管理ボタン確認");
+  await page.locator("#ball-form").evaluate((form: HTMLFormElement) => form.requestSubmit());
+
+  for (const viewport of [
+    { width: 360, height: 640 },
+    { width: 768, height: 1024 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.locator("[data-calendar-open-panel='dayList']").click();
+    const metrics = await page.locator(".calendar-day-ball-item").first().evaluate((card) => {
+      const actions = card.querySelector<HTMLElement>(".calendar-day-ball-actions")!;
+      const edit = actions.querySelector<HTMLElement>(".edit-ball")!;
+      const lifecycle = actions.querySelector<HTMLElement>(".lifecycle-ball")!;
+      const deletion = actions.querySelector<HTMLElement>(".delete-ball")!;
+      const buttons = [...actions.querySelectorAll<HTMLElement>("button")];
+      return {
+        actionHeight: actions.getBoundingClientRect().height,
+        tallestButton: Math.max(...buttons.map((button) => button.getBoundingClientRect().height)),
+        lifecycleFontSize: Number.parseFloat(getComputedStyle(lifecycle).fontSize),
+        editFontSize: Number.parseFloat(getComputedStyle(edit).fontSize),
+        lifecycleOverflow: lifecycle.scrollWidth - lifecycle.clientWidth,
+        deletionOverflow: deletion.scrollWidth - deletion.clientWidth,
+      };
+    });
+    expect(metrics.actionHeight - metrics.tallestButton).toBeLessThanOrEqual(1);
+    expect(metrics.lifecycleFontSize).toBeGreaterThan(metrics.editFontSize);
+    expect(metrics.lifecycleOverflow).toBeLessThanOrEqual(1);
+    expect(metrics.deletionOverflow).toBeLessThanOrEqual(1);
+
+    await page.locator("[data-calendar-open-panel='calendar']").click();
+  }
+});

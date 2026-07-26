@@ -1,7 +1,8 @@
 import { getCategoryColorPreset } from "./categories.js";
-import { normalizeDescentBadgeCount, normalizeDescentRecords } from "./descent.js";
+import { applyDescentRecordsToBall, normalizeDescentBadgeCount, normalizeDescentRecords } from "./descent.js";
 import { normalizeBallTime, normalizeVisibilityValue, type BallVisualKind } from "./models.js";
-import type { BallDraft, HappyBall, HappyBallEmotionSnapshot, HappyBallLedger, HappyBallVisual, LifecycleStatus, NameBookEntry, NameRole } from "./models";
+import type { BallDraft, HappyBall, HappyBallDescentRecord, HappyBallEmotionSnapshot, HappyBallLedger, HappyBallVisual, LifecycleStatus, NameBookEntry, NameRole } from "./models";
+import { createDurableId } from "./durable-id.js";
 
 const STORAGE_KEY = "happyBall.ledger.v1";
 const LEDGER_TYPE = "happy-ball-ledger";
@@ -15,6 +16,13 @@ export interface StoredLedgerRecovery {
 }
 
 export type BallSaveMode = "withEcho" | "correction";
+
+export interface NewBallOptions {
+  id?: string;
+  createdAt?: string;
+  descents?: HappyBallDescentRecord[];
+  persist?: boolean;
+}
 
 export function todayIsoDate(date = new Date()): string {
   const year = date.getFullYear();
@@ -122,19 +130,29 @@ export function saveLedger(ledger: HappyBallLedger): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(ledger, null, 2));
 }
 
-export function addBall(ledger: HappyBallLedger, draft: BallDraft): HappyBallLedger {
+export function createPendingBall(ledger: HappyBallLedger, draft: BallDraft, options: NewBallOptions = {}): HappyBall {
+  const createdAt = options.createdAt ?? new Date().toISOString();
+  const ball = createBall(draft, createdAt, getPrimarySelfName(ledger), options.id);
+  return applyDescentRecordsToBall(ball, options.descents ?? [], createdAt);
+}
+
+export function addBall(ledger: HappyBallLedger, draft: BallDraft, options: NewBallOptions = {}): HappyBallLedger {
   const now = new Date().toISOString();
-  const ball = createBall(draft, now, getPrimarySelfName(ledger));
+  const createdAt = options.createdAt ?? now;
+  const baseBall = createBall(draft, createdAt, getPrimarySelfName(ledger), options.id);
+  const ball = applyDescentRecordsToBall(baseBall, options.descents ?? [], now);
   const next: HappyBallLedger = {
     ...ledger,
     balls: [ball, ...ledger.balls],
     updatedAt: now,
   };
-  saveLedger(next);
+  if (options.persist !== false) {
+    saveLedger(next);
+  }
   return next;
 }
 
-export function updateNameBook(ledger: HappyBallLedger, entries: NameBookEntry[]): HappyBallLedger {
+export function updateNameBook(ledger: HappyBallLedger, entries: NameBookEntry[], persist = true): HappyBallLedger {
   const now = new Date().toISOString();
   const nameBook = normalizeNameBook(entries, ledger.ownerProfile.name);
   const next: HappyBallLedger = {
@@ -145,7 +163,9 @@ export function updateNameBook(ledger: HappyBallLedger, entries: NameBookEntry[]
     },
     updatedAt: now,
   };
-  saveLedger(next);
+  if (persist) {
+    saveLedger(next);
+  }
   return next;
 }
 
@@ -158,6 +178,8 @@ export function updateBall(
   id: string,
   draft: BallDraft,
   saveMode: BallSaveMode = "withEcho",
+  descents?: HappyBallDescentRecord[],
+  persist = true,
 ): HappyBallLedger {
   const now = new Date().toISOString();
   let updated = false;
@@ -166,7 +188,8 @@ export function updateBall(
       return ball;
     }
     updated = true;
-    return updateExistingBall(ball, draft, now, saveMode);
+    const editedBall = updateExistingBall(ball, draft, now, saveMode);
+    return descents === undefined ? editedBall : applyDescentRecordsToBall(editedBall, descents, now);
   });
   if (!updated) {
     return ledger;
@@ -176,7 +199,9 @@ export function updateBall(
     balls,
     updatedAt: now,
   };
-  saveLedger(next);
+  if (persist) {
+    saveLedger(next);
+  }
   return next;
 }
 
@@ -186,28 +211,32 @@ export function clearLedger(): HappyBallLedger {
   return next;
 }
 
-export function clearBallData(ledger: HappyBallLedger): HappyBallLedger {
+export function clearBallData(ledger: HappyBallLedger, persist = true): HappyBallLedger {
   const next: HappyBallLedger = {
     ...ledger,
     balls: [],
     updatedAt: new Date().toISOString(),
   };
-  saveLedger(next);
+  if (persist) {
+    saveLedger(next);
+  }
   return next;
 }
 
-export function resetNameBook(ledger: HappyBallLedger): HappyBallLedger {
-  return updateNameBook(ledger, createDefaultNameBook(DEFAULT_SAMPLE_NAME));
+export function resetNameBook(ledger: HappyBallLedger, persist = true): HappyBallLedger {
+  return updateNameBook(ledger, createDefaultNameBook(DEFAULT_SAMPLE_NAME), persist);
 }
 
-export function deleteBall(ledger: HappyBallLedger, id: string): HappyBallLedger {
+export function deleteBall(ledger: HappyBallLedger, id: string, persist = true): HappyBallLedger {
   const now = new Date().toISOString();
   const next: HappyBallLedger = {
     ...ledger,
     balls: ledger.balls.filter((ball) => ball.id !== id),
     updatedAt: now,
   };
-  saveLedger(next);
+  if (persist) {
+    saveLedger(next);
+  }
   return next;
 }
 
@@ -215,6 +244,7 @@ export function updateBallLifecycleStatus(
   ledger: HappyBallLedger,
   id: string,
   lifecycleStatus: LifecycleStatus,
+  persist = true,
 ): HappyBallLedger {
   const target = ledger.balls.find((ball) => ball.id === id);
   if (!target || target.lifecycleStatus === lifecycleStatus) {
@@ -231,11 +261,13 @@ export function updateBallLifecycleStatus(
     )),
     updatedAt: now,
   };
-  saveLedger(next);
+  if (persist) {
+    saveLedger(next);
+  }
   return next;
 }
 
-export function markReceiptCreated(ledger: HappyBallLedger, id: string): HappyBallLedger {
+export function markReceiptCreated(ledger: HappyBallLedger, id: string, persist = true): HappyBallLedger {
   const target = ledger.balls.find((ball) => ball.id === id);
   if (!target || target.receiptCreatedAt) {
     return ledger;
@@ -251,11 +283,13 @@ export function markReceiptCreated(ledger: HappyBallLedger, id: string): HappyBa
     )),
     updatedAt: now,
   };
-  saveLedger(next);
+  if (persist) {
+    saveLedger(next);
+  }
   return next;
 }
 
-export function importNewBalls(ledger: HappyBallLedger, ballsToImport: HappyBall[]): HappyBallLedger {
+export function importNewBalls(ledger: HappyBallLedger, ballsToImport: HappyBall[], persist = true): HappyBallLedger {
   const existingIds = new Set(ledger.balls.map((ball) => ball.id));
   const newBalls = ballsToImport.filter((ball) => !existingIds.has(ball.id));
   if (newBalls.length === 0) {
@@ -268,7 +302,9 @@ export function importNewBalls(ledger: HappyBallLedger, ballsToImport: HappyBall
     balls: [...newBalls, ...ledger.balls],
     updatedAt: now,
   };
-  saveLedger(next);
+  if (persist) {
+    saveLedger(next);
+  }
   return next;
 }
 
@@ -276,6 +312,7 @@ export function importNewAndReplaceBalls(
   ledger: HappyBallLedger,
   ballsToImport: HappyBall[],
   ballsToReplace: HappyBall[],
+  persist = true,
 ): HappyBallLedger {
   const existingIds = new Set(ledger.balls.map((ball) => ball.id));
   const replacementById = new Map(
@@ -298,7 +335,9 @@ export function importNewAndReplaceBalls(
     ],
     updatedAt: now,
   };
-  saveLedger(next);
+  if (persist) {
+    saveLedger(next);
+  }
   return next;
 }
 
@@ -323,7 +362,7 @@ function createEmptyLedger(): HappyBallLedger {
   };
 }
 
-function createBall(draft: BallDraft, now: string, localSelfName: string): HappyBall {
+function createBall(draft: BallDraft, now: string, localSelfName: string, forcedId?: string): HappyBall {
   const subject = draft.subject.trim() || localSelfName || DEFAULT_SAMPLE_NAME;
   const title = draft.title.trim() || "小さなえもいゴト";
   const category = draft.category.trim() || "日常";
@@ -331,7 +370,7 @@ function createBall(draft: BallDraft, now: string, localSelfName: string): Happy
   const enteredBy = localSelfName || subject || DEFAULT_SAMPLE_NAME;
   const issuedBy = subject;
   const approvedBy = draft.issuerType === "self" ? null : subject;
-  const id = createBallId(draft.date, subject);
+  const id = forcedId ?? createBallId(draft.date, subject);
 
   return {
     id,
@@ -442,8 +481,21 @@ function normalizeBall(ball: Partial<HappyBall>, visualIndex = 0): HappyBall {
     descents,
     descentBadgeCount,
     isKamiBall: readBoolean(ball.isKamiBall, false) || descentBadgeCount >= 20,
+    provenance: normalizeProvenance(ball.provenance),
     receiptCreatedAt: normalizeOptionalIsoText(ball.receiptCreatedAt),
   };
+}
+
+function normalizeProvenance(value: unknown): HappyBall["provenance"] | undefined {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  const sourceWorkspaceId = normalizeRequiredText(value.sourceWorkspaceId);
+  const importedAt = normalizeRequiredText(value.importedAt);
+  if (!sourceWorkspaceId || !importedAt || value.preserveVisualSnapshot !== true) {
+    return undefined;
+  }
+  return { sourceWorkspaceId, importedAt, preserveVisualSnapshot: true };
 }
 
 function createEmotionSnapshot(ball: HappyBall, recordedAt: string): HappyBallEmotionSnapshot {
@@ -717,33 +769,13 @@ function clampCount(count: number): number {
 }
 
 function createLedgerId(): string {
-  return `ledger_${randomToken()}`;
+  return createDurableId("ledger");
 }
 
-function createBallId(date: string, subject: string): string {
-  const safeSubject = subject
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "-")
-    .replace(/[^\p{Letter}\p{Number}-]/gu, "")
-    .slice(0, 18);
-  const compactDate = date.replace(/-/g, "");
-  const subjectPart = safeSubject || "ball";
-  return `ball_${compactDate}_${subjectPart}_${randomToken()}`;
+function createBallId(_date: string, _subject: string): string {
+  return createDurableId("ball");
 }
 
-function createPersonId(name: string): string {
-  const safeName = name
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "-")
-    .replace(/[^\p{Letter}\p{Number}-]/gu, "")
-    .slice(0, 18);
-  return `person_${safeName || "name"}_${randomToken()}`;
-}
-
-function randomToken(): string {
-  const bytes = new Uint8Array(4);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+function createPersonId(_name: string): string {
+  return createDurableId("person");
 }

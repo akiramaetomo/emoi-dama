@@ -12,7 +12,8 @@ test("create header submits while the memo remains focused on a narrow phone", a
   await memo.fill("IMEを閉じずに上部から確定");
   await memo.focus();
   await expect(memo).toBeFocused();
-  await expect(page.locator(".floating-panel-create .panel-header-action")).toHaveText("玉を置く");
+  await expect(page.locator(".floating-panel-create h2")).toHaveText("玉を置く");
+  await expect(page.locator(".floating-panel-create .panel-header-action")).toHaveText("保存");
 
   await page.locator(".floating-panel-create .panel-header-action").click();
   await expect(page.locator("#ball-form")).toHaveCount(0);
@@ -22,7 +23,7 @@ test("create header submits while the memo remains focused on a narrow phone", a
   });
 });
 
-test("descent deletion stays staged, blocks a new descent, cancels safely, then saves", async ({ page }) => {
+test("descent deletion stays staged, cancels safely, then saves without an echo choice", async ({ page }) => {
   await page.goto("/");
   await createBall(page, "消去確認の玉");
   await seedTwoDescents(page);
@@ -35,9 +36,6 @@ test("descent deletion stays staged, blocks a new descent, cancels safely, then 
   await expect(page.locator("[data-descent-edit-item]")).toHaveCount(1);
   await expect(page.locator("[data-edit-descent-feedback]")).toContainText("保存で確定します");
 
-  await page.locator(".edit-descent-head .descend-ball").click();
-  await expect(page.locator("[data-edit-descent-feedback]")).toHaveText("消去を保存してから降臨してください");
-
   await page.locator(".ball-edit-dialog .authoring-surface-header [data-dialog-close]").click();
   await expect(page.locator("[data-edit-unsaved-confirm]")).toBeVisible();
   await page.locator("[data-edit-discard-close]").click();
@@ -47,9 +45,6 @@ test("descent deletion stays staged, blocks a new descent, cancels safely, then 
   page.once("dialog", (dialog) => dialog.accept());
   await page.locator('[data-descent-delete-record-id="descent_2"]').click();
   await page.locator('#ball-edit-form button[type="submit"]').click();
-  await expect(page.locator("[data-edit-unsaved-confirm]")).toBeVisible();
-  await page.locator("[data-edit-save-correction]").click();
-
   await expect(page.locator(".ball-detail-dialog")).toBeVisible();
   await expect(page.locator(".detail-descent-item")).toHaveCount(1);
   await expect(page.locator(".detail-descent-item")).toContainText("No.1");
@@ -62,7 +57,7 @@ test("descent deletion stays staged, blocks a new descent, cancels safely, then 
   await expect.poll(() => readLatestActivityAction(page)).toBe("descent-delete");
 });
 
-test("a descent created in edit refreshes the underlying list before the modal closes", async ({ page }) => {
+test("a descent created in edit stays staged until save and discard leaves no badge", async ({ page }) => {
   await page.addInitScript(() => {
     const denied = { code: 1, message: "denied in test" };
     Object.defineProperty(navigator, "geolocation", {
@@ -85,11 +80,52 @@ test("a descent created in edit refreshes the underlying list before the modal c
   page.on("dialog", (dialog) => dialog.accept(""));
   await page.locator(".edit-descent-head .descend-ball").click();
   await expect(page.locator("[data-descent-edit-item]")).toHaveCount(1);
-  await expect(page.locator("[data-edit-descent-feedback]")).toContainText("仮降臨を記録しました");
+  await expect(page.locator("[data-edit-descent-feedback]")).toContainText("仮降臨を保存予定です");
+  await expect.poll(async () => (await readFirstStoredBall(page)).descents ?? []).toHaveLength(0);
 
   await page.locator(".ball-edit-dialog .authoring-surface-header [data-dialog-close]").click();
+  await expect(page.locator("[data-edit-unsaved-confirm]")).toBeVisible();
+  await expect(page.locator("[data-edit-save-correction]")).toHaveText("保存");
+  await page.locator("[data-edit-discard-close]").click();
   await expect(page.locator(".ball-edit-dialog")).toHaveCount(0);
-  await expect(page.locator(".calendar-day-descent-badge")).toHaveText("✦1");
+  await expect(page.locator(".calendar-day-descent-badge")).toHaveCount(0);
+  await expect.poll(async () => (await readFirstStoredBall(page)).descents ?? []).toHaveLength(0);
+});
+
+test("a new ball stages its first descent and cancel or save applies the whole session", async ({ page }) => {
+  await page.addInitScript(() => {
+    const denied = { code: 1, message: "denied in test" };
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition: (_success: PositionCallback, error: PositionErrorCallback) => error(denied as GeolocationPositionError),
+        watchPosition: (_success: PositionCallback, error: PositionErrorCallback) => {
+          error(denied as GeolocationPositionError);
+          return 1;
+        },
+        clearWatch: () => undefined,
+      },
+    });
+  });
+  await page.goto("/");
+  page.on("dialog", (dialog) => dialog.accept(""));
+
+  await page.locator("[data-calendar-open-panel='create']").click();
+  await page.locator("#ball-form input[name='title']").fill("キャンセルする降臨玉");
+  await page.locator("#ball-form .edit-descent-head .descend-ball").click();
+  await expect(page.locator("#ball-form [data-descent-edit-item]")).toHaveCount(1);
+  await expect.poll(() => readStoredBallCount(page)).toBe(0);
+  await page.locator("#ball-form .authoring-bottom-actions [data-close-panel]").click();
+  await expect.poll(() => readStoredBallCount(page)).toBe(0);
+
+  await page.locator("[data-calendar-open-panel='create']").click();
+  await page.locator("#ball-form input[name='title']").fill("保存する降臨玉");
+  await page.locator("#ball-form .edit-descent-head .descend-ball").click();
+  await expect(page.locator("#ball-form [data-descent-edit-item]")).toHaveCount(1);
+  await page.locator("#ball-form .authoring-bottom-actions button[type='submit']").click();
+  await expect.poll(() => readStoredBallCount(page)).toBe(1);
+  await expect.poll(async () => (await readFirstStoredBall(page)).descents).toHaveLength(1);
+  await expect.poll(() => readLatestActivityAction(page)).toBe("descent-create");
 });
 
 async function createBall(page: Page, title: string): Promise<void> {
@@ -150,5 +186,12 @@ async function readLatestActivityAction(page: Page): Promise<string | null> {
   return page.evaluate(() => {
     const stored = localStorage.getItem("happyBall.activityLog.v1");
     return stored ? JSON.parse(stored).entries[0]?.action ?? null : null;
+  });
+}
+
+async function readStoredBallCount(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const stored = localStorage.getItem("happyBall.ledger.v1");
+    return stored ? JSON.parse(stored).balls.length : 0;
   });
 }

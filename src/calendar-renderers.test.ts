@@ -1,4 +1,5 @@
 import { renderCalendarOverlay } from "./calendar-renderers.js";
+import { categoryColorPresets } from "./categories.js";
 import type { HappyBall } from "./models.js";
 
 const sampleBall: HappyBall = {
@@ -75,9 +76,12 @@ const monthHtml = renderCalendarOverlay({
   emotionEchoStrength: "medium",
   calendarMarkerMode: "spread",
   activityLog: [],
+  categories: categoryColorPresets,
 });
 
 assert(monthHtml.includes('data-filter-date="2026-07-03"'), "month view should render tappable day cells");
+assert(monthHtml.includes("--ball-hue: 92; --ball-saturation: 22%; --ball-lightness: 54%;"), "calendar should render known categories with the current preset instead of the stored snapshot");
+assert(monthHtml.includes("--echo-hue: 43; --echo-saturation: 73%; --echo-lightness: 58%;"), "calendar should render known echo categories with the current preset");
 assert(monthHtml.includes("calendar-head calendar-month-head"), "month view should use the centered month header class");
 assert(monthHtml.includes('data-calendar-open-panel="create"'), "calendar toolbar should render the create action");
 assert(monthHtml.includes('data-calendar-main'), "calendar toolbar should render the main-screen ball action");
@@ -88,7 +92,8 @@ assert(monthHtml.includes("calendar-screen-icon"), "calendar toolbar should rend
 assert(monthHtml.includes("calendar-icon-bar"), "calendar toolbar should render the calendar icon bar");
 assert(monthHtml.includes('x1="12.75" y1="8" x2="19.25" y2="8"'), "calendar icon bar should be short and near the top");
 assert(monthHtml.includes("day-list-screen-icon"), "calendar toolbar should render the day-list icon");
-assert(monthHtml.includes('<p class="screen-kicker">Calendar</p>'), "month view should show the Calendar screen name above the month");
+assert(monthHtml.includes('class="screen-kicker workspace-screen-name"'), "month view should render the screen name as the hidden workspace switch");
+assert(monthHtml.includes("<span>Calendar</span>"), "month view should show the Calendar screen name above the month");
 assert(!monthHtml.includes("primary-screen-label"), "calendar toolbar should not put screen names inside buttons");
 assert(!monthHtml.includes("data-calendar-cycle-display-mode"), "calendar toolbar should not render the period cycle action");
 assert(monthHtml.includes("data-calendar-cycle-marker-mode"), "calendar toolbar should render the calendar marker mode action");
@@ -112,6 +117,7 @@ const sevenBallMonthHtml = renderCalendarOverlay({
   emotionEchoStrength: "medium",
   calendarMarkerMode: "spread",
   activityLog: [],
+  categories: categoryColorPresets,
 });
 
 assert(
@@ -133,6 +139,7 @@ const fifteenBallMonthHtml = renderCalendarOverlay({
   emotionEchoStrength: "medium",
   calendarMarkerMode: "spread",
   activityLog: [],
+  categories: categoryColorPresets,
 });
 
 assert(
@@ -152,6 +159,7 @@ const sixteenBallMonthHtml = renderCalendarOverlay({
   emotionEchoStrength: "medium",
   calendarMarkerMode: "spread",
   activityLog: [],
+  categories: categoryColorPresets,
 });
 
 assert(
@@ -177,6 +185,7 @@ const meterMonthHtml = renderCalendarOverlay({
   emotionEchoStrength: "medium",
   calendarMarkerMode: "meter",
   activityLog: [],
+  categories: categoryColorPresets,
 });
 
 assert(meterMonthHtml.includes("calendar-meter-marker-set"), "meter mode should render meter marker sets");
@@ -201,6 +210,7 @@ assert(countOccurrences(meterMonthHtml, '<span class="calendar-meter-overflow">+
 
 const dayListHtml = renderCalendarOverlay({
   balls: [],
+  shareBalls: [sampleBall, archivedBall, offeredBall],
   dayListBalls: [
     {
       ...sampleBall,
@@ -238,9 +248,16 @@ const dayListHtml = renderCalendarOverlay({
       sendMode: "casual",
     },
   ],
+  categories: categoryColorPresets,
 });
 
-assert(dayListHtml.includes('<p class="screen-kicker">Ball List</p>'), "day list view should show the Ball List screen name above the selected date");
+assert(dayListHtml.includes("<span>Ball List</span>"), "day list view should show the Ball List screen name above the selected date");
+assert(dayListHtml.includes('id="workspace-share-form"'), "the primary Ball List should expose workspace file sharing");
+assert(dayListHtml.includes("玉をまとめて送る"), "the workspace share route should be visible at the top of Ball List");
+assert(!dayListHtml.includes("玉を選んだ場合"), "Ball List sharing should omit the former selection explanation");
+assert(!dayListHtml.includes('name="workspace-share-ball"'), "Ball List sharing should not render arbitrary-ball checkboxes");
+assert(!dayListHtml.includes("workspace-share-ball-options"), "Ball List sharing should not render an all-ledger option list");
+assert(dayListHtml.includes("対象 3玉"), "Ball List sharing should show the selected date's summed ball count");
 assert(dayListHtml.includes("<h2>2026-07-03</h2>"), "day list view should title only the selected date");
 assert(!dayListHtml.includes("2026-07-03 の玉"), "day list view should not append no-tama to the title");
 assert(dayListHtml.includes('data-calendar-shift-day="-1"'), "day list view should offer a previous-day action");
@@ -256,7 +273,8 @@ assert(dayListHtml.includes("2026-07-03 09:35"), "day list view should show ball
 assert(dayListHtml.includes("しまった玉"), "day list view should show archived balls");
 assert(dayListHtml.includes("2026-07-03"), "day list view should show ball dates even without recorded times");
 assert(dayListHtml.includes("日常／ひらめき"), "day list view should show category and echo category");
-assert(dayListHtml.includes("表示中"), "day list view should label active balls as displayed");
+assert(!dayListHtml.includes("表示中"), "day list view should omit the default active lifecycle label");
+assert(dayListHtml.includes("しまい中"), "day list view should retain the exceptional archived lifecycle label");
 assert(dayListHtml.includes("発行者: エモ次郎"), "day list view should show the issuer");
 assert(dayListHtml.includes("送り手段: お配り"), "day list view should show the latest send method");
 assert(dayListHtml.includes("朝に少し進めた。午後に続きを見る。"), "day list view should show memo snippets");
@@ -286,6 +304,23 @@ assert(dayListHtml.includes("data-calendar-cycle-marker-mode") && dayListHtml.in
 assert(dayListHtml.includes("aria-current=\"page\""), "day list should expose exactly one semantic current navigation item");
 assert(countOccurrences(dayListHtml, "aria-current=\"page\"") === 1, "day list should have exactly one semantic current navigation item");
 
+const receivedDayListHtml = renderCalendarOverlay({
+  balls: [],
+  shareBalls: [sampleBall],
+  dayListBalls: [sampleBall],
+  calendarMonth: "2026-07",
+  calendarMode: "dayList",
+  displayMode: "day",
+  selectedDate: "2026-07-03",
+  selectedBallId: sampleBall.id,
+  emotionEchoStrength: "medium",
+  calendarMarkerMode: "spread",
+  activityLog: [],
+  categories: categoryColorPresets,
+});
+assert(receivedDayListHtml.includes("workspace-share-form"), "external-origin workspaces should expose the same sharing controls");
+assert(receivedDayListHtml.includes("data-edit-ball-id"), "external-origin workspaces should expose editing controls");
+
 const offeredOnlyHtml = renderCalendarOverlay({
   balls: [],
   dayListBalls: [offeredBall],
@@ -297,6 +332,7 @@ const offeredOnlyHtml = renderCalendarOverlay({
   emotionEchoStrength: "medium",
   calendarMarkerMode: "spread",
   activityLog: [],
+  categories: categoryColorPresets,
 });
 
 assert(offeredOnlyHtml.includes('data-view-ball-id="ball_20260703_offered"'), "offered day-list balls should keep content actions");

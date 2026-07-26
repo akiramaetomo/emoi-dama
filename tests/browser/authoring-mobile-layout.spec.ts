@@ -18,10 +18,12 @@ test("create and edit fill portrait and touch-landscape phone viewports", async 
 
     await page.locator("[data-calendar-open-panel='create']").click();
     await expectPhoneAuthoringSurface(page, ".floating-panel-create", "玉を置く", viewport);
+    await expectHorizontalFooterActions(page, "#ball-form");
     await page.locator(".floating-panel-create .authoring-surface-header .dialog-close").click();
 
     await openFirstBallEdit(page);
-    await expectPhoneAuthoringSurface(page, ".ball-edit-dialog", "玉を編集", viewport);
+    await expectPhoneAuthoringSurface(page, ".ball-edit-dialog", "玉の編集", viewport);
+    await expectHorizontalFooterActions(page, "#ball-edit-form");
     await page.locator(".ball-edit-dialog .authoring-surface-header .dialog-close").click();
   }
 });
@@ -66,7 +68,7 @@ test("create and edit keep iPad and desktop outer geometry", async ({ page }) =>
     await page.locator(".floating-panel-create .authoring-surface-header .dialog-close").click();
 
     await openFirstBallEdit(page);
-    await expectWideAuthoringSurface(page, ".ball-edit-dialog", "玉を編集");
+    await expectWideAuthoringSurface(page, ".ball-edit-dialog", "玉の編集");
     await expectCommonCategoryRow(page, "#ball-edit-form", ".edit-inline-field", 104);
     await expectCompactEditEchoRow(page, 104);
     await page.locator(".ball-edit-dialog .authoring-surface-header .dialog-close").click();
@@ -485,6 +487,26 @@ async function expectWideAuthoringSurface(page: Page, selector: string, expected
   expect(metrics.header.bodyOverlap).toBeLessThanOrEqual(0);
   expect(metrics.scrollOwnerCount).toBe(1);
   await expectAuthoringVisualHierarchy(page, `${selector} form`);
+}
+
+async function expectHorizontalFooterActions(page: Page, formSelector: string): Promise<void> {
+  const metrics = await page.locator(`${formSelector} .authoring-bottom-actions`).evaluate((actions) => {
+    const save = actions.querySelector<HTMLElement>("button[type='submit']")!;
+    const cancel = actions.querySelector<HTMLElement>("button[type='button']")!;
+    const saveRect = save.getBoundingClientRect();
+    const cancelRect = cancel.getBoundingClientRect();
+    return {
+      columns: getComputedStyle(actions).gridTemplateColumns.split(" ").length,
+      saveLeft: saveRect.left,
+      cancelLeft: cancelRect.left,
+      widthDelta: Math.abs(saveRect.width - cancelRect.width),
+      rowDelta: Math.abs(saveRect.top - cancelRect.top),
+    };
+  });
+  expect(metrics.columns).toBe(2);
+  expect(metrics.saveLeft).toBeLessThan(metrics.cancelLeft);
+  expect(metrics.widthDelta).toBeLessThanOrEqual(1);
+  expect(metrics.rowDelta).toBeLessThanOrEqual(1);
 }
 
 async function readAuthoringMetrics(page: Page, selector: string) {
