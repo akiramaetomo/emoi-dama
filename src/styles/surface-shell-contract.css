@@ -1,0 +1,434 @@
+/* V2 fixed Surface Shell contract */
+
+.ui-layer-surface .panel-backdrop,
+.ui-layer-surface .ball-dialog-backdrop,
+.ui-layer-surface .edit-unsaved-backdrop,
+.ui-layer-surface .manual-copy-backdrop,
+.ui-layer-surface .app-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.calendar-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: auto;
+  display: grid;
+  grid-template-columns: auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-content: stretch;
+  height: 100%;
+  min-height: 0;
+  gap: 10px;
+  overflow: hidden;
+  --calendar-shell-inline: 12px;
+  padding: 12px var(--calendar-shell-inline) 0;
+}
+
+.calendar-overlay > [data-calendar-primary-header] {
+  grid-row: 1;
+  grid-column: 1;
+  width: 100%;
+  min-width: 0;
+}
+
+.calendar-overlay > [data-calendar-primary-body].calendar-primary-scroll {
+  grid-row: 2;
+  grid-column: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+.calendar-month-body {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.calendar-day-list-body {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 2px 0;
+}
+
+.calendar-overlay > .calendar-ball-sieve-status-layer {
+  grid-row: 2;
+  grid-column: 1;
+  align-self: end;
+  justify-self: center;
+  margin: 0 8px 8px;
+}
+
+.calendar-overlay > .calendar-control-dock {
+  grid-row: 3;
+  grid-column: 1;
+  position: relative;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  z-index: 2;
+  flex: 0 0 auto;
+  margin-right: calc(0px - var(--calendar-shell-inline));
+  margin-left: calc(0px - var(--calendar-shell-inline));
+}
+
+.calendar-control-dock [hidden] {
+  display: none;
+}
+
+/* Detail, edit, and Settings own this dock while they are active. The lower
+   surface remains inert; only the first grid row is allowed to scroll. */
+.upper-control-surface {
+  --upper-control-shell-inline: 18px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-content: stretch;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.upper-control-surface > .surface-shell {
+  grid-row: 1;
+  grid-column: 1;
+  align-self: center;
+  min-height: 0;
+}
+
+.upper-control-surface > .upper-surface-control-dock {
+  grid-row: 2;
+  grid-column: 1;
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: calc(100% + (2 * var(--upper-control-shell-inline)));
+  min-width: 0;
+  margin-right: calc(0px - var(--upper-control-shell-inline));
+  margin-left: calc(0px - var(--upper-control-shell-inline));
+  padding: 4px 6px max(4px, env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(246, 210, 145, 0.1);
+  background: linear-gradient(180deg, rgba(11, 20, 17, 0.96), rgba(12, 18, 16, 0.99));
+  box-shadow: 0 -18px 44px rgba(0, 0, 0, 0.2);
+}
+
+.upper-surface-actions {
+  width: 100%;
+}
+
+.world-actions,
+.world-actions > :where(.control-bar-left, .primary-screen-control-group, .control-bar-functions) > button,
+.world-actions > :where(.control-bar-functions) > :where(.ball-sieve-control) > button:where(.ball-sieve-trigger) {
+  touch-action: manipulation;
+}
+
+.floating-panel,
+.ball-dialog {
+  max-height: calc(100% - 36px);
+}
+
+.surface-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.surface-fixed-header {
+  position: relative;
+  z-index: 1;
+  min-height: var(--close-control-size);
+  flex: 0 0 auto;
+}
+
+.surface-scroll-body,
+.app-modal-scroll[data-scroll-owner] {
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+.floating-panel > .surface-scroll-body,
+.ball-dialog > .surface-scroll-body {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+}
+
+#app[data-ime-active="true"] .floating-panel,
+#app[data-ime-active="true"] .ball-dialog {
+  max-height: calc(100% - 12px);
+}
+
+@media (max-width: 860px) {
+  .upper-control-surface.panel-backdrop-settings {
+    --upper-control-shell-inline: 0px;
+  }
+
+  .upper-control-surface.panel-backdrop-settings > .floating-panel-settings {
+    height: 100%;
+    max-height: 100%;
+  }
+}
+
+@media (max-width: 700px), (max-height: 700px) {
+  .calendar-overlay {
+    --calendar-shell-inline: 10px;
+    padding: 10px var(--calendar-shell-inline) 0;
+  }
+
+  .upper-control-surface {
+    --upper-control-shell-inline: 0px;
+  }
+
+  .upper-control-surface > .surface-shell {
+    height: 100%;
+    max-height: 100%;
+  }
+}
+
+@media (max-height: 560px) and (orientation: landscape) {
+  .calendar-overlay {
+    --calendar-shell-inline: 10px;
+    padding: 8px var(--calendar-shell-inline) 0;
+  }
+}
+
+/* Authoring and detail surfaces share the phone viewport while keeping one
+   fixed header and one internal scroll owner. This must follow the shared
+   Surface Shell and IME max-height rules so portrait and coarse-pointer
+   landscape stay full. */
+@media (max-width: 520px),
+  (max-height: 560px) and (orientation: landscape) and (pointer: coarse) {
+  .authoring-surface-backdrop,
+  .ball-detail-backdrop {
+    place-items: stretch;
+    padding: 0;
+  }
+
+  .authoring-surface-backdrop .authoring-surface,
+  #app[data-ime-active="true"] .authoring-surface,
+  .ball-detail-backdrop .ball-detail-dialog {
+    width: 100vw;
+    height: var(--app-visible-height);
+    max-height: var(--app-visible-height);
+    border-radius: 0;
+  }
+
+  .upper-control-surface.authoring-surface-backdrop .authoring-surface,
+  #app[data-ime-active="true"] .upper-control-surface.authoring-surface-backdrop .authoring-surface,
+  .upper-control-surface.ball-detail-backdrop .ball-detail-dialog {
+    height: 100%;
+    max-height: 100%;
+  }
+
+  .authoring-surface-backdrop .authoring-surface,
+  #app[data-ime-active="true"] .authoring-surface {
+    gap: 8px;
+    padding:
+      max(10px, env(safe-area-inset-top))
+      max(12px, env(safe-area-inset-right))
+      max(10px, env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
+    background:
+      linear-gradient(145deg, rgba(255, 231, 182, 0.045), transparent 40%),
+      rgba(13, 20, 18, 0.9);
+  }
+
+  .upper-control-surface.authoring-surface-backdrop .authoring-surface,
+  #app[data-ime-active="true"] .upper-control-surface.authoring-surface-backdrop .authoring-surface {
+    padding-bottom: 10px;
+  }
+
+  .authoring-surface .authoring-surface-header {
+    grid-template-columns: minmax(40px, 1fr) auto minmax(40px, 1fr);
+    min-height: 40px;
+  }
+
+  .authoring-surface .edit-surface-header {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+
+  .authoring-surface .edit-header-actions {
+    gap: 8px;
+  }
+
+  .authoring-surface .edit-header-save {
+    padding-inline: 14px;
+  }
+
+  .authoring-surface .authoring-surface-header .dialog-close {
+    width: 40px;
+    height: 40px;
+    font-size: 1.45rem;
+  }
+}
+
+@media (max-width: 520px) and (orientation: portrait) {
+  .calendar-cell.is-today::after {
+    display: none;
+    content: none;
+  }
+
+  .authoring-datetime-group {
+    padding-inline: 2px;
+  }
+
+  .create-form .create-timestamp-field .timestamp-control,
+  .edit-form .edit-timestamp-field .timestamp-control {
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+
+  .create-form .create-timestamp-field,
+  .edit-form .edit-timestamp-field {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .create-form .timestamp-now-button,
+  .edit-form .timestamp-now-button {
+    padding-inline: 8px;
+    font-size: 0.8rem;
+  }
+
+  .create-form .create-timestamp-field .timestamp-control input[type="time"],
+  .edit-form .edit-timestamp-field .timestamp-control input[type="time"] {
+    width: 0;
+    max-width: none;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .ball-count-field {
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .ball-count-field-label {
+    padding-top: 9px;
+  }
+
+  .ball-count-slider {
+    --ball-count-thumb-core-size: 20px;
+    gap: 8px;
+  }
+
+  .ball-count-slider output {
+    min-width: 48px;
+    font-size: var(--readable-xs);
+  }
+
+  .ball-count-range-stack {
+    width: 80%;
+  }
+
+  .authoring-echo-category {
+    grid-template-columns: 96px minmax(0, 1fr);
+    font-size: var(--readable-xs);
+  }
+}
+
+@media (max-width: 380px) and (orientation: portrait) {
+  .ball-count-range-stack {
+    width: 100%;
+  }
+}
+
+/* Ball detail keeps its own phone content spacing and header composition. */
+@media (max-width: 520px),
+  (max-height: 560px) and (orientation: landscape) and (pointer: coarse) {
+  .ball-detail-backdrop .ball-detail-dialog {
+    padding:
+      max(10px, env(safe-area-inset-top))
+      max(12px, env(safe-area-inset-right))
+      max(10px, env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
+  }
+
+  .ball-detail-dialog .detail-surface-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 8px;
+    align-items: center;
+    min-height: 40px;
+  }
+
+  .ball-detail-dialog .detail-screen-name {
+    grid-column: 1;
+    margin: 0;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .ball-detail-dialog .detail-edit-top {
+    position: static;
+    grid-column: 2;
+    min-height: 36px;
+    padding: 0 13px;
+  }
+
+  .ball-detail-dialog .detail-surface-header .dialog-close {
+    position: static;
+    grid-column: 3;
+    width: 40px;
+    height: 40px;
+    font-size: 1.45rem;
+  }
+
+  .ball-detail-dialog .dialog-head {
+    grid-template-columns: 84px minmax(0, 1fr);
+    gap: 12px;
+    padding-right: 0;
+  }
+
+  .ball-detail-dialog .detail-receipt-card {
+    gap: 10px;
+  }
+
+  .ball-detail-dialog .dialog-ball-stack {
+    width: 84px;
+    padding: 18px 0 0 16px;
+  }
+
+  .ball-detail-dialog .dialog-ball {
+    width: 68px;
+    height: 68px;
+  }
+
+  .ball-detail-dialog .dialog-title-block > span {
+    white-space: nowrap;
+  }
+
+  .ball-detail-dialog .dialog-memo {
+    align-content: start;
+    block-size: max-content;
+    max-block-size: none;
+    overflow: visible;
+  }
+
+  .ball-detail-dialog .dialog-memo p {
+    block-size: auto;
+    max-block-size: none;
+    overflow: visible;
+  }
+
+  .ball-detail-dialog .detail-feeling-card {
+    gap: 2px;
+    min-height: 0;
+    padding-block: 6px;
+  }
+
+  .ball-detail-dialog .detail-feeling-card .detail-info-row {
+    min-height: 34px;
+  }
+}

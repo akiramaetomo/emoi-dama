@@ -26,7 +26,7 @@ export interface VisualBallSource {
   saturation: number;
   lightness: number;
   visualKind: "filled" | "ring";
-  lifecycleStatus: "active" | "archived" | "memorial" | "offered";
+  lifecycleStatus: "active" | "archived" | "offered";
   descentBadgeCount: number;
   isKamiBall: boolean;
   echo: { hue: number; saturation: number; lightness: number } | null;

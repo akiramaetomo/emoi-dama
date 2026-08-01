@@ -10,8 +10,8 @@ test("formal release identifies the same app and public version without a develo
   await page.locator("[data-calendar-open-panel='settings']").click();
   const about = page.locator(".app-about-panel");
   await about.locator("summary").click();
-  await expect(about.locator("dd").nth(0)).toHaveText("0.8.0");
-  await expect(about.locator("dd").nth(1)).toHaveText("0.8.0");
+  await expect(about.locator("dd").nth(0)).toHaveText("0.9.0");
+  await expect(about.locator("dd").nth(1)).toHaveText("0.9.0");
 });
 
 test("initial Calendar owns the viewport and keeps its dock visible", async ({ page }) => {
@@ -49,9 +49,10 @@ test("initial Calendar owns the viewport and keeps its dock visible", async ({ p
 
 test("Calendar and Ball List switch on one tap with one persistent current item", async ({ page }) => {
   test.setTimeout(45_000);
+  const shell = page.locator("[data-calendar-primary-shell]");
   const month = page.locator("[data-calendar-open-panel='calendar']");
   const list = page.locator("[data-calendar-open-panel='dayList']");
-  await month.evaluate((element) => { element.setAttribute("data-browser-test-identity", "persistent"); });
+  await shell.evaluate((element) => { element.setAttribute("data-browser-test-identity", "persistent"); });
 
   for (let index = 0; index < 20; index += 1) {
     await list.click();
@@ -65,7 +66,7 @@ test("Calendar and Ball List switch on one tap with one persistent current item"
     await expect(month).toHaveAttribute("aria-current", "page");
   }
 
-  await expect(month).toHaveAttribute("data-browser-test-identity", "persistent");
+  await expect(shell).toHaveAttribute("data-browser-test-identity", "persistent");
 
   await page.locator("[data-calendar-main]").click();
   await expect(page.locator("#app")).toHaveAttribute("data-primary-route", "play");
@@ -78,7 +79,7 @@ test("uiDebug exposes viewport, app, and scroll-owner diagnostics without changi
   const overlay = page.locator("[data-ui-debug-overlay]");
   await expect(overlay).toContainText("UI DEBUG");
   await expect(overlay).toContainText("vv off");
-  await expect(overlay).toContainText("UI DEBUG v0.8.0");
+  await expect(overlay).toContainText("UI DEBUG v0.9.0");
   await page.locator("[data-calendar-primary-body]").dispatchEvent("touchstart", {
     touches: [{ identifier: 1, clientX: 100, clientY: 200 }],
   });

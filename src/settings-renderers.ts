@@ -42,7 +42,6 @@ const nameRoleLabels: Record<NameRole, string> = {
 const lifecycleLabels: Record<LifecycleStatus, string> = {
   active: "",
   archived: "しまい中",
-  memorial: "記憶",
   offered: "供養済み",
 };
 
@@ -348,8 +347,7 @@ export function renderLedgerList(
                 <button class="share-ball" type="button" data-copy-ball-url-id="${escapeAttribute(ball.id)}" aria-label="${escapeAttribute(ball.title)}のURLをコピー">URL</button>
                 <button class="share-ball" type="button" data-copy-ball-line-url-id="${escapeAttribute(ball.id)}" aria-label="${escapeAttribute(ball.title)}のLINE用URLをコピー">LINE</button>
                 <button class="edit-ball" type="button" data-edit-ball-id="${escapeAttribute(ball.id)}" aria-label="${escapeAttribute(ball.title)}を編集">編集</button>
-                ${renderArchiveToggleButton(ball)}
-                <button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-status="offered" aria-label="${escapeAttribute(ball.title)}を供養">供養</button>
+                ${renderLifecycleButtons(ball)}
                 <button class="delete-ball" type="button" data-delete-ball-id="${escapeAttribute(ball.id)}" aria-label="${escapeAttribute(ball.title)}をお焚上">お焚上</button>
                 <button class="descend-ball" type="button" data-descend-ball-id="${escapeAttribute(ball.id)}" aria-label="${escapeAttribute(ball.title)}に降臨">降臨</button>
               </div>
@@ -460,11 +458,20 @@ function renderBallCountUnderIcon(ball: HappyBall, className: string): string {
   return `<span class="ball-count-under-icon ${className}" aria-label="玉数 ${ball.count}玉">${ball.count}玉</span>`;
 }
 
-function renderArchiveToggleButton(ball: HappyBall): string {
-  if (ball.lifecycleStatus === "archived") {
-    return `<button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-status="active" aria-label="${escapeAttribute(ball.title)}を通常表示に戻す">戻す</button>`;
+function renderLifecycleButtons(ball: HappyBall): string {
+  if (ball.lifecycleStatus === "offered") {
+    return `<button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-action="restore" aria-label="${escapeAttribute(ball.title)}をいつもの玉に戻す">戻す</button>`;
   }
-  return `<button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-status="archived" aria-label="${escapeAttribute(ball.title)}をしまう">しまう</button>`;
+  if (ball.lifecycleStatus === "archived") {
+    return `
+      <button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-action="restore" aria-label="${escapeAttribute(ball.title)}をいつもの玉に戻す">戻す</button>
+      <button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-action="offer" aria-label="${escapeAttribute(ball.title)}を供養">供養</button>
+    `;
+  }
+  return `
+    <button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-action="archive" aria-label="${escapeAttribute(ball.title)}をしまう">しまう</button>
+    <button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-action="offer" aria-label="${escapeAttribute(ball.title)}を供養">供養</button>
+  `;
 }
 
 function renderLedgerListScope(options: LedgerListRenderOptions): string {

@@ -213,7 +213,7 @@ export function normalizePacketBall(value: unknown): HappyBall | null {
 
   const issuerType = readUnion(value.issuerType, ["self", "assisted", "proxy"]);
   const visibility = isKnownVisibility(value.visibility) ? normalizeVisibilityValue(value.visibility) : null;
-  const lifecycleStatus = readUnion(value.lifecycleStatus, ["active", "archived", "memorial", "offered"]);
+  const lifecycleStatus = normalizePacketLifecycleStatus(value.lifecycleStatus);
   const visual = value.visual;
   const hue = readFiniteNumber(visual.hue);
   const saturation = readFiniteNumber(visual.saturation);
@@ -285,6 +285,13 @@ export function normalizePacketBall(value: unknown): HappyBall | null {
   }
 
   return normalizedBall;
+}
+
+function normalizePacketLifecycleStatus(value: unknown): HappyBall["lifecycleStatus"] | null {
+  if (value === "memorial" || value === "active") {
+    return "active";
+  }
+  return value === "archived" || value === "offered" ? value : null;
 }
 
 function toComparableBall(ball: HappyBall): Omit<HappyBall, "receiptCreatedAt" | "provenance"> {

@@ -43,9 +43,9 @@ export function renderCreateForm(draft: BallDraft, context: FormRenderContext, p
   return renderBallAuthoringForm(draft, descentBall, context, "create");
 }
 
-export function renderBallEditDialog(ball: HappyBall, context: FormRenderContext): string {
+export function renderBallEditDialog(ball: HappyBall, context: FormRenderContext, controlBarHtml = ""): string {
   return `
-    <div class="ball-dialog-backdrop ball-edit-dialog-backdrop app-modal-backdrop authoring-surface-backdrop" data-dialog-backdrop>
+    <div class="ball-dialog-backdrop ball-edit-dialog-backdrop app-modal-backdrop authoring-surface-backdrop${controlBarHtml ? " upper-control-surface" : ""}" data-dialog-backdrop>
       <section class="ball-dialog ball-edit-dialog surface-shell authoring-surface" role="dialog" aria-modal="true" aria-labelledby="ball-edit-title">
         <div class="surface-fixed-header edit-surface-header authoring-surface-header">
           <h2 id="ball-edit-title">玉の編集</h2>
@@ -58,6 +58,7 @@ export function renderBallEditDialog(ball: HappyBall, context: FormRenderContext
           ${renderBallAuthoringForm(ball, ball, context, "edit")}
         </div>
       </section>
+      ${controlBarHtml}
     </div>
   `;
 }
@@ -350,7 +351,7 @@ export function renderEditableDescentItem(record: NonNullable<HappyBall["descent
         <textarea data-descent-field="memo" rows="1" maxlength="80" placeholder="降臨メモ" autocomplete="off">${escapeHtml(record.memo)}</textarea>
       </label>
       <div class="edit-descent-location-row${hasPosition ? " has-position" : " is-empty-position"}">
-        <span data-descent-gps-status>${hasPosition ? escapeHtml(formatCoordinates(record.latitude, record.longitude)) : "位置未取得"}</span>
+        <span data-descent-gps-status>${hasPosition ? escapeHtml(formatDescentCoordinates(record.latitude, record.longitude)) : "位置未取得"}</span>
         ${hasPosition ? `<a class="ghost-action quiet-accent-action detail-map-link" data-descent-map-link href="${escapeAttribute(createGoogleMapsUrl(record))}" target="_blank" rel="noopener noreferrer">Google Maps</a>` : `<span data-descent-map-link></span>`}
         <button class="ghost-action quiet-accent-action" type="button" data-descent-gps-record-id="${escapeAttribute(record.id)}">${hasPosition ? "GPS再取得" : "GPS取得"}</button>
         <button class="ghost-action quiet-accent-action" type="button" data-descent-clear-gps-record-id="${escapeAttribute(record.id)}"${hasPosition ? "" : " disabled"}>GPS削除</button>
@@ -374,7 +375,7 @@ function formatDescentDateTime(value: string): string {
   });
 }
 
-function formatCoordinates(latitude: number, longitude: number): string {
+export function formatDescentCoordinates(latitude: number, longitude: number): string {
   return `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
 }
 

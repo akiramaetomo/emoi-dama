@@ -1,4 +1,5 @@
 import { findLatestBallSendMode, formatSendModeLabel, type ActivityLogEntry } from "./activity-log.js";
+import { renderBallSieveControl, renderBallSieveStatus, type BallSieveUiState } from "./ball-sieve-ui.js";
 import {
   renderDisplayVisualKindClass,
   renderDisplayVisualStyle,
@@ -7,7 +8,13 @@ import {
   resolveEchoDisplayVisual,
 } from "./ball-visual-display.js";
 import type { CategoryColorPreset } from "./categories.js";
+import {
+  renderCalendarScreenIcon,
+  renderCreateBallIcon,
+  renderPlayScreenIcon,
+} from "./control-bar-icons.js";
 import { formatBallDateTime, type HappyBall } from "./models.js";
+import { renderPeriodChevronIcon } from "./period-navigation.js";
 import type { DisplayMode } from "./display-period";
 import type { CalendarMarkerMode, EmotionEchoStrength } from "./settings";
 import { countWorkspaceShareBalls, selectWorkspaceShareBalls } from "./workspace-transfer.js";
@@ -31,6 +38,10 @@ export interface CalendarRenderContext {
   categories: CategoryColorPreset[];
   workspaceDisplayCode?: string | null;
   shareBalls?: HappyBall[];
+  ballSieve?: BallSieveUiState;
+  ballSieveFeedback?: string;
+  sieveTransitioning?: boolean;
+  emptyMessage?: string;
 }
 
 export interface CalendarPrimaryParts {
@@ -41,11 +52,12 @@ export interface CalendarPrimaryParts {
 export function renderCalendarOverlay(context: CalendarRenderContext): string {
   const parts = renderCalendarPrimaryParts(context);
   return `
-    <section class="calendar-overlay app-interaction-surface" data-calendar-primary-shell aria-label="${context.calendarMode === "month" ? "カレンダー" : escapeAttribute(context.selectedDate)}">
+    <section class="calendar-overlay app-interaction-surface${context.sieveTransitioning ? " is-ball-sieve-transitioning" : ""}" data-calendar-primary-shell aria-label="${context.calendarMode === "month" ? "カレンダー" : escapeAttribute(context.selectedDate)}">
       <div data-calendar-primary-header>${parts.header}</div>
       <div class="calendar-primary-scroll ${context.calendarMode === "dayList" ? "calendar-day-list-body" : "calendar-month-body"}" data-calendar-primary-body data-scroll-owner>
         ${parts.body}
       </div>
+      ${renderCalendarStatusLayer(context)}
       ${renderCalendarControlDock(context)}
     </section>
   `;
@@ -85,12 +97,12 @@ function renderCalendarMonthParts(context: CalendarRenderContext): CalendarPrima
   return {
     header: `
       <div class="calendar-head calendar-month-head">
-        <button class="calendar-nav" type="button" data-calendar-month="${escapeAttribute(shiftCalendarMonth(context.calendarMonth, -1))}" aria-label="前の月">‹</button>
+        <button class="period-nav-button period-nav-button-previous" type="button" data-calendar-month="${escapeAttribute(shiftCalendarMonth(context.calendarMonth, -1))}" aria-label="前の月">${renderPeriodChevronIcon("previous")}</button>
         <div class="screen-heading-block">
           ${renderWorkspaceScreenName("Calendar", context.workspaceDisplayCode)}
           <h2>${year}年 ${month}月</h2>
         </div>
-        <button class="calendar-nav" type="button" data-calendar-month="${escapeAttribute(shiftCalendarMonth(context.calendarMonth, 1))}" aria-label="次の月">›</button>
+        <button class="period-nav-button period-nav-button-next" type="button" data-calendar-month="${escapeAttribute(shiftCalendarMonth(context.calendarMonth, 1))}" aria-label="次の月">${renderPeriodChevronIcon("next")}</button>
       </div>
     `,
     body: `
@@ -108,12 +120,12 @@ function renderCalendarDayListParts(context: CalendarRenderContext): CalendarPri
   return {
     header: `
       <div class="calendar-head calendar-day-list-head">
-        <button class="calendar-nav" type="button" data-calendar-shift-day="-1" aria-label="前の日">‹</button>
+        <button class="period-nav-button period-nav-button-previous" type="button" data-calendar-shift-day="-1" aria-label="前の日">${renderPeriodChevronIcon("previous")}</button>
         <div class="screen-heading-block">
           ${renderWorkspaceScreenName("Ball List", context.workspaceDisplayCode)}
           <h2>${escapeHtml(context.selectedDate)}</h2>
         </div>
-        <button class="calendar-nav" type="button" data-calendar-shift-day="1" aria-label="次の日">›</button>
+        <button class="period-nav-button period-nav-button-next" type="button" data-calendar-shift-day="1" aria-label="次の日">${renderPeriodChevronIcon("next")}</button>
       </div>
     `,
     body: renderCalendarDayListItems(context),
@@ -123,7 +135,7 @@ function renderCalendarDayListParts(context: CalendarRenderContext): CalendarPri
 function renderCalendarDayListItems(context: CalendarRenderContext): string {
   const sharePanel = renderWorkspaceSharePanel(context.shareBalls ?? [], context.selectedDate);
   if (context.dayListBalls.length === 0) {
-    return `${sharePanel}<p class="empty-copy">この日の玉はまだありません。</p>`;
+    return `${sharePanel}<p class="empty-copy ball-sieve-empty-copy">${escapeHtml(context.emptyMessage ?? "この日のえもい玉は、まだありません。")}</p>`;
   }
 
   return `
@@ -172,17 +184,17 @@ function renderCompactDescentBadge(ball: HappyBall): string {
 
 function renderCalendarLifecycleActions(ball: HappyBall): string {
   if (ball.lifecycleStatus === "offered") {
-    return "";
+    return `<button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-action="restore" aria-label="${escapeAttribute(ball.title)}をいつもの玉に戻す">戻す</button>`;
   }
   if (ball.lifecycleStatus === "archived") {
     return `
-      <button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-status="active" aria-label="${escapeAttribute(ball.title)}を通常表示に戻す">戻す</button>
-      <button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-status="offered" aria-label="${escapeAttribute(ball.title)}を供養">供養</button>
+      <button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-action="restore" aria-label="${escapeAttribute(ball.title)}をいつもの玉に戻す">戻す</button>
+      <button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-action="offer" aria-label="${escapeAttribute(ball.title)}を供養">供養</button>
     `;
   }
   return `
-    <button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-status="archived" aria-label="${escapeAttribute(ball.title)}をしまう">しまう</button>
-    <button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-status="offered" aria-label="${escapeAttribute(ball.title)}を供養">供養</button>
+    <button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-action="archive" aria-label="${escapeAttribute(ball.title)}をしまう">しまう</button>
+    <button class="lifecycle-ball" type="button" data-lifecycle-ball-id="${escapeAttribute(ball.id)}" data-lifecycle-action="offer" aria-label="${escapeAttribute(ball.title)}を供養">供養</button>
   `;
 }
 
@@ -192,9 +204,6 @@ function renderLifecycleLabel(status: HappyBall["lifecycleStatus"]): string {
   }
   if (status === "offered") {
     return "供養済み";
-  }
-  if (status === "memorial") {
-    return "記憶";
   }
   return "";
 }
@@ -221,9 +230,9 @@ function renderCalendarBallRelationMeta(ball: HappyBall, activityLog: ActivityLo
 }
 
 function renderCalendarControlDock(context: CalendarRenderContext): string {
+  const ballSieve = context.ballSieve ?? { presetId: "usual", open: false };
   return `
     <div class="calendar-control-dock">
-      <p class="control-state-label calendar-marker-state-label" data-calendar-marker-state${context.calendarMode === "dayList" ? " hidden" : ""}>${renderCalendarMarkerModeName(context.calendarMarkerMode)}表示</p>
       <div class="world-actions app-control-bar calendar-actions-bar" aria-label="コントロールバー">
         <span class="control-bar-left">
           <button class="dock-symbol-button dock-create-button" type="button" data-calendar-open-panel="create" aria-label="選択日に玉を作る">${renderCreateBallIcon()}</button>
@@ -239,11 +248,22 @@ function renderCalendarControlDock(context: CalendarRenderContext): string {
             <span class="day-list-screen-icon" aria-hidden="true"></span>
           </button>
         </span>
-        <span class="control-bar-functions">
+        <span class="control-bar-functions primary-screen-functions">
+          ${renderBallSieveControl(ballSieve)}
           <button class="calendar-marker-mode-button" type="button" data-calendar-cycle-marker-mode aria-label="${escapeAttribute(renderCalendarMarkerModeCycleAriaLabel(context.calendarMarkerMode))}"${context.calendarMode === "dayList" ? " hidden" : ""}>${renderCalendarMarkerModeIcon(context.calendarMarkerMode)}</button>
           <button class="dock-symbol-button dock-settings-button" type="button" data-calendar-open-panel="settings" aria-label="設定">⚙</button>
         </span>
       </div>
+    </div>
+  `;
+}
+
+function renderCalendarStatusLayer(context: CalendarRenderContext): string {
+  const ballSieve = context.ballSieve ?? { presetId: "usual", open: false };
+  return `
+    <div class="ball-sieve-status-layer calendar-ball-sieve-status-layer">
+      <p class="control-state-label calendar-marker-state-label" data-calendar-marker-state${context.calendarMode === "dayList" ? " hidden" : ""}>${renderCalendarMarkerModeName(context.calendarMarkerMode)}表示</p>
+      ${renderBallSieveStatus({ presetId: ballSieve.presetId, feedback: context.ballSieveFeedback ?? "" })}
     </div>
   `;
 }
@@ -275,19 +295,6 @@ function renderWorkspaceScreenName(label: string, displayCode: string | null | u
       <span>${escapeHtml(label)}</span>${displayCode ? `<small>ID=${escapeHtml(displayCode)}</small>` : ""}
     </button>
   `;
-}
-
-function renderCreateBallIcon(): string {
-  return `
-    <span class="dock-create-action-icon" aria-hidden="true">
-      <span class="dock-create-ball-icon"><span>＋</span></span>
-      <small class="dock-create-label">new</small>
-    </span>
-  `;
-}
-
-function renderPlayScreenIcon(): string {
-  return `<span class="play-triple-ball-icon" aria-hidden="true"><i></i><i></i><i></i></span>`;
 }
 
 function renderCalendarMarkerModeCycleAriaLabel(mode: CalendarMarkerMode): string {
@@ -326,29 +333,6 @@ function renderSpreadModeIcon(): string {
 
 function nextCalendarMarkerMode(mode: CalendarMarkerMode): CalendarMarkerMode {
   return mode === "spread" ? "meter" : "spread";
-}
-
-function renderCalendarScreenIcon(): string {
-  return `
-    <span class="calendar-screen-icon" aria-hidden="true">
-      <svg viewBox="0 0 32 28" focusable="false">
-        <rect class="calendar-icon-frame" x="2" y="2.5" width="28" height="24" rx="0.8"></rect>
-        <line class="calendar-icon-bar" x1="12.75" y1="8" x2="19.25" y2="8"></line>
-        <circle class="calendar-icon-dot" cx="8.5" cy="13" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="13.5" cy="13" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="18.5" cy="13" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="23.5" cy="13" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="8.5" cy="17.25" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="13.5" cy="17.25" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="18.5" cy="17.25" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="23.5" cy="17.25" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="8.5" cy="21.5" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="13.5" cy="21.5" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="18.5" cy="21.5" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="23.5" cy="21.5" r="1.45"></circle>
-      </svg>
-    </span>
-  `;
 }
 
 function renderCalendarMarkers(

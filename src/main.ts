@@ -16,16 +16,29 @@ import {
   type ActivityLogEntry,
 } from "./activity-log";
 import {
-  createBallDisplayLabel,
   nextBallLabelMode,
-  renderBallLabelModeCycleAriaLabel,
 } from "./ball-labels";
-import { bindBallCountSliderControls } from "./ball-count-slider";
+import { isBallLifecycleAction, resolveBallLifecycleTransition } from "./ball-lifecycle";
 import {
-  findDisplayCategoryPreset,
-  resolveBallDisplayVisual,
-  resolveEchoDisplayVisual,
-} from "./ball-visual-display";
+  applyBallSieve,
+  DEFAULT_BALL_SIEVE_PRESET,
+  getBallSieveLabel,
+  isBallSievePresetId,
+  renderBallSieveEmptyMessage,
+  type BallSievePresetId,
+} from "./ball-sieve";
+import {
+  bindCreateAuthoringUiActions,
+  bindEditAuthoringUiActions,
+  bindEditSaveConfirmActions,
+  hasBallEditFormChanged,
+  readAuthoringDraft,
+  readEditedDescentRecords,
+  replaceAuthoringDescentHistory,
+  updateAuthoringDescentButtonsBusy,
+  type AuthoringDescentActionHandlers,
+  type AuthoringDraftDefaults,
+} from "./authoring-ui-actions";
 import { renderCalendarOverlay, renderCalendarPrimaryParts, type CalendarRenderContext } from "./calendar-renderers";
 import {
   loadCategoryColorPresets,
@@ -50,9 +63,7 @@ import { DeviceGravityController, requestDeviceGravityPermission, type DeviceGra
 import {
   appendDescentToBall,
   applyDescentRecordsToBall,
-  createGoogleMapsUrl,
   hasDescentPosition,
-  normalizeDescentRecords,
   type DescentPositionInput,
 } from "./descent";
 import { getDisplayDateRange, moveDisplayAnchorToCalendarMonth, shiftDisplayAnchor, type DisplayMode } from "./display-period";
@@ -67,11 +78,10 @@ import {
 import {
   renderBallEditDialog,
   renderCreateForm,
-  renderEditableDescentHistory,
   renderEditSaveModeConfirm,
   type FormRenderContext,
 } from "./form-renderers";
-import { resolveManualSubjectPreset, resolveNamePresetSelection } from "./form-interactions";
+import { hasBallDraftChanged } from "./form-interactions";
 import { TinyImpactAudio } from "./impact-audio";
 import {
   isDomRendererComparisonEnabled,
@@ -87,7 +97,7 @@ import {
   renderSnoozedUrlPacketReminder,
 } from "./import-dialog-renderers";
 import { renderManualCopyDialog } from "./manual-copy-renderers";
-import { visibilityValues, type BallDraft, type HappyBall, type HappyBallDescentRecord, type IssuerType, type LifecycleStatus, type NameBookEntry, type SendMode } from "./models";
+import { type BallDraft, type HappyBall, type HappyBallDescentRecord, type NameBookEntry, type SendMode } from "./models";
 import { resolveFocusScrollDelta } from "./modal-interactions";
 import {
   createLinePacketImportUrl,
@@ -97,20 +107,26 @@ import {
   type HandoffOptions,
   type UrlPacketParseResult,
 } from "./packet";
-import { createPlayRenderPlan, denseDeviceLimit, limitVisualPopulation, sortNewestFirst, type PopulationPlan } from "./play-population";
-import {
-  resolveMotionClass,
-} from "./play-physics-classification";
+import { createPlayRenderPlan, denseDeviceLimit, limitVisualPopulation, type PopulationPlan } from "./play-population";
+import { planPlayVisualSources } from "./play-visual-sources";
 import {
   createInitialPlayJutsuState,
   reducePlayJutsuState,
   type PlayJutsuAction,
 } from "./play-jutsu-state";
+import type { PlayMenuPosition } from "./play-jutsu-menu";
 import {
-  clampPlayMenuPosition,
-  createInitialPlayMenuPosition,
-  type PlayMenuPosition,
-} from "./play-jutsu-menu";
+  bindPlayDisplayNavigationKeys,
+  bindPlayDebugEventLogging,
+  bindPlayUiActions,
+  isPlayJutsuActive,
+  nextPlayDisplayMode,
+  renderPlayPopulationStatus,
+  renderPlaySurface,
+  updatePlayFragmentationStatus,
+  updatePlaySelectedSummary,
+  type PlayUiBinding,
+} from "./play-ui";
 import { LazyPixiBallStageRenderer } from "./lazy-pixi-ball-stage-renderer";
 import { renderPanelOverlay } from "./overlay-renderers";
 import { PhysicsRuntimeController } from "./physics-runtime-controller";
@@ -129,6 +145,7 @@ import {
   type PhysicsSettingsProfile,
 } from "./settings";
 import { bindSettingsPanelEvents } from "./settings-panel-events";
+import { hasAppSettingsRuntimeEffect, planAppSettingsRuntimeEffects } from "./settings-runtime-effects";
 import {
   renderLedgerList,
   renderToolsPanel,
@@ -139,6 +156,13 @@ import { SurfaceInteractionController } from "./surface-interaction-controller";
 import { createStartupScreenState } from "./startup-state";
 import { UiLayerHosts } from "./ui-layer-hosts";
 import { UiDebugDiagnostics } from "./ui-debug-diagnostics";
+import {
+  isUpperSurfaceControlTarget,
+  planEditUpperSurfaceNavigation,
+  renderUpperSurfaceControlBar,
+  type UpperSurfaceControlTarget,
+  type UpperSurfacePrimaryTarget,
+} from "./upper-surface-control-bar";
 import {
   addBall,
   clearBallData,
@@ -158,7 +182,7 @@ import {
   saveLedger,
   todayIsoDate,
   updateBall,
-  updateBallLifecycleStatus,
+  applyBallLifecycleAction,
   updateNameBook,
   type BallSaveMode,
 } from "./storage";
@@ -189,6 +213,7 @@ import {
   type WorkspaceImportSelection,
   type WorkspaceSharePeriod,
 } from "./workspace-transfer";
+import { bindWorkspaceUiActions } from "./workspace-ui-actions";
 
 const appRoot = getAppRoot();
 
@@ -266,7 +291,13 @@ let playJutsuFeedback = "";
 let playMenuPosition: PlayMenuPosition | null = null;
 let playWorldDisclosureOpen = false;
 let playParentDisclosureOpen = false;
-let playMenuResizeObserver: ResizeObserver | null = null;
+let playUiBinding: PlayUiBinding | null = null;
+let activeBallSieve: BallSievePresetId = DEFAULT_BALL_SIEVE_PRESET;
+let ballSieveOpen = false;
+let ballSieveFeedback = "";
+let ballSieveTransitioning = false;
+let ballSieveFeedbackTimer: number | null = null;
+let ballSieveTransitionTimer: number | null = null;
 
 const uiHosts = new UiLayerHosts(appRoot, __APP_VERSION__);
 const imeViewport = new ImeViewportCoordinator(appRoot, () => createAppUiSnapshot(uiState).editableSurface);
@@ -312,7 +343,16 @@ window.addEventListener("unhandledrejection", (event) => {
   handleApplicationError(event.reason);
 });
 
-window.addEventListener("keydown", handleDisplayNavigationKey);
+bindPlayDisplayNavigationKeys(
+  window,
+  () => uiState.primary === "play" && uiState.modals.length === 0,
+  navigateDisplayPeriod,
+);
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && ballSieveOpen) {
+    closeBallSieve();
+  }
+});
 imeViewport.install();
 interactionController.install();
 if (isUiDebugDiagnosticsEnabled(window.location.search)) {
@@ -452,6 +492,7 @@ function activateNextWorkspaceRuntime(): void {
 function render(): void {
   persistActiveWorkspaceSnapshot();
   appRoot.classList.toggle("is-received-workspace", isReceivedWorkspace(workspaceStore));
+  appRoot.classList.toggle("is-ball-sieve-open", ballSieveOpen);
   openSettingsGroups = uiState.primary === "settings" ? readOpenSettingsGroups() : [];
   clearModalLayers(false);
   const visibleBalls = getVisibleBalls();
@@ -480,6 +521,9 @@ function ensureBaseRendered(visibleBalls: HappyBall[], selectedBall: HappyBall |
     selectedBallId,
     displayMode,
     displayAnchorDate,
+    activeBallSieve,
+    ballSieveFeedback,
+    ballSieveTransitioning,
   });
   if (nextSignature === baseRenderSignature) {
     return;
@@ -490,95 +534,37 @@ function ensureBaseRendered(visibleBalls: HappyBall[], selectedBall: HappyBall |
   capturePhysicsSnapshotsSafely();
   physicsRuntime.destroy();
   physicsStage = null;
-  playMenuResizeObserver?.disconnect();
-  playMenuResizeObserver = null;
+  playUiBinding?.disconnect();
+  playUiBinding = null;
 
-  uiHosts.renderBase(`
-    <main class="app-shell ball-world-shell">
-      <section class="stage ${ballLabelMode !== "none" ? "show-ball-labels" : ""} label-mode-${ballLabelMode}" aria-label="えもい玉">
-        <div class="stage-topline">
-          <div>
-            ${renderWorkspaceScreenName("Emotion Play", "play-screen-kicker")}
-            ${renderPlayPeriodNav()}
-            <h1 id="stage-title">${escapeHtml(selectedBall ? createVisibilitySafeSummaryLabel(selectedBall) : "今日のえもい玉は？")}</h1>
-            ${renderPopulationStatus(visualPopulation)}
-            ${import.meta.env.DEV ? `<p class="play-fragmentation-status" data-fragmentation-status aria-live="polite"></p>` : ""}
-          </div>
-        </div>
-        <div class="play-world-region">
-          <div id="ball-field" class="ball-field texture-${appSettings.backgroundTexture}" aria-label="触って転がせるえもい玉"></div>
-          ${renderGravityDebugPanel()}
-          <div class="play-mode-popover" data-play-mode-popover role="dialog" aria-label="術の設定" ${playControlsOpen ? "" : "hidden"}>
-            <button class="play-mode-drag-grip" type="button" data-play-mode-drag-grip aria-label="術メニューを移動"></button>
-            <div class="play-jutsu-actions">
-              <button type="button" data-apply-jutsu="fill">充填分割の術</button>
-              <button type="button" data-apply-jutsu="count-limit">小玉分割の術</button>
-            </div>
-            <div class="play-jutsu-reset-actions">
-              <button type="button" data-reset-ball-jutsu>玉の術を解く</button>
-              <button type="button" data-disable-play-jutsu>術を無効</button>
-            </div>
-            <p class="play-jutsu-feedback" data-play-jutsu-feedback aria-live="polite">${escapeHtml(playJutsuFeedback)}</p>
-            <details class="play-mode-disclosure" data-play-mode-disclosure="world" ${playWorldDisclosureOpen ? "open" : ""}>
-              <summary><span>世界</span><small>Sekai</small></summary>
-              <div class="play-mode-disclosure-body">
-                <div class="play-mode-row" role="group" aria-label="重力">
-                  <span>重力</span>
-                  <button type="button" data-play-gravity-mode="free" class="${playJutsuState.gravityMode === "free" ? "is-on" : ""}">なし</button>
-                  <button type="button" data-play-gravity-mode="fixed-down" class="${playJutsuState.gravityMode === "fixed-down" ? "is-on" : ""}">あり</button>
-                </div>
-                <div class="play-mode-row" role="group" aria-label="浮力。タップ、ドラッグ、親玉の存在中に有効">
-                  <span>浮力<small>（タップ時のみ有効）</small></span>
-                  <button type="button" data-play-buoyancy-mode="off" class="${playJutsuState.buoyancyMode === "off" ? "is-on" : ""}">なし</button>
-                  <button type="button" data-play-buoyancy-mode="on" class="${playJutsuState.buoyancyMode === "on" ? "is-on" : ""}" ${playJutsuState.gravityMode === "free" ? "disabled aria-disabled=\"true\"" : ""}>あり</button>
-                </div>
-              </div>
-            </details>
-            <details class="play-mode-disclosure" data-play-mode-disclosure="parent" ${playParentDisclosureOpen ? "open" : ""}>
-              <summary><span>親玉</span><small>Oyadama</small></summary>
-              <div class="play-mode-disclosure-body">
-                <div class="play-mode-row" role="group" aria-label="親玉">
-                  <span>親玉</span>
-                  <button type="button" data-play-parent-enabled="false" class="${playJutsuState.interactionMode === "grab" ? "is-on" : ""}">なし</button>
-                  <button type="button" data-play-parent-enabled="true" class="${playJutsuState.interactionMode === "parent" ? "is-on" : ""}">あり</button>
-                </div>
-                <div class="play-mode-row play-mode-row-three" role="group" aria-label="親玉の分割の術">
-                  <span>分割の術</span>
-                  <button type="button" data-play-parent-split-mode="off" class="${playJutsuState.parentSplitMode === "off" ? "is-on" : ""}">無</button>
-                  <button type="button" data-play-parent-split-mode="count-limit" class="${playJutsuState.parentSplitMode === "count-limit" ? "is-on" : ""}" ${playJutsuState.interactionMode === "grab" ? "disabled aria-disabled=\"true\"" : ""}>小玉</button>
-                  <button type="button" data-play-parent-split-mode="fill" class="${playJutsuState.parentSplitMode === "fill" ? "is-on" : ""}" ${playJutsuState.interactionMode === "grab" ? "disabled aria-disabled=\"true\"" : ""}>充填</button>
-                </div>
-              </div>
-            </details>
-          </div>
-        </div>
-        <div class="play-control-region">
-          <div class="world-control-dock">
-            <div class="world-actions app-control-bar" aria-label="コントロールバー">
-            <span class="control-bar-left">
-              <button class="dock-symbol-button dock-create-button" type="button" data-open-panel="create" aria-label="玉を作る">${renderCreateBallIcon()}</button>
-            </span>
-            <span class="primary-screen-control-group" aria-label="主要3画面">
-              <button class="calendar-main-ball-button ${ballLabelMode !== "none" ? "is-label-on" : ""}" type="button" data-cycle-ball-label-mode aria-current="page" aria-label="${escapeHtml(renderBallLabelModeCycleAriaLabel(ballLabelMode))}">
-                ${renderPlayScreenIcon()}
-              </button>
-              <button class="calendar-screen-button" type="button" data-open-panel="calendar" aria-label="カレンダー">
-                ${renderCalendarScreenIcon()}
-              </button>
-              <button class="day-list-screen-button" type="button" data-open-calendar-day-list aria-label="玉リスト">
-                <span class="day-list-screen-icon" aria-hidden="true"></span>
-              </button>
-            </span>
-            <span class="control-bar-functions">
-              <button class="play-mode-button ${isPlayJutsuActive() ? "is-on" : ""}" type="button" data-toggle-play-modes aria-expanded="${playControlsOpen}">術</button>
-              <button class="dock-symbol-button dock-settings-button" type="button" data-open-panel="settings" aria-label="設定">⚙</button>
-            </span>
-            </div>
-          </div>
-        </div>
-      </section>
-    </main>
-  `);
+  uiHosts.renderBase(renderPlaySurface({
+    ballLabelMode,
+    backgroundTexture: appSettings.backgroundTexture,
+    displayMode,
+    displayAnchorDate,
+    stageTitle: selectedBall
+      ? createVisibilitySafeSummaryLabel(selectedBall)
+      : activeBallSieve === "usual" ? "今日のえもい玉は？" : renderBallSieveEmptyMessage(activeBallSieve),
+    workspaceScreenNameHtml: renderWorkspaceScreenName("Emotion Play", "play-screen-kicker"),
+    gravityDebugHtml: renderGravityDebugPanel(),
+    populationStatusHtml: renderPlayPopulationStatus(
+      visualPopulation.displayedCount,
+      visualPopulation.totalCount,
+      visualPopulation.truncated,
+    ),
+    developmentDiagnostics: import.meta.env.DEV,
+    jutsuState: playJutsuState,
+    controlsOpen: playControlsOpen,
+    jutsuFeedback: playJutsuFeedback,
+    worldDisclosureOpen: playWorldDisclosureOpen,
+    parentDisclosureOpen: playParentDisclosureOpen,
+    ballSieve: {
+      presetId: activeBallSieve,
+      open: ballSieveOpen,
+    },
+    ballSieveFeedback,
+    sieveTransitioning: ballSieveTransitioning,
+  }));
 
   bindEvents(uiHosts.base);
   if (rapierReady) {
@@ -623,6 +609,13 @@ function getCalendarRenderContext(): CalendarRenderContext {
     activityLog,
     categories: editableCategories,
     shareBalls: ledger.balls,
+    ballSieve: {
+      presetId: activeBallSieve,
+      open: ballSieveOpen,
+    },
+    ballSieveFeedback,
+    sieveTransitioning: ballSieveTransitioning,
+    emptyMessage: renderBallSieveEmptyMessage(activeBallSieve),
     workspaceDisplayCode: isReceivedWorkspace(workspaceStore)
       ? getWorkspaceDisplayCode(workspaceStore, workspaceStore.activeWorkspaceId)
       : null,
@@ -650,27 +643,16 @@ function updateCalendarPrimarySurface(surface: HTMLElement, context: CalendarRen
 
   const template = document.createElement("template");
   template.innerHTML = renderCalendarOverlay(context);
+  const nextStatusLayer = template.content.querySelector<HTMLElement>(".calendar-ball-sieve-status-layer");
+  const currentStatusLayer = surface.querySelector<HTMLElement>(".calendar-ball-sieve-status-layer");
+  if (currentStatusLayer && nextStatusLayer) {
+    currentStatusLayer.replaceWith(nextStatusLayer);
+  }
   const nextDock = template.content.querySelector<HTMLElement>(".calendar-control-dock");
   const currentDock = surface.querySelector<HTMLElement>(".calendar-control-dock");
-  const dockShapeChanged = Boolean(currentDock?.querySelector("[data-calendar-open-panel='create']"))
-    !== Boolean(nextDock?.querySelector("[data-calendar-open-panel='create']"));
-  if (currentDock && nextDock && dockShapeChanged) {
+  if (currentDock && nextDock) {
     currentDock.replaceWith(nextDock);
     bindEvents(nextDock);
-  } else {
-    const nextState = template.content.querySelector<HTMLElement>("[data-calendar-marker-state]");
-    const currentState = surface.querySelector<HTMLElement>("[data-calendar-marker-state]");
-    if (currentState && nextState) {
-      currentState.hidden = nextState.hidden;
-      currentState.textContent = nextState.textContent;
-    }
-    const nextMarker = template.content.querySelector<HTMLButtonElement>("[data-calendar-cycle-marker-mode]");
-    const currentMarker = surface.querySelector<HTMLButtonElement>("[data-calendar-cycle-marker-mode]");
-    if (currentMarker && nextMarker) {
-      currentMarker.hidden = nextMarker.hidden;
-      currentMarker.innerHTML = nextMarker.innerHTML;
-      currentMarker.setAttribute("aria-label", nextMarker.getAttribute("aria-label") ?? "玉表示を切り替え");
-    }
   }
   bindEvents(header);
   bindEvents(body);
@@ -710,7 +692,13 @@ function renderActivePrimaryPanel(): string {
       "list",
     );
   }
-  return renderPanelOverlay("設定とデータ", renderToolsPanel(getToolsPanelRenderContext()), "settings");
+  return renderPanelOverlay(
+    "設定とデータ",
+    renderToolsPanel(getToolsPanelRenderContext()),
+    "settings",
+    undefined,
+    renderCurrentUpperSurfaceControlBar(),
+  );
 }
 
 function syncPendingImportSurface(): void {
@@ -815,8 +803,7 @@ function capturePhysicsSnapshotsSafely(): void {
 
 function getVisibleBalls(): HappyBall[] {
   const range = getDisplayDateRange(displayMode, displayAnchorDate);
-  return ledger.balls.filter((ball) => (
-    ball.lifecycleStatus !== "offered" &&
+  return applyBallSieve(ledger.balls, activeBallSieve).filter((ball) => (
     ball.date >= range.start &&
     ball.date <= range.end
   ));
@@ -1040,77 +1027,6 @@ function getImportDialogRenderContext() {
   };
 }
 
-function renderDisplayRangeLabel(): string {
-  const range = getDisplayDateRange(displayMode, displayAnchorDate);
-  if (displayMode === "day") {
-    return displayAnchorDate;
-  }
-  if (displayMode === "week") {
-    return `${range.start} – ${range.end.slice(5)}`;
-  }
-  return displayAnchorDate.slice(0, 7);
-}
-
-function renderPlayPeriodNav(): string {
-  const displayModeName = renderDisplayModeName(displayMode);
-  return `
-    <div class="play-period-nav" aria-label="${escapeHtml(displayModeName)}表示の期間移動">
-      <button class="calendar-nav play-period-nav-button play-period-nav-button-previous" type="button" data-shift-display-period="-1" aria-label="前の${escapeHtml(displayModeName)}">${renderPeriodChevronIcon("previous")}</button>
-      <button class="stage-filter play-period-mode-button" type="button" data-cycle-display-mode aria-label="${escapeHtml(renderDisplayModeCycleAriaLabel())}">${escapeHtml(renderDisplayRangeLabel())}</button>
-      <button class="calendar-nav play-period-nav-button play-period-nav-button-next" type="button" data-shift-display-period="1" aria-label="次の${escapeHtml(displayModeName)}">${renderPeriodChevronIcon("next")}</button>
-    </div>
-  `;
-}
-
-function renderPeriodChevronIcon(direction: "previous" | "next"): string {
-  return `
-    <svg class="period-chevron period-chevron-${direction}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M15.5 4.5 8 12l7.5 7.5"></path>
-    </svg>
-  `;
-}
-
-function renderCalendarScreenIcon(): string {
-  return `
-    <span class="calendar-screen-icon" aria-hidden="true">
-      <svg viewBox="0 0 32 28" focusable="false">
-        <rect class="calendar-icon-frame" x="2" y="2.5" width="28" height="24" rx="0.8"></rect>
-        <line class="calendar-icon-bar" x1="12.75" y1="8" x2="19.25" y2="8"></line>
-        <circle class="calendar-icon-dot" cx="8.5" cy="13" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="13.5" cy="13" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="18.5" cy="13" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="23.5" cy="13" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="8.5" cy="17.25" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="13.5" cy="17.25" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="18.5" cy="17.25" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="23.5" cy="17.25" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="8.5" cy="21.5" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="13.5" cy="21.5" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="18.5" cy="21.5" r="1.45"></circle>
-        <circle class="calendar-icon-dot" cx="23.5" cy="21.5" r="1.45"></circle>
-      </svg>
-    </span>
-  `;
-}
-
-function renderDisplayModeCycleAriaLabel(): string {
-  return `表示期間: ${renderDisplayModeName(displayMode)}。押すと${renderNextDisplayModeName(displayMode)}に切り替え`;
-}
-
-function renderDisplayModeName(mode: DisplayMode): string {
-  if (mode === "day") {
-    return "日";
-  }
-  if (mode === "week") {
-    return "週";
-  }
-  return "月";
-}
-
-function renderNextDisplayModeName(mode: DisplayMode): string {
-  return renderDisplayModeName(nextDisplayMode(mode));
-}
-
 function prepareCreateDraftForOpen(): void {
   createDraftBeforeOpen = { ...draft };
   draft = refreshCreateDraftForOpen(draft, displayAnchorDate);
@@ -1126,11 +1042,11 @@ function cancelCreateAuthoringSession(): void {
 }
 
 function getCalendarBalls(): HappyBall[] {
-  return ledger.balls.filter((ball) => ball.lifecycleStatus !== "offered");
+  return applyBallSieve(ledger.balls, activeBallSieve);
 }
 
 function getCalendarDayListBalls(): HappyBall[] {
-  return ledger.balls.filter((ball) => ball.date === displayAnchorDate);
+  return applyBallSieve(ledger.balls, activeBallSieve).filter((ball) => ball.date === displayAnchorDate);
 }
 
 function getManagedBalls(): HappyBall[] {
@@ -1159,6 +1075,81 @@ function captureCurrentPrimaryScreen(): PrimaryScreenState {
     calendarMode: uiState.primary === "calendar-day-list" ? "dayList" : "month",
     calendarMonth,
     selectedDate: displayAnchorDate,
+  });
+}
+
+function resolveUpperSurfacePrimaryTarget(): UpperSurfacePrimaryTarget {
+  if (uiState.primary === "play") {
+    return "play";
+  }
+  if (uiState.primary === "calendar-month") {
+    return "calendar";
+  }
+  if (uiState.primary === "calendar-day-list") {
+    return "dayList";
+  }
+  if (subfeatureReturnScreen.kind === "calendarMonth") {
+    return "calendar";
+  }
+  if (subfeatureReturnScreen.kind === "calendarDayList") {
+    return "dayList";
+  }
+  return "play";
+}
+
+function renderCurrentUpperSurfaceControlBar(): string {
+  return renderUpperSurfaceControlBar({
+    currentPrimary: resolveUpperSurfacePrimaryTarget(),
+    settingsActive: uiState.primary === "settings",
+  });
+}
+
+function rememberUpperSurfacePrimaryOrigin(): void {
+  if (uiState.primary === "play" || isCalendarRoute(uiState.primary)) {
+    rememberSubfeatureReturnScreen();
+  }
+}
+
+function navigateFromUpperSurfaceControlBar(target: UpperSurfaceControlTarget): void {
+  if (target === "settings" && uiState.primary === "settings" && uiState.modals.length === 0) {
+    return;
+  }
+
+  if (target === "create" || target === "settings") {
+    rememberUpperSurfacePrimaryOrigin();
+  }
+  if (target === "create") {
+    prepareCreateDraftForOpen();
+  }
+  if (target === "settings") {
+    physicsSettingsProfile = isPlayJutsuActive(playJutsuState) ? "jutsu" : "normal";
+  }
+  if (target === "calendar" || target === "dayList") {
+    calendarMonth = displayAnchorDate.slice(0, 7);
+  }
+
+  const route: PrimaryRoute = target === "play"
+    ? "play"
+    : target === "calendar"
+      ? "calendar-month"
+      : target === "dayList"
+        ? "calendar-day-list"
+        : target;
+  dispatchUi({ type: "open-primary", route }, false);
+  render();
+}
+
+function bindUpperSurfaceControlBarEvents(
+  root: ParentNode,
+  navigate: (target: UpperSurfaceControlTarget) => void = navigateFromUpperSurfaceControlBar,
+): void {
+  root.querySelectorAll<HTMLButtonElement>("[data-upper-control-target]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const target = button.dataset.upperControlTarget;
+      if (isUpperSurfaceControlTarget(target)) {
+        navigate(target);
+      }
+    });
   });
 }
 
@@ -1191,8 +1182,12 @@ function showBallDialog(ballId: string): void {
 
   closeBallDialog(false);
   dispatchUi({ type: "replace-modal", route: "ball-detail" }, false);
-  const root = uiHosts.replaceModal("ball-detail", renderBallDialog(ball, getDialogRenderContext()));
+  const root = uiHosts.replaceModal(
+    "ball-detail",
+    renderBallDialog(ball, getDialogRenderContext(), renderCurrentUpperSurfaceControlBar()),
+  );
   applyUiState();
+  bindUpperSurfaceControlBarEvents(root);
 
   const backdrop = root.querySelector<HTMLElement>("[data-dialog-backdrop]");
   const closeButton = root.querySelector<HTMLButtonElement>("[data-dialog-close]");
@@ -1310,30 +1305,29 @@ function showBallEditDialog(ballId: string): void {
 
   closeBallDialog(false);
   dispatchUi({ type: "replace-modal", route: "ball-edit" }, false);
-  const root = uiHosts.replaceModal("ball-edit", renderBallEditDialog(ball, getFormRenderContext()));
+  const root = uiHosts.replaceModal(
+    "ball-edit",
+    renderBallEditDialog(ball, getFormRenderContext(), renderCurrentUpperSurfaceControlBar()),
+  );
   applyUiState();
 
-  const backdrop = root.querySelector<HTMLElement>("[data-dialog-backdrop]");
-  const closeButtons = root.querySelectorAll<HTMLButtonElement>("[data-dialog-close]");
   const form = root.querySelector<HTMLFormElement>("#ball-edit-form");
-  const requestClose = () => requestCloseBallEditDialog(root, form, ball);
-  backdrop?.addEventListener("click", (event) => {
-    if (event.target === backdrop) {
-      requestClose();
+  bindEditAuthoringUiActions(root, {
+    ...createAuthoringDescentActionHandlers(),
+    getDraftDefaults: getAuthoringDraftDefaults,
+    getCurrentLocalTime: currentLocalTime,
+    submit: (editForm) => requestSaveBallEditDialog(root, editForm, ball),
+    close: (editForm) => requestCloseBallEditDialog(root, editForm, ball),
+  });
+  bindModalKeyboardFocusAssist(root);
+  bindUpperSurfaceControlBarEvents(root, (target) => {
+    requestNavigateFromBallEditDialog(root, form, ball, target);
+  });
+  installBallDialogEscapeHandler(() => {
+    if (form) {
+      requestCloseBallEditDialog(root, form, ball);
     }
   });
-  closeButtons.forEach((button) => button.addEventListener("click", requestClose));
-  form?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    requestSaveBallEditDialog(root, form, ball);
-  });
-  bindDescendBallEvents(root);
-  bindNamePresetEvents(root);
-  bindTimeControlEvents(root);
-  bindBallCountSliderControls(root);
-  bindEditDescentEvents(root);
-  bindModalKeyboardFocusAssist(root);
-  installBallDialogEscapeHandler(requestClose);
   root.querySelector<HTMLButtonElement>("[data-dialog-close]")?.focus({ preventScroll: true });
 }
 
@@ -1358,7 +1352,11 @@ function installBallDialogEscapeHandler(handler: () => void): void {
   document.addEventListener("keydown", closeBallDialogOnEscape);
 }
 
-function saveBallEditForm(form: HTMLFormElement | null, saveMode: BallSaveMode): void {
+function saveBallEditForm(
+  form: HTMLFormElement | null,
+  saveMode: BallSaveMode,
+  navigationTarget: UpperSurfaceControlTarget | null = null,
+): void {
   const editingId = form?.dataset.editingBallId;
   if (!form || !editingId) {
     return;
@@ -1368,12 +1366,23 @@ function saveBallEditForm(form: HTMLFormElement | null, saveMode: BallSaveMode):
     return;
   }
   const nextDescents = readEditedDescentRecords(form);
-  ledger = updateBall(ledger, editingId, readDraft(form), saveMode, nextDescents, getActiveWorkspace(workspaceStore).role === "self");
+  ledger = updateBall(
+    ledger,
+    editingId,
+    readAuthoringDraft(form, getAuthoringDraftDefaults()),
+    saveMode,
+    nextDescents,
+    getActiveWorkspace(workspaceStore).role === "self",
+  );
   const editedBall = ledger.balls.find((ball) => ball.id === editingId);
   if (editedBall) {
     recordStagedDescentActivities(previousBall.descents ?? [], editedBall);
   }
   selectedBallId = editingId;
+  if (navigationTarget) {
+    navigateFromUpperSurfaceControlBar(navigationTarget);
+    return;
+  }
   render();
   showBallDialog(editingId);
 }
@@ -1423,13 +1432,13 @@ function requestSaveBallEditDialog(root: HTMLElement, form: HTMLFormElement | nu
   if (!form) {
     return;
   }
-  if (!hasEditFormChanged(originalBall, form)) {
+  if (!hasBallEditFormChanged(originalBall, form, getAuthoringDraftDefaults())) {
     closeBallDialog();
     showBallDialog(originalBall.id);
     return;
   }
 
-  if (!hasEditDraftChanged(originalBall, readDraft(form))) {
+  if (!hasBallDraftChanged(originalBall, readAuthoringDraft(form, getAuthoringDraftDefaults()))) {
     saveBallEditForm(form, "correction");
     return;
   }
@@ -1438,15 +1447,54 @@ function requestSaveBallEditDialog(root: HTMLElement, form: HTMLFormElement | nu
 }
 
 function requestCloseBallEditDialog(root: HTMLElement, form: HTMLFormElement | null, originalBall: HappyBall): void {
-  if (!form || !hasEditFormChanged(originalBall, form)) {
+  if (!form || !hasBallEditFormChanged(originalBall, form, getAuthoringDraftDefaults())) {
     closeBallDialog();
     return;
   }
 
-  showEditSaveModeConfirm(root, form, "close", !hasEditDraftChanged(originalBall, readDraft(form)));
+  showEditSaveModeConfirm(
+    root,
+    form,
+    "close",
+    !hasBallDraftChanged(originalBall, readAuthoringDraft(form, getAuthoringDraftDefaults())),
+  );
 }
 
-function showEditSaveModeConfirm(root: HTMLElement, form: HTMLFormElement, reason: "save" | "close", descentOnly = false): void {
+function requestNavigateFromBallEditDialog(
+  root: HTMLElement,
+  form: HTMLFormElement | null,
+  originalBall: HappyBall,
+  target: UpperSurfaceControlTarget,
+): void {
+  const plan = planEditUpperSurfaceNavigation(
+    Boolean(form && hasBallEditFormChanged(originalBall, form, getAuthoringDraftDefaults())),
+    target,
+  );
+  if (plan.kind === "navigate") {
+    navigateFromUpperSurfaceControlBar(plan.target);
+    return;
+  }
+
+  if (!form) {
+    return;
+  }
+
+  showEditSaveModeConfirm(
+    root,
+    form,
+    "close",
+    !hasBallDraftChanged(originalBall, readAuthoringDraft(form, getAuthoringDraftDefaults())),
+    plan.pendingTarget,
+  );
+}
+
+function showEditSaveModeConfirm(
+  root: HTMLElement,
+  form: HTMLFormElement,
+  reason: "save" | "close",
+  descentOnly = false,
+  navigationTarget: UpperSurfaceControlTarget | null = null,
+): void {
   uiHosts.clearConfirm();
   dispatchUi({ type: "open-confirm", route: "edit-save" }, false);
   const confirmRoot = uiHosts.renderConfirm(
@@ -1454,41 +1502,23 @@ function showEditSaveModeConfirm(root: HTMLElement, form: HTMLFormElement, reaso
     `<div class="edit-unsaved-backdrop" data-edit-unsaved-confirm>${renderEditSaveModeConfirm(reason, descentOnly)}</div>`,
   );
   applyUiState();
-  confirmRoot.querySelector<HTMLButtonElement>("[data-edit-save-echo]")?.addEventListener("click", () => {
-    saveBallEditForm(form, "withEcho");
+  bindEditSaveConfirmActions(confirmRoot, {
+    saveWithEcho: () => saveBallEditForm(form, "withEcho", navigationTarget),
+    saveCorrection: () => saveBallEditForm(form, "correction", navigationTarget),
+    continueEditing: () => {
+      uiHosts.clearConfirm();
+      dispatchUi({ type: "close-confirm" });
+      root.querySelector<HTMLButtonElement>("[data-dialog-close]")?.focus({ preventScroll: true });
+    },
+    discardAndClose: () => {
+      if (navigationTarget) {
+        navigateFromUpperSurfaceControlBar(navigationTarget);
+      } else {
+        closeBallDialog();
+      }
+    },
   });
-  confirmRoot.querySelector<HTMLButtonElement>("[data-edit-save-correction]")?.addEventListener("click", () => {
-    saveBallEditForm(form, "correction");
-  });
-  confirmRoot.querySelector<HTMLButtonElement>("[data-edit-continue]")?.addEventListener("click", () => {
-    uiHosts.clearConfirm();
-    dispatchUi({ type: "close-confirm" });
-    root.querySelector<HTMLButtonElement>("[data-dialog-close]")?.focus({ preventScroll: true });
-  });
-  confirmRoot.querySelector<HTMLButtonElement>("[data-edit-discard-close]")?.addEventListener("click", () => closeBallDialog());
   confirmRoot.querySelector<HTMLButtonElement>("[data-edit-save-correction]")?.focus({ preventScroll: true });
-}
-
-function hasEditDraftChanged(ball: HappyBall, next: BallDraft): boolean {
-  return (
-    next.date !== ball.date ||
-    next.time !== ball.time ||
-    next.subject.trim() !== ball.subject ||
-    next.issuerType !== ball.issuerType ||
-    Number(next.count) !== ball.count ||
-    next.title.trim() !== ball.title ||
-    next.category.trim() !== ball.category ||
-    next.note.trim() !== ball.note ||
-    next.visibility !== ball.visibility
-  );
-}
-
-function hasEditFormChanged(ball: HappyBall, form: HTMLFormElement): boolean {
-  return hasEditDraftChanged(ball, readDraft(form)) || haveDescentRecordsChanged(ball.descents ?? [], readEditedDescentRecords(form));
-}
-
-function haveDescentRecordsChanged(previous: NonNullable<HappyBall["descents"]>, next: NonNullable<HappyBall["descents"]>): boolean {
-  return JSON.stringify(previous) !== JSON.stringify(next);
 }
 
 function mountRapierStage(population: PopulationPlan<VisualBallSource>): void {
@@ -1550,7 +1580,9 @@ function mountRapierStage(population: PopulationPlan<VisualBallSource>): void {
       fragmentationMode: playJutsuState.fragmentationMode,
       parentSplitMode: playJutsuState.parentSplitMode,
       displayLimit: renderPlan.renderer === "dom" ? 120 : denseDeviceLimit(window.matchMedia("(max-width: 520px)").matches),
-      onPopulationChange: updateFragmentationStatus,
+      onPopulationChange: (displayedCount, originalCount) => {
+        updatePlayFragmentationStatus(uiHosts.base, import.meta.env.DEV, displayedCount, originalCount);
+      },
       onBuoyancyActivationChange: (activation) => {
         field.style.setProperty("--play-fluid-activation", activation.toFixed(3));
         field.dataset.fluidActivation = activation.toFixed(3);
@@ -1558,31 +1590,12 @@ function mountRapierStage(population: PopulationPlan<VisualBallSource>): void {
     },
   );
   physicsRuntime.attach(physicsStage);
-  installPlayDebugEventLogging(field);
-}
-
-function installPlayDebugEventLogging(field: HTMLElement): void {
-  if (!import.meta.env.DEV) {
-    return;
-  }
-  const logEvent = (event: Event) => {
-    if (!isGravityDebugEnabled(appSettings.gravityDebugEnabled)) {
-      return;
-    }
-    debugLog.append(`play:${event.type}`, describeDebugEvent(event));
-  };
-
-  field.addEventListener("pointerdown", logEvent, { passive: true });
-  field.addEventListener("pointermove", logEvent, { passive: true });
-  field.addEventListener("pointerup", logEvent, { passive: true });
-  field.addEventListener("pointercancel", logEvent, { passive: true });
-  field.addEventListener("touchstart", logEvent, { passive: true });
-  field.addEventListener("touchmove", logEvent, { passive: true });
-  field.addEventListener("touchend", logEvent, { passive: true });
-  field.addEventListener("touchcancel", logEvent, { passive: true });
-  field.addEventListener("selectstart", logEvent);
-  field.addEventListener("dragstart", logEvent);
-  field.addEventListener("contextmenu", logEvent);
+  bindPlayDebugEventLogging(
+    field,
+    import.meta.env.DEV,
+    () => isGravityDebugEnabled(appSettings.gravityDebugEnabled),
+    (eventType, details) => debugLog.append(`play:${eventType}`, details),
+  );
 }
 
 function appendGravityDebugLog(snapshot: DeviceGravityDebugSnapshot): void {
@@ -1613,56 +1626,6 @@ function appendGravityDebugLog(snapshot: DeviceGravityDebugSnapshot): void {
     platform: snapshot.platform,
     axisCorrection: snapshot.axisCorrection,
   }, now);
-}
-
-function describeDebugEvent(event: Event): Record<string, unknown> {
-  const target = event.target instanceof HTMLElement ? event.target : null;
-  return {
-    eventType: event.type,
-    target: target ? describeDebugTarget(target) : null,
-    pointer: typeof PointerEvent !== "undefined" && event instanceof PointerEvent
-      ? {
-        pointerType: event.pointerType,
-        isPrimary: event.isPrimary,
-        clientX: Math.round(event.clientX),
-        clientY: Math.round(event.clientY),
-      }
-      : null,
-    touches: typeof TouchEvent !== "undefined" && event instanceof TouchEvent ? describeTouches(event) : null,
-    selection: describeCurrentSelection(),
-  };
-}
-
-function describeDebugTarget(target: HTMLElement): Record<string, unknown> {
-  return {
-    tagName: target.tagName.toLowerCase(),
-    className: target.className,
-    visualBallId: target.closest<HTMLElement>("[data-visual-ball-id]")?.dataset.visualBallId ?? null,
-  };
-}
-
-function describeTouches(event: TouchEvent): Record<string, unknown> {
-  return {
-    touches: event.touches.length,
-    changedTouches: event.changedTouches.length,
-    firstTouch: event.touches[0] ? describeTouch(event.touches[0]) : null,
-    firstChangedTouch: event.changedTouches[0] ? describeTouch(event.changedTouches[0]) : null,
-  };
-}
-
-function describeTouch(touch: Touch): Record<string, number> {
-  return {
-    clientX: Math.round(touch.clientX),
-    clientY: Math.round(touch.clientY),
-  };
-}
-
-function describeCurrentSelection(): Record<string, unknown> {
-  const selection = document.getSelection();
-  return {
-    type: selection?.type ?? null,
-    textLength: selection?.toString().length ?? 0,
-  };
 }
 
 function createDebugLogJson(): string {
@@ -1720,45 +1683,15 @@ async function copyDebugLog(): Promise<void> {
   await copyTextWithFallback(createDebugLogJson(), "デバッグログJSONをコピーしました。");
 }
 
-function expandVisualBalls(balls: HappyBall[]): VisualBallSource[] {
-  return sortNewestFirst(balls).flatMap((ball) => {
-    const count = Math.max(1, Math.min(ball.count, 200));
-    return Array.from({ length: count }, (_, index) => {
-      const label = createBallDisplayLabel(ball, getEffectiveBallLabelMode());
-      const baseInstanceId = `${ball.id}_${index}`;
-      const visual = resolveBallDisplayVisual(ball, editableCategories);
-      const category = findDisplayCategoryPreset(ball.category, editableCategories);
-      const motionClass = resolveMotionClass(category?.tone ?? (visual.kind === "ring" ? "future" : "neutral"), visual.kind);
-      return {
-        id: baseInstanceId,
-        ballId: ball.id,
-        fragmentIndex: index,
-        baseInstanceId,
-        fragmentGeneration: 0,
-        fragmentOrdinal: 0,
-        radius: appSettings.radius,
-        motionClass,
-        hue: visual.hue,
-        saturation: visual.saturation,
-        lightness: visual.lightness,
-        visualKind: visual.kind,
-        lifecycleStatus: ball.lifecycleStatus,
-        descentBadgeCount: ball.descentBadgeCount ?? 0,
-        isKamiBall: ball.isKamiBall === true,
-        echo: shouldShowEmotionEcho(ball) && ball.emotionEcho
-          ? resolveEchoDisplayVisual(ball.emotionEcho, editableCategories)
-          : null,
-        snapshot: physicsSnapshots.get(`${ball.id}_${index}`) ?? null,
-        label,
-        labelClass: createBallLabelClass(label),
-        title: ball.title,
-      };
-    });
-  });
-}
-
 function createVisualPopulation(balls: HappyBall[]): PopulationPlan<VisualBallSource> {
-  const sources = expandVisualBalls(balls);
+  const sources = planPlayVisualSources(
+    balls,
+    editableCategories,
+    getEffectiveBallLabelMode(),
+    appSettings.radius,
+    appSettings.emotionEchoStrength,
+    physicsSnapshots,
+  );
   const useDomSafetyLimit = rendererFallbackToDom
     || isDomRendererComparisonEnabled(window.location.search);
   const likelyDense = sources.length > 120;
@@ -1770,167 +1703,8 @@ function createVisualPopulation(balls: HappyBall[]): PopulationPlan<VisualBallSo
   return limitVisualPopulation(sources, limit);
 }
 
-function renderPopulationStatus(population: PopulationPlan<VisualBallSource>): string {
-  if (!population.truncated && population.totalCount <= 120) {
-    return "";
-  }
-  return `<p class="play-population-status" aria-live="polite">表示中 ${population.displayedCount} / 全${population.totalCount}玉</p>`;
-}
-
-function renderCreateBallIcon(): string {
-  return `
-    <span class="dock-create-action-icon" aria-hidden="true">
-      <span class="dock-create-ball-icon"><span>＋</span></span>
-      <small class="dock-create-label">new</small>
-    </span>
-  `;
-}
-
-function renderPlayScreenIcon(): string {
-  return `
-    <span class="play-triple-ball-icon" aria-hidden="true">
-      <i></i><i></i><i></i>
-    </span>
-  `;
-}
-
-function updateFragmentationStatus(displayedCount: number, originalCount: number): void {
-  if (!import.meta.env.DEV) {
-    return;
-  }
-  const status = uiHosts.base.querySelector<HTMLElement>("[data-fragmentation-status]");
-  if (status) {
-    status.textContent = displayedCount > originalCount ? `分割中 ${displayedCount} / 元${originalCount}玉` : "";
-  }
-}
-
-function syncPlayModeControls(): void {
-  const popover = uiHosts.base.querySelector<HTMLElement>("[data-play-mode-popover]");
-  const toggle = uiHosts.base.querySelector<HTMLButtonElement>("[data-toggle-play-modes]");
-  if (popover) {
-    popover.hidden = !playControlsOpen;
-    if (playControlsOpen) {
-      requestAnimationFrame(() => positionPlayModePopover(popover));
-    }
-  }
-  if (toggle) {
-    toggle.setAttribute("aria-expanded", String(playControlsOpen));
-    toggle.classList.toggle("is-on", isPlayJutsuActive());
-  }
-  uiHosts.base.querySelectorAll<HTMLButtonElement>("[data-play-gravity-mode]").forEach((button) => {
-    button.classList.toggle("is-on", button.dataset.playGravityMode === playJutsuState.gravityMode);
-  });
-  uiHosts.base.querySelectorAll<HTMLButtonElement>("[data-play-buoyancy-mode]").forEach((button) => {
-    button.classList.toggle("is-on", button.dataset.playBuoyancyMode === playJutsuState.buoyancyMode);
-    button.disabled = button.dataset.playBuoyancyMode === "on" && playJutsuState.gravityMode === "free";
-    button.setAttribute("aria-disabled", String(button.disabled));
-  });
-  uiHosts.base.querySelectorAll<HTMLButtonElement>("[data-play-parent-enabled]").forEach((button) => {
-    const enabled = playJutsuState.interactionMode === "parent";
-    button.classList.toggle("is-on", button.dataset.playParentEnabled === String(enabled));
-  });
-  uiHosts.base.querySelectorAll<HTMLButtonElement>("[data-play-parent-split-mode]").forEach((button) => {
-    button.classList.toggle("is-on", button.dataset.playParentSplitMode === playJutsuState.parentSplitMode);
-    button.disabled = button.dataset.playParentSplitMode !== "off" && playJutsuState.interactionMode === "grab";
-    button.setAttribute("aria-disabled", String(button.disabled));
-  });
-}
-
-function bindPlayModePopover(root: ParentNode): void {
-  const popover = root.querySelector<HTMLElement>("[data-play-mode-popover]");
-  const world = popover?.closest<HTMLElement>(".play-world-region");
-  const grip = popover?.querySelector<HTMLButtonElement>("[data-play-mode-drag-grip]");
-  if (!popover || !world || !grip) {
-    return;
-  }
-
-  playMenuResizeObserver?.disconnect();
-  playMenuResizeObserver = new ResizeObserver(() => positionPlayModePopover(popover));
-  playMenuResizeObserver.observe(world);
-  playMenuResizeObserver.observe(popover);
-
-  let drag: { pointerId: number; origin: PlayMenuPosition; clientX: number; clientY: number } | null = null;
-  grip.addEventListener("pointerdown", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    positionPlayModePopover(popover);
-    const origin = playMenuPosition ?? { x: popover.offsetLeft, y: popover.offsetTop };
-    drag = { pointerId: event.pointerId, origin, clientX: event.clientX, clientY: event.clientY };
-    grip.setPointerCapture(event.pointerId);
-    popover.classList.add("is-dragging");
-  });
-  grip.addEventListener("pointermove", (event) => {
-    if (!drag || drag.pointerId !== event.pointerId) {
-      return;
-    }
-    event.preventDefault();
-    playMenuPosition = {
-      x: drag.origin.x + event.clientX - drag.clientX,
-      y: drag.origin.y + event.clientY - drag.clientY,
-    };
-    positionPlayModePopover(popover);
-  });
-  const finishDrag = (event: PointerEvent) => {
-    if (!drag || drag.pointerId !== event.pointerId) {
-      return;
-    }
-    event.preventDefault();
-    if (grip.hasPointerCapture(event.pointerId)) {
-      grip.releasePointerCapture(event.pointerId);
-    }
-    drag = null;
-    popover.classList.remove("is-dragging");
-  };
-  grip.addEventListener("pointerup", finishDrag);
-  grip.addEventListener("pointercancel", finishDrag);
-
-  popover.querySelectorAll<HTMLDetailsElement>("[data-play-mode-disclosure]").forEach((details) => {
-    details.addEventListener("toggle", () => {
-      if (details.dataset.playModeDisclosure === "world") {
-        playWorldDisclosureOpen = details.open;
-      } else if (details.dataset.playModeDisclosure === "parent") {
-        playParentDisclosureOpen = details.open;
-      }
-      requestAnimationFrame(() => positionPlayModePopover(popover));
-    });
-  });
-  requestAnimationFrame(() => positionPlayModePopover(popover));
-}
-
-function positionPlayModePopover(popover: HTMLElement): void {
-  if (popover.hidden) {
-    return;
-  }
-  const world = popover.closest<HTMLElement>(".play-world-region");
-  if (!world) {
-    return;
-  }
-  const worldSize = { width: world.clientWidth, height: world.clientHeight };
-  const menuSize = { width: popover.offsetWidth, height: popover.offsetHeight };
-  if (worldSize.width <= 0 || worldSize.height <= 0 || menuSize.width <= 0 || menuSize.height <= 0) {
-    return;
-  }
-  playMenuPosition = playMenuPosition
-    ? clampPlayMenuPosition(playMenuPosition, worldSize, menuSize)
-    : createInitialPlayMenuPosition(worldSize, menuSize);
-  popover.style.left = `${Math.round(playMenuPosition.x)}px`;
-  popover.style.top = `${Math.round(playMenuPosition.y)}px`;
-  popover.dataset.menuX = String(Math.round(playMenuPosition.x));
-  popover.dataset.menuY = String(Math.round(playMenuPosition.y));
-}
-
-function isPlayJutsuActive(): boolean {
-  return playJutsuState.gravityMode === "fixed-down"
-    || playJutsuState.buoyancyMode === "on"
-    || playJutsuState.interactionMode === "parent"
-    || playJutsuState.parentSplitMode !== "off";
-}
-
 function syncPlayJutsuFeedback(): void {
-  const feedback = uiHosts.base.querySelector<HTMLElement>("[data-play-jutsu-feedback]");
-  if (feedback) {
-    feedback.textContent = playJutsuFeedback;
-  }
+  playUiBinding?.syncFeedback(playJutsuFeedback);
 }
 
 function dispatchPlayJutsu(action: PlayJutsuAction): void {
@@ -1941,46 +1715,19 @@ function dispatchPlayJutsu(action: PlayJutsuAction): void {
   physicsStage?.setInteractionMode(playJutsuState.interactionMode);
   physicsStage?.setParentSplitMode(playJutsuState.parentSplitMode);
   physicsStage?.setFragmentationMode(playJutsuState.fragmentationMode);
-  syncPlayModeControls();
+  playUiBinding?.syncModeControls(playControlsOpen, playJutsuState);
 }
 
-function createBallLabelClass(label: string): string {
-  const length = Array.from(label).length;
-  if (length <= 4) {
-    return "label-short";
-  }
-  if (length <= 8) {
-    return "label-medium";
-  }
-  if (length <= 16) {
-    return "label-long";
-  }
-  return "label-xlong";
+function syncBallLabelModeControls(): boolean {
+  return playUiBinding?.syncBallLabelMode(getEffectiveBallLabelMode()) ?? false;
 }
 
-function syncBallLabelModeWithoutPhysicsRebuild(): boolean {
-  const ballLabelMode = getEffectiveBallLabelMode();
-  const stage = uiHosts.base.querySelector<HTMLElement>(".stage");
-  const button = uiHosts.base.querySelector<HTMLButtonElement>("[data-cycle-ball-label-mode]");
-  if (!stage || !button) {
-    return false;
-  }
-
-  stage.classList.toggle("show-ball-labels", ballLabelMode !== "none");
-  for (const mode of ["none", "date", "title", "name"] as const) {
-    stage.classList.toggle(`label-mode-${mode}`, ballLabelMode === mode);
-  }
-  button.classList.toggle("is-label-on", ballLabelMode !== "none");
-  button.setAttribute("aria-label", renderBallLabelModeCycleAriaLabel(ballLabelMode));
-  button.innerHTML = renderPlayScreenIcon();
-
+function syncBallVisualSourcesWithoutPhysicsRebuild(): boolean {
   if (!physicsStage) {
     return true;
   }
   const population = createVisualPopulation(getVisibleBalls());
-  const updated = physicsStage.updateVisualSources(population.displayed);
-  physicsStage.updateSettings(getRuntimeAppSettings());
-  return updated;
+  return physicsStage.updateVisualSources(population.displayed);
 }
 
 function updateSelectedState(): void {
@@ -1992,83 +1739,129 @@ function updateSelectedState(): void {
 
 function updateSelectedSummary(): void {
   const selectedBall = getVisibleBalls().find((ball) => ball.id === selectedBallId) ?? null;
-  const title = document.querySelector<HTMLElement>("#stage-title");
-  if (title) {
-    title.textContent = selectedBall ? createVisibilitySafeSummaryLabel(selectedBall) : "今日のえもい玉は？";
+  updatePlaySelectedSummary(
+    uiHosts.base,
+    selectedBall
+      ? createVisibilitySafeSummaryLabel(selectedBall)
+      : activeBallSieve === "usual" ? "今日のえもい玉は？" : renderBallSieveEmptyMessage(activeBallSieve),
+  );
+}
+
+function syncBallSieveOpenState(root: ParentNode = document): void {
+  appRoot.classList.toggle("is-ball-sieve-open", ballSieveOpen);
+  root.querySelectorAll<HTMLButtonElement>("[data-toggle-ball-sieve]").forEach((button) => {
+    button.setAttribute("aria-expanded", String(ballSieveOpen));
+  });
+  root.querySelectorAll<HTMLElement>("[data-ball-sieve-popover]").forEach((popover) => {
+    popover.hidden = !ballSieveOpen;
+  });
+  root.querySelectorAll<HTMLButtonElement>("[data-close-ball-sieve]").forEach((backdrop) => {
+    backdrop.hidden = !ballSieveOpen;
+  });
+}
+
+function closeBallSieve(): void {
+  ballSieveOpen = false;
+  syncBallSieveOpenState();
+  document.querySelector<HTMLButtonElement>("[data-toggle-ball-sieve]")?.focus();
+}
+
+function startBallSieveTransition(): void {
+  ballSieveTransitioning = true;
+  if (ballSieveTransitionTimer !== null) {
+    window.clearTimeout(ballSieveTransitionTimer);
   }
+  ballSieveTransitionTimer = window.setTimeout(() => {
+    ballSieveTransitioning = false;
+    ballSieveTransitionTimer = null;
+    document.querySelectorAll<HTMLElement>(".is-ball-sieve-transitioning").forEach((surface) => {
+      surface.classList.remove("is-ball-sieve-transitioning");
+    });
+  }, 220);
+}
+
+function showBallSieveFeedback(message: string): void {
+  ballSieveFeedback = message;
+  if (ballSieveFeedbackTimer !== null) {
+    window.clearTimeout(ballSieveFeedbackTimer);
+  }
+  ballSieveFeedbackTimer = window.setTimeout(() => {
+    ballSieveFeedback = "";
+    ballSieveFeedbackTimer = null;
+    syncBallSieveStatusState();
+  }, 2600);
+}
+
+function syncBallSieveStatusState(root: ParentNode = document): void {
+  const message = activeBallSieve === "usual" ? "" : `ふるい分け：${getBallSieveLabel(activeBallSieve)}`;
+  root.querySelectorAll<HTMLElement>("[data-ball-sieve-status]").forEach((status) => {
+    status.textContent = ballSieveFeedback || message;
+    status.hidden = !ballSieveFeedback && !message;
+    status.dataset.ballSieveStatusKind = ballSieveFeedback ? "feedback" : "selection";
+  });
+}
+
+function selectBallSieve(presetId: BallSievePresetId): void {
+  ballSieveOpen = false;
+  if (ballSieveFeedbackTimer !== null) {
+    window.clearTimeout(ballSieveFeedbackTimer);
+    ballSieveFeedbackTimer = null;
+  }
+  ballSieveFeedback = "";
+  if (presetId === activeBallSieve) {
+    syncBallSieveOpenState();
+    syncBallSieveStatusState();
+    return;
+  }
+  activeBallSieve = presetId;
+  selectedBallId = null;
+  startBallSieveTransition();
+  render();
+  document.querySelector<HTMLButtonElement>("[data-toggle-ball-sieve]")?.focus();
+}
+
+function openPanelFromUi(panel: string | undefined): void {
+  if (panel === "none") {
+    dispatchUi({ type: "open-primary", route: "play" }, false);
+    render();
+    return;
+  }
+  const route = primaryRouteFromPanel(panel);
+  if (!route) {
+    return;
+  }
+  if (panel === "calendar") {
+    calendarMonth = displayAnchorDate.slice(0, 7);
+  }
+  if (panel === "create" || panel === "settings") {
+    rememberSubfeatureReturnScreen();
+  }
+  if (panel === "settings") {
+    physicsSettingsProfile = isPlayJutsuActive(playJutsuState) ? "jutsu" : "normal";
+  }
+  if (panel === "create") {
+    prepareCreateDraftForOpen();
+  }
+  if (panel === "list" && uiState.primary !== "settings") {
+    rememberSubfeatureReturnScreen();
+  }
+  dispatchUi({ type: "open-primary", route }, false);
+  render();
 }
 
 function bindEvents(root: ParentNode): void {
-  bindPlayModePopover(root);
-  root.querySelectorAll<HTMLButtonElement>("[data-cycle-workspace]").forEach((button) => {
-    button.addEventListener("click", activateNextWorkspaceRuntime);
-  });
-  const workspaceShareForm = root.querySelector<HTMLFormElement>("#workspace-share-form");
-  if (workspaceShareForm) {
-    workspaceShareForm.addEventListener("submit", (event) => {
-      event.preventDefault();
-      const submitter = (event as SubmitEvent).submitter as HTMLElement | null;
-      void exportWorkspaceSelection(
-        event.currentTarget as HTMLFormElement,
-        submitter?.dataset.workspaceShareMode === "download" ? "download" : "share",
-      );
-    });
-    workspaceShareForm.querySelectorAll<HTMLInputElement>("input[type='date']").forEach((input) => {
-      input.addEventListener("input", () => syncWorkspaceShareFormState(workspaceShareForm));
-      input.addEventListener("change", () => syncWorkspaceShareFormState(workspaceShareForm));
-    });
-    syncWorkspaceShareFormState(workspaceShareForm);
-  }
-  root.querySelector<HTMLButtonElement>("[data-toggle-play-modes]")?.addEventListener("click", () => {
-    playControlsOpen = !playControlsOpen;
-    syncPlayModeControls();
-  });
-
-  root.querySelectorAll<HTMLButtonElement>("[data-play-gravity-mode]").forEach((button) => {
-    button.addEventListener("click", () => {
+  bindUpperSurfaceControlBarEvents(root);
+  const binding = bindPlayUiActions(root, playMenuPosition, {
+    toggleControls: () => {
+      playControlsOpen = !playControlsOpen;
+      playUiBinding?.syncModeControls(playControlsOpen, playJutsuState);
+    },
+    dispatchJutsu: (action) => {
       playJutsuFeedback = "";
-      dispatchPlayJutsu({
-        type: "set-gravity",
-        mode: button.dataset.playGravityMode === "fixed-down" ? "fixed-down" : "free",
-      });
+      dispatchPlayJutsu(action);
       syncPlayJutsuFeedback();
-    });
-  });
-
-  root.querySelectorAll<HTMLButtonElement>("[data-play-buoyancy-mode]").forEach((button) => {
-    button.addEventListener("click", () => {
-      playJutsuFeedback = "";
-      dispatchPlayJutsu({
-        type: "set-buoyancy",
-        mode: button.dataset.playBuoyancyMode === "on" ? "on" : "off",
-      });
-      syncPlayJutsuFeedback();
-    });
-  });
-
-  root.querySelectorAll<HTMLButtonElement>("[data-play-parent-enabled]").forEach((button) => {
-    button.addEventListener("click", () => {
-      playJutsuFeedback = "";
-      dispatchPlayJutsu({ type: "set-parent", enabled: button.dataset.playParentEnabled === "true" });
-      syncPlayJutsuFeedback();
-    });
-  });
-
-  root.querySelectorAll<HTMLButtonElement>("[data-play-parent-split-mode]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const requestedMode = button.dataset.playParentSplitMode;
-      playJutsuFeedback = "";
-      dispatchPlayJutsu({
-        type: "set-parent-split",
-        mode: requestedMode === "fill" ? "fill" : requestedMode === "count-limit" ? "count-limit" : "off",
-      });
-      syncPlayJutsuFeedback();
-    });
-  });
-
-  root.querySelectorAll<HTMLButtonElement>("[data-apply-jutsu]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const mode = button.dataset.applyJutsu === "fill" ? "fill" : "count-limit";
+    },
+    applyJutsu: (mode) => {
       dispatchPlayJutsu({ type: "apply-technique", mode });
       const result = physicsStage?.applyJutsuFragmentation(mode);
       playJutsuFeedback = result?.status === "applied"
@@ -2077,77 +1870,108 @@ function bindEvents(root: ParentNode): void {
           ? "表示上限を超えるため、分割しませんでした。"
           : "これ以上分割できる玉はありません。";
       syncPlayJutsuFeedback();
-    });
-  });
-
-  root.querySelector<HTMLButtonElement>("[data-reset-ball-jutsu]")?.addEventListener("click", () => {
-    const result = physicsStage?.resetJutsuFragmentation();
-    playJutsuFeedback = result?.status === "reset"
-      ? `${result.resetGroupCount}玉を再結合しました（${result.previousCount}→${result.nextCount}玉）`
-      : "分割された玉はありません。";
-    syncPlayJutsuFeedback();
-  });
-
-  root.querySelector<HTMLButtonElement>("[data-disable-play-jutsu]")?.addEventListener("click", () => {
-    dispatchPlayJutsu({ type: "reset-normal" });
-    playJutsuFeedback = "術を無効にしました。分割済みの玉は維持しています。";
-    syncPlayJutsuFeedback();
-  });
-
-  root.querySelectorAll<HTMLButtonElement>("[data-open-panel]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const panel = button.dataset.openPanel;
-      if (panel === "none") {
-        dispatchUi({ type: "open-primary", route: "play" }, false);
-        render();
-        return;
-      }
-      const route = primaryRouteFromPanel(panel);
-      if (!route) {
-        return;
-      }
-      if (panel === "calendar") {
-        calendarMonth = displayAnchorDate.slice(0, 7);
-      }
-      if (panel === "create" || panel === "settings") {
-        rememberSubfeatureReturnScreen();
-      }
-      if (panel === "settings") {
-        physicsSettingsProfile = isPlayJutsuActive() ? "jutsu" : "normal";
-      }
-      if (panel === "create") {
-        prepareCreateDraftForOpen();
-      }
-      if (panel === "list" && uiState.primary !== "settings") {
-        rememberSubfeatureReturnScreen();
-      }
-      dispatchUi({ type: "open-primary", route }, false);
-      render();
-    });
-  });
-
-  root.querySelectorAll<HTMLButtonElement>("[data-cycle-display-mode]").forEach((button) => {
-    button.addEventListener("click", () => {
-      displayMode = nextDisplayMode(displayMode);
+    },
+    resetBallJutsu: () => {
+      const result = physicsStage?.resetJutsuFragmentation();
+      playJutsuFeedback = result?.status === "reset"
+        ? `${result.resetGroupCount}玉を再結合しました（${result.previousCount}→${result.nextCount}玉）`
+        : "分割された玉はありません。";
+      syncPlayJutsuFeedback();
+    },
+    disableJutsu: () => {
+      dispatchPlayJutsu({ type: "reset-normal" });
+      playJutsuFeedback = "術を無効にしました。分割済みの玉は維持しています。";
+      syncPlayJutsuFeedback();
+    },
+    cycleDisplayMode: () => {
+      displayMode = nextPlayDisplayMode(displayMode);
       draft = { ...draft, date: displayAnchorDate };
       render();
+    },
+    shiftDisplayPeriod: navigateDisplayPeriod,
+    cycleBallLabelMode: () => {
+      updateAppSettings({ ballLabelMode: nextBallLabelMode(appSettings.ballLabelMode) });
+    },
+    openPanel: openPanelFromUi,
+    openCalendarDayList: () => {
+      calendarMonth = displayAnchorDate.slice(0, 7);
+      dispatchUi({ type: "open-primary", route: "calendar-day-list" }, false);
+      render();
+    },
+    changeMenuPosition: (position) => {
+      playMenuPosition = position;
+    },
+    changeDisclosure: (disclosure, open) => {
+      if (disclosure === "world") {
+        playWorldDisclosureOpen = open;
+      } else {
+        playParentDisclosureOpen = open;
+      }
+    },
+  });
+  if (binding) {
+    playUiBinding = binding;
+  }
+  root.querySelectorAll<HTMLButtonElement>("[data-toggle-ball-sieve]").forEach((button) => {
+    button.addEventListener("click", () => {
+      ballSieveOpen = !ballSieveOpen;
+      syncBallSieveOpenState();
+      if (ballSieveOpen) {
+        button.closest<HTMLElement>("[data-ball-sieve-control]")
+          ?.querySelector<HTMLButtonElement>(`[data-ball-sieve-preset="${activeBallSieve}"]`)
+          ?.focus();
+      }
     });
   });
-
-  root.querySelectorAll<HTMLButtonElement>("[data-shift-display-period]").forEach((button) => {
+  root.querySelectorAll<HTMLButtonElement>("[data-ball-sieve-preset]").forEach((button) => {
     button.addEventListener("click", () => {
-      navigateDisplayPeriod(button.dataset.shiftDisplayPeriod === "1" ? 1 : -1);
+      const presetId = button.dataset.ballSievePreset;
+      if (isBallSievePresetId(presetId)) {
+        selectBallSieve(presetId);
+      }
+    });
+  });
+  root.querySelectorAll<HTMLButtonElement>("[data-close-ball-sieve]").forEach((button) => {
+    button.addEventListener("click", () => {
+      closeBallSieve();
+    });
+  });
+  bindWorkspaceUiActions({
+    root,
+    handlers: {
+      cycleWorkspace: activateNextWorkspaceRuntime,
+      exportWorkspaceSelection,
+      syncWorkspaceShareFormState,
+      openJsonImportFile: (input) => input.click(),
+      importJsonFile: handleJsonImportFile,
+      dismissJsonImport: dismissPendingJsonImport,
+      confirmJsonImport: applyPendingJsonImport,
+      changeWorkspaceDisplayName: changeWorkspaceDisplayName,
+      deleteWorkspace: deleteWorkspaceRuntime,
+      selectWorkspaceImportTarget: selectWorkspaceImportTarget,
+      confirmWorkspaceImport: applyPendingWorkspaceImport,
+      confirmDeviceBackupImport: applyPendingDeviceBackupImport,
+      cancelWorkspaceImport: dismissPendingJsonImport,
+      cancelDeviceBackupImport: cancelPendingDeviceBackupImport,
+    },
+  });
+  root.querySelectorAll<HTMLButtonElement>("[data-open-panel]").forEach((button) => {
+    if (button.closest(".ball-world-shell")) {
+      return;
+    }
+    button.addEventListener("click", () => {
+      openPanelFromUi(button.dataset.openPanel);
     });
   });
 
   root.querySelectorAll<HTMLElement>("[data-close-panel]").forEach((element) => {
+    if (element.closest(".panel-backdrop-create")) {
+      return;
+    }
     element.addEventListener("click", (event) => {
       const isBackdrop = element.classList.contains("panel-backdrop");
       if (isBackdrop && event.target !== element) {
         return;
-      }
-      if (uiState.primary === "create") {
-        cancelCreateAuthoringSession();
       }
       if (uiState.primary === "create" || uiState.primary === "settings" || uiState.primary === "saved-list") {
         restoreSubfeatureReturnScreen();
@@ -2156,13 +1980,6 @@ function bindEvents(root: ParentNode): void {
       }
       render();
     });
-  });
-
-  root.querySelector("[data-cycle-ball-label-mode]")?.addEventListener("click", () => {
-    updateAppSettings({ ballLabelMode: nextBallLabelMode(appSettings.ballLabelMode) });
-    if (!syncBallLabelModeWithoutPhysicsRebuild()) {
-      render();
-    }
   });
 
   root.querySelector("[data-toggle-activity-log-help]")?.addEventListener("click", () => {
@@ -2208,6 +2025,9 @@ function bindEvents(root: ParentNode): void {
   });
 
   root.querySelectorAll<HTMLButtonElement>("[data-open-calendar-day-list]").forEach((button) => {
+    if (button.closest(".ball-world-shell")) {
+      return;
+    }
     button.addEventListener("click", () => {
       calendarMonth = displayAnchorDate.slice(0, 7);
       dispatchUi({ type: "open-primary", route: "calendar-day-list" }, false);
@@ -2255,7 +2075,7 @@ function bindEvents(root: ParentNode): void {
       }
       if (panel === "settings") {
         rememberSubfeatureReturnScreen();
-        physicsSettingsProfile = isPlayJutsuActive() ? "jutsu" : "normal";
+        physicsSettingsProfile = isPlayJutsuActive(playJutsuState) ? "jutsu" : "normal";
       }
       dispatchUi({ type: "open-primary", route: panel === "create" ? "create" : "settings" }, false);
       render();
@@ -2264,7 +2084,7 @@ function bindEvents(root: ParentNode): void {
 
   root.querySelectorAll<HTMLButtonElement>("[data-calendar-cycle-display-mode]").forEach((button) => {
     button.addEventListener("click", () => {
-      displayMode = nextDisplayMode(displayMode);
+      displayMode = nextPlayDisplayMode(displayMode);
       draft = { ...draft, date: displayAnchorDate };
       dispatchUi({ type: "open-primary", route: "play" }, false);
       render();
@@ -2281,44 +2101,48 @@ function bindEvents(root: ParentNode): void {
     render();
   });
 
-  const form = root.querySelector<HTMLFormElement>("#ball-form");
-  form?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    audioEngine.unlock();
-    draft = readDraft(form);
-    const pendingBall = createAuthoringBall ?? createPendingBall(ledger, draft);
-    const descents = readEditedDescentRecords(form);
-    ledger = addBall(ledger, draft, {
-      id: pendingBall.id,
-      createdAt: pendingBall.createdAt,
-      descents,
-      persist: getActiveWorkspace(workspaceStore).role === "self",
-    });
-    const savedBall = ledger.balls[0] ?? null;
-    if (savedBall) {
-      recordStagedDescentActivities([], savedBall);
-    }
-    selectedBallId = savedBall?.id ?? null;
-    displayMode = "day";
-    restoreSubfeatureReturnScreen(draft.date);
-    draft = { ...createDefaultDraft(getPrimarySelfName(ledger)), subject: draft.subject, issuerType: draft.issuerType };
-    createDraftBeforeOpen = null;
-    createAuthoringBall = null;
-    render();
+  bindCreateAuthoringUiActions(root, {
+    ...createAuthoringDescentActionHandlers(),
+    getDraftDefaults: getAuthoringDraftDefaults,
+    getCurrentLocalTime: currentLocalTime,
+    changeDraft: (nextDraft) => {
+      draft = nextDraft;
+    },
+    submit: (_form, nextDraft, descents) => {
+      audioEngine.unlock();
+      draft = nextDraft;
+      const pendingBall = createAuthoringBall ?? createPendingBall(ledger, draft);
+      ledger = addBall(ledger, draft, {
+        id: pendingBall.id,
+        createdAt: pendingBall.createdAt,
+        descents,
+        persist: getActiveWorkspace(workspaceStore).role === "self",
+      });
+      const savedBall = ledger.balls[0] ?? null;
+      if (savedBall) {
+        recordStagedDescentActivities([], savedBall);
+      }
+      selectedBallId = savedBall?.id ?? null;
+      displayMode = "day";
+      activeBallSieve = DEFAULT_BALL_SIEVE_PRESET;
+      ballSieveOpen = false;
+      showBallSieveFeedback("新しい玉を、いつもの景色へ置きました。");
+      startBallSieveTransition();
+      restoreSubfeatureReturnScreen(draft.date);
+      draft = { ...createDefaultDraft(getPrimarySelfName(ledger)), subject: draft.subject, issuerType: draft.issuerType };
+      createDraftBeforeOpen = null;
+      createAuthoringBall = null;
+      render();
+    },
+    cancel: () => {
+      cancelCreateAuthoringSession();
+      restoreSubfeatureReturnScreen();
+      render();
+    },
   });
-
-  form?.addEventListener("input", () => {
-    draft = readDraft(form);
-  });
-  if (form) {
-    bindTimeControlEvents(form);
-    bindBallCountSliderControls(form);
-    bindEditDescentEvents(form);
-  }
 
   bindSettingsGroupDisclosureEvents(root);
   bindPendingUrlPacketEvents(root);
-  bindNamePresetEvents(root);
   bindSettingsPanelEvents({
     categories: editableCategories,
     maxNameBookEntries: MAX_NAME_BOOK_ENTRIES,
@@ -2362,18 +2186,6 @@ function bindEvents(root: ParentNode): void {
     exportDeviceBackupJson(workspaceStore);
     appendActivity({ action: "json-export" });
   });
-
-  root.querySelector("#import-json")?.addEventListener("click", () => {
-    root.querySelector<HTMLInputElement>("#import-json-file")?.click();
-  });
-  root.querySelector<HTMLInputElement>("#import-json-file")?.addEventListener("change", (event) => {
-    const input = event.currentTarget;
-    if (input instanceof HTMLInputElement) {
-      void handleJsonImportFile(input);
-    }
-  });
-
-  bindJsonImportEvents(root);
 
   root.querySelectorAll<HTMLButtonElement>("[data-select-ball-id]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -2514,28 +2326,45 @@ function primaryRouteFromPanel(panel: string | undefined): PrimaryRoute | null {
 }
 
 function bindLifecycleActionEvents(root: ParentNode = document): void {
-  root.querySelectorAll<HTMLButtonElement>("[data-lifecycle-ball-id][data-lifecycle-status]").forEach((button) => {
+  root.querySelectorAll<HTMLButtonElement>("[data-lifecycle-ball-id][data-lifecycle-action]").forEach((button) => {
     button.addEventListener("click", () => {
       const id = button.dataset.lifecycleBallId;
-      const status = readLifecycleStatus(button.dataset.lifecycleStatus);
-      if (!id || !status) {
+      const action = button.dataset.lifecycleAction;
+      if (!id || !isBallLifecycleAction(action)) {
         return;
       }
       const target = ledger.balls.find((ball) => ball.id === id);
       if (!target) {
         return;
       }
-      if (status === "offered" && !confirm(`「${target.title}」を供養します。カレンダーとプレイ画面には表示されなくなります。実行しますか？`)) {
+      const nextStatus = resolveBallLifecycleTransition(target.lifecycleStatus, action);
+      if (!nextStatus) {
+        return;
+      }
+      if (action === "offer" && !confirm(`「${target.title}」を供養します。「いつもの玉」から離れますが、「ふるい分け：供養済み」でいつでも呼び戻せます。実行しますか？`)) {
         return;
       }
       rememberCalendarDayListScroll(button);
+      const nextLedger = applyBallLifecycleAction(
+        ledger,
+        id,
+        action,
+        getActiveWorkspace(workspaceStore).role === "self",
+      );
+      if (nextLedger === ledger) {
+        return;
+      }
       appendActivity(createBallActivityInput(target, {
         action: "lifecycle-change",
         previousLifecycleStatus: target.lifecycleStatus,
-        lifecycleStatus: status,
+        lifecycleStatus: nextStatus,
       }));
-      ledger = updateBallLifecycleStatus(ledger, id, status, getActiveWorkspace(workspaceStore).role === "self");
-      selectedBallId = status === "offered" ? getVisibleBalls()[0]?.id ?? null : id;
+      ledger = nextLedger;
+      selectedBallId = id;
+      if (action === "restore") {
+        showBallSieveFeedback(`「${target.title}」をいつもの玉へ戻しました。`);
+      }
+      startBallSieveTransition();
       closeBallDialog();
       render();
     });
@@ -2568,12 +2397,12 @@ function bindDeleteBallEvents(root: ParentNode = document): void {
 
 function bindDescendBallEvents(root: ParentNode = document): void {
   root.querySelectorAll<HTMLButtonElement>("[data-descend-ball-id]").forEach((button) => {
+    if (button.closest("[data-ball-authoring-form]")) {
+      return;
+    }
     button.addEventListener("click", () => {
       const id = button.dataset.descendBallId;
-      const authoringForm = button.closest<HTMLFormElement>("[data-ball-authoring-form]");
-      const target = authoringForm
-        ? createWorkingAuthoringBall(authoringForm)
-        : ledger.balls.find((ball) => ball.id === id) ?? null;
+      const target = ledger.balls.find((ball) => ball.id === id) ?? null;
       if (!target) {
         return;
       }
@@ -2584,10 +2413,11 @@ function bindDescendBallEvents(root: ParentNode = document): void {
 
 function createWorkingAuthoringBall(form: HTMLFormElement): HappyBall | null {
   const records = readEditedDescentRecords(form);
+  const nextDraft = readAuthoringDraft(form, getAuthoringDraftDefaults());
   if (form.dataset.authoringMode === "create") {
-    const seed = createAuthoringBall ?? createPendingBall(ledger, readDraft(form));
+    const seed = createAuthoringBall ?? createPendingBall(ledger, nextDraft);
     createAuthoringBall = seed;
-    return createPendingBall(ledger, readDraft(form), {
+    return createPendingBall(ledger, nextDraft, {
       id: seed.id,
       createdAt: seed.createdAt,
       descents: records,
@@ -2598,134 +2428,45 @@ function createWorkingAuthoringBall(form: HTMLFormElement): HappyBall | null {
   return ball ? applyDescentRecordsToBall(ball, records, ball.updatedAt) : null;
 }
 
-function bindEditDescentEvents(root: ParentNode = document): void {
-  root.querySelectorAll<HTMLButtonElement>("[data-descent-delete-record-id]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const item = button.closest<HTMLElement>("[data-descent-edit-item]");
-      const form = item?.closest<HTMLFormElement>("[data-ball-authoring-form]");
-      if (!item || !form) {
-        return;
-      }
-      const id = readDescentField(item, "id");
-      const sequence = readPositiveInteger(readDescentField(item, "sequence"), 1);
-      if (!confirm(`No.${sequence}の降臨dataを消去します。\n降臨メモ、GPS情報、付与された星も消去されます。\n保存するまで確定しません。続けますか？`)) {
-        return;
-      }
-      const marker = document.createElement("input");
-      marker.type = "hidden";
-      marker.dataset.deletedDescentId = id;
-      marker.dataset.deletedDescentSequence = String(sequence);
-      form.append(marker);
-      item.remove();
-      replaceEditableDescentHistory(form, readEditedDescentRecords(form), `No.${sequence}を消去予定です。保存で確定します`);
-    });
-  });
-
-  root.querySelectorAll<HTMLButtonElement>("[data-descent-gps-record-id]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const item = button.closest<HTMLElement>("[data-descent-edit-item]");
-      if (!item) {
-        return;
-      }
-      void updateEditDescentGps(item, button);
-    });
-  });
-
-  root.querySelectorAll<HTMLButtonElement>("[data-descent-clear-gps-record-id]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const item = button.closest<HTMLElement>("[data-descent-edit-item]");
-      if (!item) {
-        return;
-      }
-      writeDescentField(item, "latitude", "");
-      writeDescentField(item, "longitude", "");
-      writeDescentField(item, "accuracyMeters", "");
-      writeDescentField(item, "distanceFromPreviousMeters", "");
-      updateEditDescentGpsUi(item, null);
-      updateDescentActionFeedback(item, "GPSを削除しました");
-    });
-  });
+function getAuthoringDraftDefaults(): AuthoringDraftDefaults {
+  return {
+    date: draft.date,
+    subject: getPrimarySelfName(ledger) || DEFAULT_SAMPLE_NAME,
+    currentTime: currentLocalTime(),
+  };
 }
 
-async function updateEditDescentGps(item: HTMLElement, button: HTMLButtonElement): Promise<void> {
+function createAuthoringDescentActionHandlers(): AuthoringDescentActionHandlers {
+  return {
+    requestNewDescent: (form, button) => {
+      const target = createWorkingAuthoringBall(form);
+      if (target) {
+        void requestDescendLocation(target, button);
+      }
+    },
+    confirmDeleteDescent: (sequence) => confirm(
+      `No.${sequence}の降臨dataを消去します。\n降臨メモ、GPS情報、付与された星も消去されます。\n保存するまで確定しません。続けますか？`,
+    ),
+    requestDescentPosition: requestAuthoringDescentPosition,
+  };
+}
+
+async function requestAuthoringDescentPosition(): Promise<DescentPositionInput | null> {
   if (!navigator.geolocation) {
     alert(createGeolocationUnavailableMessage());
-    return;
+    return null;
   }
-  setButtonBusy(button, true, "位置確認中...");
   try {
     const position = await readCurrentPosition();
-    const input = {
+    return {
       latitude: position.coords.latitude,
       longitude: position.coords.longitude,
       accuracyMeters: position.coords.accuracy,
     };
-    writeDescentField(item, "latitude", String(input.latitude));
-    writeDescentField(item, "longitude", String(input.longitude));
-    writeDescentField(item, "accuracyMeters", String(input.accuracyMeters));
-    writeDescentField(item, "distanceFromPreviousMeters", "");
-    updateEditDescentGpsUi(item, input);
-    updateDescentActionFeedback(item, "GPS取得できました");
   } catch (error) {
     alert(`位置情報を取得できませんでした。時間をおいて、同じ降臨カードからもう一度GPS取得を試せます。\n${formatGeolocationError(error)}`);
-  } finally {
-    setButtonBusy(button, false);
+    return null;
   }
-}
-
-function updateEditDescentGpsUi(item: HTMLElement, position: DescentPositionInput | null): void {
-  const status = item.querySelector<HTMLElement>("[data-descent-gps-status]");
-  const mapSlot = item.querySelector<HTMLElement>("[data-descent-map-link]");
-  const locationRow = item.querySelector<HTMLElement>(".edit-descent-location-row");
-  const clearButton = item.querySelector<HTMLButtonElement>("[data-descent-clear-gps-record-id]");
-  const gpsButton = item.querySelector<HTMLButtonElement>("[data-descent-gps-record-id]");
-  if (position) {
-    locationRow?.classList.add("has-position");
-    locationRow?.classList.remove("is-empty-position");
-    const mapRecord = { latitude: position.latitude, longitude: position.longitude };
-    if (status) {
-      status.textContent = formatCoordinatesForUi(position.latitude, position.longitude);
-    }
-    if (mapSlot) {
-      const href = createGoogleMapsUrl(mapRecord);
-      mapSlot.outerHTML = `<a class="ghost-action quiet-accent-action detail-map-link" data-descent-map-link href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">Google Maps</a>`;
-    }
-    if (clearButton) {
-      clearButton.disabled = false;
-    }
-    if (gpsButton) {
-      gpsButton.textContent = "GPS再取得";
-    }
-    return;
-  }
-  locationRow?.classList.add("is-empty-position");
-  locationRow?.classList.remove("has-position");
-  if (status) {
-    status.textContent = "位置未取得";
-  }
-  if (mapSlot) {
-    mapSlot.outerHTML = `<span data-descent-map-link></span>`;
-  }
-  if (clearButton) {
-    clearButton.disabled = true;
-  }
-  if (gpsButton) {
-    gpsButton.textContent = "GPS取得";
-  }
-}
-
-function setButtonBusy(button: HTMLButtonElement, busy: boolean, busyText = "処理中..."): void {
-  if (busy) {
-    button.dataset.idleText = button.textContent ?? "";
-    button.textContent = busyText;
-    button.disabled = true;
-    button.setAttribute("aria-busy", "true");
-    return;
-  }
-  button.textContent = button.dataset.idleText || button.textContent || "";
-  button.disabled = false;
-  button.removeAttribute("aria-busy");
-  delete button.dataset.idleText;
 }
 
 function rememberCalendarDayListScroll(source: Element): void {
@@ -2785,88 +2526,45 @@ async function handleJsonImportFile(input: HTMLInputElement): Promise<void> {
   render();
 }
 
-function bindJsonImportEvents(root: ParentNode): void {
-  root.querySelector("#dismiss-json-import")?.addEventListener("click", () => {
-    pendingJsonImport = null;
-    pendingWorkspaceImportTarget = null;
+function dismissPendingJsonImport(): void {
+  pendingJsonImport = null;
+  pendingWorkspaceImportTarget = null;
+  render();
+}
+
+function cancelPendingDeviceBackupImport(): void {
+  pendingJsonImport = null;
+  render();
+}
+
+function changeWorkspaceDisplayName(workspaceId: string, inputValue: string): string | undefined {
+  const workspace = workspaceStore.workspaces.find((item) => item.workspaceId === workspaceId);
+  const displayName = inputValue.trim().slice(0, 24);
+  if (!workspace || workspace.role !== "received" || !displayName) {
+    return workspace?.displayName ?? "";
+  }
+  const nextStore = replaceWorkspace(workspaceStore, { ...workspace, displayName, updatedAt: new Date().toISOString() });
+  if (commitWorkspaceStore(nextStore)) {
     render();
-  });
+  }
+  return undefined;
+}
 
-  root.querySelector("#confirm-json-import")?.addEventListener("click", () => {
-    applyPendingJsonImport();
-  });
+function deleteWorkspaceRuntime(workspaceId: string): void {
+  const workspace = workspaceStore.workspaces.find((item) => item.workspaceId === workspaceId);
+  if (!workspace || workspace.role !== "received" || !confirm(`「${workspace.displayName}」の利用環境を削除します。バックアップがない限り戻せません。実行しますか？`)) {
+    return;
+  }
+  const nextStore = removeReceivedWorkspace(workspaceStore, workspace.workspaceId);
+  if (commitWorkspaceStore(nextStore)) {
+    selectedBallId = null;
+    render();
+  }
+}
 
-  root.querySelectorAll<HTMLInputElement>("[data-workspace-display-name]").forEach((input) => {
-    input.addEventListener("change", () => {
-      const workspaceId = input.dataset.workspaceDisplayName;
-      const workspace = workspaceStore.workspaces.find((item) => item.workspaceId === workspaceId);
-      const displayName = input.value.trim().slice(0, 24);
-      if (!workspace || workspace.role !== "received" || !displayName) {
-        input.value = workspace?.displayName ?? "";
-        return;
-      }
-      const nextStore = replaceWorkspace(workspaceStore, { ...workspace, displayName, updatedAt: new Date().toISOString() });
-      if (commitWorkspaceStore(nextStore)) {
-        render();
-      }
-    });
-  });
-
-  root.querySelectorAll<HTMLButtonElement>("[data-delete-workspace-id]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const workspaceId = button.dataset.deleteWorkspaceId;
-      const workspace = workspaceStore.workspaces.find((item) => item.workspaceId === workspaceId);
-      if (!workspace || workspace.role !== "received" || !confirm(`「${workspace.displayName}」の利用環境を削除します。バックアップがない限り戻せません。実行しますか？`)) {
-        return;
-      }
-      const nextStore = removeReceivedWorkspace(workspaceStore, workspace.workspaceId);
-      if (commitWorkspaceStore(nextStore)) {
-        selectedBallId = null;
-        render();
-      }
-    });
-  });
-
-  root.querySelectorAll<HTMLInputElement>("input[name='workspace-import-target']").forEach((input) => {
-    input.addEventListener("change", () => {
-      if (input.checked) {
-        pendingWorkspaceImportTarget = input.value;
-        render();
-      }
-    });
-  });
-
-  root.querySelectorAll<HTMLInputElement>("input[name='workspace-import-option']").forEach((input) => {
-    input.addEventListener("change", () => {
-      const confirmButton = root.querySelector<HTMLButtonElement>("#confirm-workspace-import");
-      if (confirmButton) {
-        confirmButton.disabled = root.querySelectorAll("input[name='workspace-import-option']:checked").length === 0;
-      }
-    });
-  });
-
-  root.querySelector("#confirm-workspace-import")?.addEventListener("click", () => {
-    applyPendingWorkspaceImport();
-  });
-
-  root.querySelector("#confirm-device-backup-import")?.addEventListener("click", () => {
-    applyPendingDeviceBackupImport();
-  });
-
-  root.querySelector<HTMLElement>("[data-cancel-workspace-import]")?.addEventListener("click", (event) => {
-    if (event.target === event.currentTarget) {
-      pendingJsonImport = null;
-      pendingWorkspaceImportTarget = null;
-      render();
-    }
-  });
-
-  root.querySelector<HTMLElement>("[data-cancel-device-backup-import]")?.addEventListener("click", (event) => {
-    if (event.target === event.currentTarget) {
-      pendingJsonImport = null;
-      render();
-    }
-  });
+function selectWorkspaceImportTarget(workspaceId: string): void {
+  pendingWorkspaceImportTarget = workspaceId;
+  render();
 }
 
 function applyPendingJsonImport(): void {
@@ -2909,10 +2607,7 @@ function applyPendingJsonImport(): void {
   selectedBallId = result.selectedBallId;
 
   if (result.appSettings) {
-    appSettings = result.appSettings;
-    if (getActiveWorkspace(workspaceStore).role === "self") {
-      saveAppSettings(appSettings);
-    }
+    applyAppSettings(result.appSettings);
   }
 
   if (result.categories) {
@@ -2930,19 +2625,7 @@ function applyPendingJsonImport(): void {
   render();
 }
 
-function readWorkspaceImportSelection(): WorkspaceImportSelection {
-  const selected = new Set(Array.from(document.querySelectorAll<HTMLInputElement>("input[name='workspace-import-option']:checked"))
-    .map((input) => input.value));
-  return {
-    addNewBalls: selected.has("newBalls"),
-    addNameBookEntries: selected.has("nameBook"),
-    replaceCategories: selected.has("categories"),
-    replaceAppSettings: selected.has("appSettings"),
-    replaceConflicts: selected.has("conflicts"),
-  };
-}
-
-function applyPendingWorkspaceImport(): void {
+function applyPendingWorkspaceImport(selection: WorkspaceImportSelection): void {
   const workspaceShare = pendingJsonImport?.workspaceShare;
   if (!workspaceShare) {
     return;
@@ -2969,7 +2652,7 @@ function applyPendingWorkspaceImport(): void {
   if (!target) {
     return;
   }
-  const result = applyWorkspaceShareToExisting(target, workspaceShare.bundle, readWorkspaceImportSelection(), importedAt);
+  const result = applyWorkspaceShareToExisting(target, workspaceShare.bundle, selection, importedAt);
   if (!result.changed || !commitWorkspaceStore(replaceWorkspace(workspaceStore, result.workspace))) {
     return;
   }
@@ -3073,13 +2756,6 @@ async function shareReceiptImage(ballId: string, sendMode: SendMode = "formal"):
     } else {
       alert("この端末では画像共有を利用できません。端末の画面キャプチャをご利用ください。");
     }
-  }
-}
-
-function updateDescentActionFeedback(item: HTMLElement, message: string): void {
-  const feedback = item.querySelector<HTMLElement>("[data-descent-action-feedback]");
-  if (feedback) {
-    feedback.textContent = message;
   }
 }
 
@@ -3311,37 +2987,12 @@ function clearLocationPacketParams(): void {
   history.replaceState(null, document.title, `${location.pathname}${search ? `?${search}` : ""}`);
 }
 
-function handleDisplayNavigationKey(event: KeyboardEvent): void {
-  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
-    return;
-  }
-  if (uiState.primary !== "play" || uiState.modals.length > 0) {
-    return;
-  }
-  if (isEditableKeyboardTarget(event.target)) {
-    return;
-  }
-  event.preventDefault();
-  navigateDisplayPeriod(event.key === "ArrowRight" ? 1 : -1);
-}
-
 function navigateDisplayPeriod(delta: -1 | 1): void {
   if (uiState.primary !== "play") {
     return;
   }
   shiftCurrentDisplayAnchor(delta);
   render();
-}
-
-function isEditableKeyboardTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-  return Boolean(target.closest("input, textarea, select, button, [contenteditable='true']"));
-}
-
-function readLifecycleStatus(value: string | undefined): LifecycleStatus | null {
-  return value === "active" || value === "archived" || value === "memorial" || value === "offered" ? value : null;
 }
 
 async function requestDescendLocation(ball: HappyBall, sourceButton?: HTMLButtonElement): Promise<void> {
@@ -3352,7 +3003,7 @@ async function requestDescendLocation(ball: HappyBall, sourceButton?: HTMLButton
   const authoringForm = sourceButton?.closest<HTMLFormElement>("[data-ball-authoring-form]") ?? null;
   const memo = window.prompt("降臨メモ（任意・80文字まで）", "") ?? "";
   pendingDescentBallIds.add(ball.id);
-  updateDescentButtonsBusy(ball.id, true, sourceButton);
+  updateAuthoringDescentButtonsBusy(document, ball.id, true, sourceButton);
   try {
     const position = await readCurrentPosition();
     const result = appendDescentToBall(
@@ -3396,7 +3047,7 @@ async function requestDescendLocation(ball: HappyBall, sourceButton?: HTMLButton
     saveGpslessDescent(ball, memo, authoringForm);
   } finally {
     pendingDescentBallIds.delete(ball.id);
-    updateDescentButtonsBusy(ball.id, false, sourceButton);
+    updateAuthoringDescentButtonsBusy(document, ball.id, false, sourceButton);
   }
 }
 
@@ -3420,48 +3071,12 @@ function saveGpslessDescent(ball: HappyBall, memo: string, authoringForm: HTMLFo
 }
 
 function updateAuthoringAfterNewDescent(form: HTMLFormElement, record: HappyBallDescentRecord, message: string): void {
-  replaceEditableDescentHistory(form, [...readEditedDescentRecords(form), record], message);
-}
-
-function replaceEditableDescentHistory(form: HTMLFormElement, records: HappyBallDescentRecord[], message: string): void {
-  const displayBall = createAuthoringDisplayBall(form, records);
-  if (!displayBall) {
-    return;
-  }
-  const template = document.createElement("template");
-  template.innerHTML = renderEditableDescentHistory(displayBall).trim();
-  const nextHistory = template.content.firstElementChild as HTMLElement | null;
-  if (!nextHistory) {
-    return;
-  }
-  const currentHistory = form.querySelector<HTMLElement>(".edit-descent-history");
-  if (currentHistory) {
-    currentHistory.replaceWith(nextHistory);
-  } else {
-    form.querySelector(".authoring-bottom-actions")?.insertAdjacentElement("beforebegin", nextHistory);
-  }
-  bindDescendBallEvents(nextHistory);
-  bindEditDescentEvents(nextHistory);
-  const feedback = nextHistory.querySelector<HTMLElement>("[data-edit-descent-feedback]");
-  if (feedback) {
-    feedback.textContent = message;
-  }
-}
-
-function createAuthoringDisplayBall(form: HTMLFormElement, records: HappyBallDescentRecord[]): HappyBall | null {
-  const normalizedRecords = normalizeDescentRecords(records);
-  if (form.dataset.authoringMode === "create") {
-    const seed = createAuthoringBall ?? createPendingBall(ledger, readDraft(form));
-    createAuthoringBall = seed;
-    return createPendingBall(ledger, readDraft(form), {
-      id: seed.id,
-      createdAt: seed.createdAt,
-      descents: normalizedRecords,
-    });
-  }
-  const editingId = form.dataset.editingBallId;
-  const ball = ledger.balls.find((item) => item.id === editingId);
-  return ball ? applyDescentRecordsToBall(ball, normalizedRecords, ball.updatedAt) : null;
+  replaceAuthoringDescentHistory(
+    form,
+    [...readEditedDescentRecords(form), record],
+    message,
+    createAuthoringDescentActionHandlers(),
+  );
 }
 
 function saveDescentResult(previousBall: HappyBall, nextBall: HappyBall): void {
@@ -3482,25 +3097,6 @@ function saveDescentResult(previousBall: HappyBall, nextBall: HappyBall): void {
     saveLedger(ledger);
   }
   persistActiveWorkspaceSnapshot();
-}
-
-function updateDescentButtonsBusy(ballId: string, busy: boolean, sourceButton?: HTMLButtonElement): void {
-  document.querySelectorAll<HTMLButtonElement>("[data-descend-ball-id]").forEach((button) => {
-    if (button.dataset.descendBallId !== ballId) {
-      return;
-    }
-    if (busy) {
-      button.dataset.idleText = button.textContent ?? "";
-      button.textContent = button === sourceButton ? "位置確認中..." : "降臨中...";
-      button.disabled = true;
-      button.setAttribute("aria-busy", "true");
-      return;
-    }
-    button.textContent = button.dataset.idleText || "降臨";
-    button.disabled = false;
-    button.removeAttribute("aria-busy");
-    delete button.dataset.idleText;
-  });
 }
 
 async function readCurrentPosition(): Promise<GeolocationPosition> {
@@ -3544,16 +3140,6 @@ function createGeolocationUnavailableMessage(): string {
 
 function formatCoordinatesForUi(latitude: number, longitude: number): string {
   return `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
-}
-
-function nextDisplayMode(mode: DisplayMode): DisplayMode {
-  if (mode === "day") {
-    return "week";
-  }
-  if (mode === "week") {
-    return "month";
-  }
-  return "day";
 }
 
 function nextCalendarMarkerMode(mode: AppSettings["calendarMarkerMode"]): AppSettings["calendarMarkerMode"] {
@@ -3629,118 +3215,58 @@ function resetNameBookSettings(): void {
   render();
 }
 
-function bindNamePresetEvents(root: ParentNode = document): void {
-  root.querySelectorAll<HTMLSelectElement>("[data-name-preset]").forEach((select) => {
-    const form = select.closest("form");
-    const subjectInput = form?.querySelector<HTMLInputElement>("input[name='subject']");
-    const issuerSelect = form?.querySelector<HTMLSelectElement>("select[name='issuerType']");
-
-    select.addEventListener("change", () => {
-      const selected = select.selectedOptions[0];
-      const resolution = resolveNamePresetSelection({
-        name: select.value,
-        role: selected?.dataset.nameRole === "proxy" ? "proxy" : "self",
-        issuerType: (issuerSelect?.value ?? "self") as IssuerType,
-      });
-      if (!form || !subjectInput || !resolution) {
-        return;
-      }
-
-      subjectInput.value = resolution.subject;
-      if (issuerSelect) {
-        issuerSelect.value = resolution.issuerType;
-      }
-
-      if (form.id === "ball-form") {
-        draft = readDraft(form);
-      }
-    });
-
-    subjectInput?.addEventListener("input", () => {
-      select.value = resolveManualSubjectPreset(subjectInput.value, select.value);
-    });
-  });
-}
-
 function readSendMode(target: EventTarget | null): SendMode {
   return target instanceof HTMLElement && target.dataset.sendMode === "casual" ? "casual" : "formal";
 }
 
-function bindTimeControlEvents(root: ParentNode = document): void {
-  root.querySelectorAll<HTMLInputElement>("input[name='timeEnabled']").forEach((checkbox) => {
-    checkbox.addEventListener("change", () => {
-      const form = checkbox.closest("form");
-      const timeInput = form?.querySelector<HTMLInputElement>("input[name='time']");
-      if (!form || !timeInput) {
-        return;
-      }
-
-      timeInput.disabled = !checkbox.checked;
-      if (checkbox.checked && !timeInput.value) {
-        timeInput.value = currentLocalTime();
-      }
-      if (form.id === "ball-form") {
-        draft = readDraft(form);
-      }
-    });
-  });
-  root.querySelectorAll<HTMLButtonElement>("[data-current-time-button]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const form = button.closest("form");
-      const checkbox = form?.querySelector<HTMLInputElement>("input[name='timeEnabled']");
-      const timeInput = form?.querySelector<HTMLInputElement>("input[name='time']");
-      if (!form || !checkbox || !timeInput) {
-        return;
-      }
-
-      checkbox.checked = true;
-      timeInput.disabled = false;
-      timeInput.value = currentLocalTime();
-      checkbox.dispatchEvent(new Event("change", { bubbles: true }));
-      timeInput.dispatchEvent(new Event("input", { bubbles: true }));
-      timeInput.dispatchEvent(new Event("change", { bubbles: true }));
-      if (form.id === "ball-form") {
-        draft = readDraft(form);
-      }
-    });
-  });
+function updateAppSettings(patch: Partial<AppSettings>): void {
+  applyAppSettings(normalizeAppSettings({ ...appSettings, ...patch }));
 }
 
-function updateAppSettings(patch: Partial<AppSettings>): void {
-  appSettings = normalizeAppSettings({ ...appSettings, ...patch });
+function applyAppSettings(nextSettings: AppSettings): void {
+  const plan = planAppSettingsRuntimeEffects(appSettings, nextSettings);
+  if (!plan.persist) {
+    return;
+  }
+
+  appSettings = nextSettings;
   if (getActiveWorkspace(workspaceStore).role === "self") {
     saveAppSettings(appSettings);
   }
   persistActiveWorkspaceSnapshot();
-  syncGravityController();
-  applyBallFieldTextureSetting();
-  syncRuntimePhysicsSettings();
-  syncGravityDebugPanelStructure();
+  if (hasAppSettingsRuntimeEffect(plan, "sync-gravity")) {
+    syncGravityController();
+  }
+  if (hasAppSettingsRuntimeEffect(plan, "sync-texture")) {
+    applyBallFieldTextureSetting();
+  }
+  if (hasAppSettingsRuntimeEffect(plan, "sync-runtime-settings")) {
+    syncRuntimePhysicsSettings();
+  }
+  if (hasAppSettingsRuntimeEffect(plan, "sync-debug-panel")) {
+    syncGravityDebugPanelStructure();
+  }
+
+  const labelControlsUpdated = !hasAppSettingsRuntimeEffect(plan, "sync-ball-label-controls")
+    || syncBallLabelModeControls();
+  const visualSourcesUpdated = !hasAppSettingsRuntimeEffect(plan, "sync-ball-visual-sources")
+    || syncBallVisualSourcesWithoutPhysicsRebuild();
+  if (!labelControlsUpdated || !visualSourcesUpdated) {
+    baseRenderSignature = "";
+    render();
+  }
 }
 
 function updateSelectedPhysicsSettings(
   profile: PhysicsSettingsProfile,
   patch: Partial<PhysicsParameterSettings>,
 ): void {
-  appSettings = updatePhysicsProfileSettings(appSettings, profile, patch);
-  if (getActiveWorkspace(workspaceStore).role === "self") {
-    saveAppSettings(appSettings);
-  }
-  persistActiveWorkspaceSnapshot();
-  if (profile === "normal") {
-    syncGravityController();
-  }
-  syncRuntimePhysicsSettings();
+  applyAppSettings(updatePhysicsProfileSettings(appSettings, profile, patch));
 }
 
 function resetJutsuPhysicsProfile(): void {
   rememberSettingsScroll();
-  appSettings = resetJutsuPhysicsSettingsToDefault(appSettings);
-  if (getActiveWorkspace(workspaceStore).role === "self") {
-    saveAppSettings(appSettings);
-  }
-  persistActiveWorkspaceSnapshot();
-  syncRuntimePhysicsSettings();
+  applyAppSettings(resetJutsuPhysicsSettingsToDefault(appSettings));
   render();
 }
 
@@ -3771,7 +3297,7 @@ function restorePendingSettingsScroll(): void {
 }
 
 function getRuntimePhysicsProfile(): PhysicsSettingsProfile {
-  return isPlayJutsuActive() ? "jutsu" : "normal";
+  return isPlayJutsuActive(playJutsuState) ? "jutsu" : "normal";
 }
 
 function syncRuntimePhysicsSettings(): void {
@@ -3820,75 +3346,6 @@ function randomInteger(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function readDraft(form: HTMLFormElement): BallDraft {
-  const data = new FormData(form);
-  const timeEnabled = data.get("timeEnabled") === "on";
-  return {
-    date: String(data.get("date") || draft.date),
-    time: timeEnabled ? String(data.get("time") || currentLocalTime()) : undefined,
-    subject: String(data.get("subject") || getPrimarySelfName(ledger) || DEFAULT_SAMPLE_NAME),
-    issuerType: readUnion(data.get("issuerType"), ["self", "assisted", "proxy"], "self"),
-    count: Number(data.get("count") || 1),
-    title: String(data.get("title") || ""),
-    category: String(data.get("category") || "日常"),
-    note: String(data.get("note") || ""),
-    visibility: readUnion(data.get("visibility"), visibilityValues, "open"),
-  };
-}
-
-function readEditedDescentRecords(form: HTMLFormElement): HappyBallDescentRecord[] {
-  return Array.from(form.querySelectorAll<HTMLElement>("[data-descent-edit-item]")).map((item, index) => {
-    const record: HappyBallDescentRecord = {
-      id: readDescentField(item, "id") || `edited_descent_${index + 1}`,
-      sequence: readPositiveInteger(readDescentField(item, "sequence"), index + 1),
-      recordedAt: readDescentField(item, "recordedAt") || new Date().toISOString(),
-      badgeAwarded: readDescentField(item, "badgeAwarded") !== "false",
-      memo: readDescentField(item, "memo"),
-    };
-    const latitude = readOptionalNumber(readDescentField(item, "latitude"));
-    const longitude = readOptionalNumber(readDescentField(item, "longitude"));
-    if (latitude !== undefined && longitude !== undefined) {
-      record.latitude = latitude;
-      record.longitude = longitude;
-      record.accuracyMeters = readOptionalNumber(readDescentField(item, "accuracyMeters"));
-      record.distanceFromPreviousMeters = readOptionalNumber(readDescentField(item, "distanceFromPreviousMeters"));
-    }
-    return record;
-  });
-}
-
-function readDescentField(root: HTMLElement, field: string): string {
-  const input = root.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[data-descent-field="${field}"]`);
-  return input?.value ?? "";
-}
-
-function writeDescentField(root: HTMLElement, field: string, value: string): void {
-  const input = root.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[data-descent-field="${field}"]`);
-  if (input) {
-    input.value = value;
-  }
-}
-
-function readPositiveInteger(value: string, fallback: number): number {
-  const number = Number(value);
-  return Number.isFinite(number) ? Math.max(1, Math.floor(number)) : fallback;
-}
-
-function readOptionalNumber(value: string): number | undefined {
-  if (!value.trim()) {
-    return undefined;
-  }
-  const number = Number(value);
-  return Number.isFinite(number) ? number : undefined;
-}
-
-function readUnion<const T extends string>(value: FormDataEntryValue | null, allowed: readonly T[], fallback: T): T {
-  return allowed.includes(value as T) ? (value as T) : fallback;
-}
-
-function shouldShowEmotionEcho(ball: HappyBall): boolean {
-  return ball.lifecycleStatus !== "archived" && Boolean(ball.emotionEcho) && appSettings.emotionEchoStrength !== "off";
-}
 
 function escapeHtml(value: string): string {
   return value

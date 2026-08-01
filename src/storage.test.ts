@@ -111,6 +111,18 @@ const legacyHiddenRecovery = normalizeStoredLedger({
 assertEqual(legacyHiddenRecovery.ledger.balls[0]?.visibility, "category", "legacy hidden visibility should normalize to category");
 assert(legacyHiddenRecovery.shouldSave, "legacy hidden visibility should be rewritten to the current ladder");
 
+const legacyMemorialRecovery = normalizeStoredLedger({
+  ...sampleLedger,
+  balls: [
+    {
+      ...sampleBall,
+      lifecycleStatus: "memorial",
+    },
+  ],
+});
+assertEqual(legacyMemorialRecovery.ledger.balls[0]?.lifecycleStatus, "active", "legacy memorial lifecycle should normalize to active");
+assert(legacyMemorialRecovery.shouldSave, "legacy memorial lifecycle should be rewritten with the current lifecycle contract");
+
 const emptyRecovery = normalizeStoredLedger({ type: "wrong", v: 1, balls: [sampleBall] });
 assertEqual(emptyRecovery.ledger.balls.length, 0, "invalid ledger envelope should fall back to an empty ledger");
 assertEqual(emptyRecovery.ledger.ownerProfile.name, DEFAULT_SAMPLE_NAME, "invalid ledger envelope should use the default sample name");

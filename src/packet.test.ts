@@ -130,6 +130,12 @@ const parsedLegacyHidden = parsePacketHash(new URL(legacyHiddenUrl).hash);
 assertOk(parsedLegacyHidden, "legacy hidden import URL should parse");
 assertEqual(parsedLegacyHidden.packet.items[0].visibility, "category", "legacy hidden packet visibility should normalize to category");
 
+const legacyMemorialPacket = createBallPacket({ ...sampleBall, lifecycleStatus: "memorial" as unknown as HappyBall["lifecycleStatus"] });
+const legacyMemorialUrl = createPacketImportUrl(legacyMemorialPacket.items[0], "https://example.test/happy-ball/");
+const parsedLegacyMemorial = parsePacketHash(new URL(legacyMemorialUrl).hash);
+assertOk(parsedLegacyMemorial, "legacy memorial import URL should parse");
+assertEqual(parsedLegacyMemorial.packet.items[0].lifecycleStatus, "active", "legacy memorial packet lifecycle should normalize to active");
+
 const parsedLocation = parsePacketLocation(lineUrl.search, "");
 assertOk(parsedLocation, "location parser should accept query import URL");
 

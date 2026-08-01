@@ -1,0 +1,579 @@
+/* Responsive */
+
+@media (max-width: 860px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .stage {
+    min-height: var(--app-viewport-height);
+  }
+
+  .stage-topline {
+    align-items: center;
+  }
+
+  .summary-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  h1 {
+    font-size: 1.75rem;
+  }
+
+  .panel-backdrop-settings {
+    place-items: stretch;
+    justify-items: stretch;
+    padding: 0;
+  }
+
+  .floating-panel-settings {
+    width: 100vw;
+    max-width: none;
+    border-radius: 0;
+  }
+
+  .calendar-grid {
+    grid-auto-rows: minmax(88px, auto);
+  }
+
+  .calendar-cell {
+    min-height: 88px;
+    padding: 7px;
+  }
+
+  .mini-ball-row {
+    grid-template-columns: repeat(auto-fit, 14px);
+    grid-auto-rows: 14px;
+    width: min(100%, 82px);
+    min-height: 31px;
+    gap: 3px;
+  }
+
+  .mini-ball {
+    width: 14px;
+    height: 14px;
+  }
+
+  .edit-form .edit-timestamp-field input[type="time"] {
+    width: 0;
+    flex: 1 1 150px;
+    min-width: 0;
+  }
+
+  .calendar-meter-marker-set {
+    width: min(100%, 86px);
+  }
+
+  .calendar-meter-row {
+    min-height: 14px;
+    gap: 2px;
+  }
+}
+
+@media (min-width: 521px) and (max-width: 1180px) and (pointer: coarse) {
+  .calendar-day-ball-actions {
+    flex-wrap: nowrap;
+    gap: 9px;
+    max-width: none;
+  }
+
+  .calendar-day-ball-actions .share-ball,
+  .calendar-day-ball-actions .edit-ball,
+  .calendar-day-ball-actions .lifecycle-ball,
+  .calendar-day-ball-actions .delete-ball {
+    flex: 0 0 auto;
+    padding-inline: 6px;
+    white-space: nowrap;
+  }
+
+  .calendar-day-ball-actions .lifecycle-ball,
+  .calendar-day-ball-actions .delete-ball {
+    padding-inline: 5px;
+  }
+}
+
+@media (min-width: 521px) and (max-width: 860px) {
+  .authoring-datetime-group > .create-inline-field,
+  .authoring-datetime-group > .edit-inline-field {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .authoring-datetime-group input[type="date"] {
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    justify-self: stretch;
+    padding-inline: 10px 8px;
+    font-size: 1rem;
+    -webkit-min-logical-width: 0;
+  }
+
+  .authoring-datetime-group input[type="date"]::-webkit-date-and-time-value {
+    min-width: 0;
+    text-align: left;
+  }
+}
+
+@media (max-width: 520px) {
+  :root {
+    --close-control-size: 46px;
+  }
+
+  .stage {
+    min-height: var(--app-viewport-height);
+  }
+
+  .stage-topline {
+    top: 10px;
+    left: 16px;
+    right: 16px;
+    gap: 12px;
+  }
+
+  h1 {
+    font-size: 1.45rem;
+    line-height: 1.12;
+  }
+
+  .play-period-nav {
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    gap: 8px;
+    width: min(100%, 360px);
+  }
+
+  .stage-filter {
+    font-size: 1rem;
+  }
+
+  .play-period-nav .stage-filter {
+    max-width: none;
+    font-size: 1.16rem;
+    line-height: 1.22;
+  }
+
+  .form-row.two {
+    grid-template-columns: 1fr;
+  }
+
+  .create-form .create-inline-field,
+  .edit-form .edit-inline-field {
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .create-form .create-inline-field > span,
+  .edit-form .edit-inline-field > span,
+  .ball-count-field-label {
+    font-size: var(--readable-xs);
+  }
+
+  .authoring-category-fold summary > span:first-child {
+    flex-basis: 96px;
+    font-size: var(--readable-xs);
+  }
+
+  .edit-descent-head .descent-section-label {
+    font-size: var(--readable-xs);
+  }
+
+  .ball-count-field {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .ball-count-field-label {
+    padding-top: 0;
+  }
+
+  .create-form .create-timestamp-field .timestamp-control,
+  .edit-form .edit-timestamp-field .timestamp-control {
+    gap: 8px;
+  }
+
+  .create-form .create-timestamp-field .timestamp-control input[type="time"],
+  .edit-form .edit-timestamp-field .timestamp-control input[type="time"] {
+    width: 100%;
+    flex-shrink: 0;
+    flex-basis: 156px;
+  }
+
+  .name-book-header,
+  .name-book-row {
+    grid-template-columns: 36px minmax(0, 1fr) 86px;
+    gap: 5px;
+  }
+
+  .name-book-row {
+    padding: 5px;
+  }
+
+  .name-book-row input,
+  .name-book-row select {
+    min-height: 34px;
+    padding: 0 7px;
+  }
+
+  .category-edit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .category-edit-item {
+    grid-template-columns: 22px minmax(0, 1fr);
+    padding: 7px;
+  }
+
+  .category-edit-item input {
+    min-width: 0;
+    min-height: 38px;
+    padding: 0 8px;
+    font-size: 0.98rem;
+  }
+
+  .button-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dialog-head {
+    grid-template-columns: 74px minmax(0, 1fr);
+    gap: 12px;
+    padding-right: calc(var(--close-control-size) + 8px);
+  }
+
+  .ball-detail-dialog .dialog-close {
+    top: var(--close-control-offset);
+    right: var(--close-control-offset);
+  }
+
+  .detail-edit-top {
+    top: calc(var(--close-control-offset) + var(--close-control-size) + 8px);
+    right: var(--close-control-offset);
+    min-height: 38px;
+    padding: 0 13px;
+  }
+
+  .detail-screen-name {
+    margin: 0 calc(var(--close-control-size) + 16px) 46px;
+    white-space: nowrap;
+  }
+
+  .inline-field {
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .inline-field > span {
+    font-size: var(--readable-xs);
+    text-align: right;
+  }
+
+  .timestamp-field.inline-field {
+    grid-template-columns: 92px minmax(0, 1fr);
+  }
+
+  .timestamp-field.inline-field > span {
+    padding-top: 11px;
+    font-size: var(--readable-xs);
+    text-align: right;
+  }
+
+  .textarea-field > span {
+    padding-top: 0;
+    text-align: left;
+  }
+
+  .textarea-field {
+    grid-template-columns: 1fr;
+  }
+
+  .dialog-ball {
+    width: 74px;
+    height: 74px;
+  }
+
+  .dialog-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .ball-detail-dialog .dialog-meta div {
+    grid-template-columns: 84px minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+  }
+
+  .ball-detail-dialog .dialog-meta dt {
+    white-space: nowrap;
+  }
+
+  .ball-detail-dialog .detail-fold .dialog-meta.compact div {
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 14px;
+    padding: 6px 2px;
+    border: 0;
+    background: transparent;
+  }
+
+  .receipt-paper {
+    padding: 18px;
+  }
+
+  .receipt-qr-dialog {
+    padding-top: 118px;
+  }
+
+  .receipt-dialog-actions {
+    right: calc(var(--close-control-offset) + var(--close-control-size) + 10px);
+  }
+
+  .receipt-qr-panel {
+    padding: 16px;
+  }
+
+  .receipt-qr-frame {
+    width: min(100%, 310px);
+    padding: 10px;
+  }
+
+  .receipt-stamp {
+    width: 48px;
+    height: 48px;
+    font-size: 1.45rem;
+  }
+
+  .receipt-head {
+    padding-right: 58px;
+  }
+
+  .receipt-hero,
+  .receipt-info {
+    grid-template-columns: 1fr;
+  }
+
+  .world-control-dock {
+    position: relative;
+  }
+
+  .world-actions {
+    grid-template-columns: 54px auto minmax(0, 1fr);
+    justify-content: stretch;
+    gap: 0;
+    padding: 0;
+    border-radius: 0;
+  }
+
+  .world-actions > .control-bar-functions {
+    gap: 2px;
+    width: 100%;
+  }
+
+  .world-actions > .control-bar-functions > .ball-sieve-control {
+    margin-left: 2px;
+  }
+
+  .world-actions > :where(.control-bar-left, .primary-screen-control-group, .control-bar-functions) > button,
+  .world-actions > :where(.control-bar-functions) > :where(.ball-sieve-control) > button:where(.ball-sieve-trigger) {
+    width: clamp(38px, 11vw, 44px);
+    height: clamp(38px, 11vw, 44px);
+    font-size: 0.95rem;
+  }
+
+  .world-actions .primary-screen-control-group button {
+    width: clamp(48px, 13vw, 54px);
+    height: clamp(48px, 13vw, 54px);
+  }
+
+  .calendar-screen-icon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .day-list-screen-icon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .day-list-screen-icon::after {
+    width: 19px;
+  }
+
+  .display-mode-control {
+    grid-template-columns: repeat(3, 30px);
+    gap: 3px;
+    padding: 4px;
+  }
+
+  .world-actions .display-mode-control button {
+    width: 30px;
+    height: 42px;
+    font-size: 0.92rem;
+  }
+
+  .receive-reminder {
+    bottom: 82px;
+    max-width: calc(100vw - 24px);
+  }
+
+  .panel-backdrop {
+    padding: 0;
+  }
+
+  .floating-panel {
+    width: min(100vw, 720px);
+    border-radius: 0;
+  }
+
+  .floating-panel-list {
+    height: var(--app-visible-height);
+  }
+
+  .dialog-actions .primary-action,
+  .dialog-actions .ghost-action {
+    flex: 1 1 100%;
+  }
+
+  .ball-edit-dialog-backdrop {
+    place-items: stretch;
+    padding: 0;
+  }
+
+  .ball-edit-dialog {
+    width: 100vw;
+    height: var(--app-visible-height);
+    border-radius: 0;
+  }
+
+  .calendar-weekdays,
+  .calendar-grid {
+    gap: 5px;
+  }
+
+  .calendar-grid {
+    grid-auto-rows: minmax(78px, auto);
+  }
+
+  .calendar-cell {
+    min-height: 78px;
+    gap: 4px;
+    padding: 6px;
+  }
+
+  .calendar-day-ball-item {
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 7px;
+    padding: 7px;
+  }
+
+  .mini-ball.calendar-day-ball-visual {
+    width: 27px;
+    height: 27px;
+  }
+
+  .calendar-day-ball-title-row {
+    display: grid;
+    gap: 2px;
+  }
+
+  .calendar-day-ball-title-row span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .calendar-day-ball-actions {
+    grid-column: 1 / -1;
+    justify-content: start;
+    max-width: none;
+  }
+
+  .calendar-day-ball-actions .share-ball,
+  .calendar-day-ball-actions .edit-ball,
+  .calendar-day-ball-actions .lifecycle-ball,
+  .calendar-day-ball-actions .delete-ball {
+    min-height: 32px;
+    padding: 0 6px;
+    font-size: 0.96rem;
+    font-weight: 700;
+  }
+
+  .calendar-day-ball-actions .lifecycle-ball,
+  .calendar-day-ball-actions .delete-ball {
+    padding-inline: 4px;
+    font-size: 1rem;
+  }
+
+  .mini-ball-row {
+    grid-template-columns: repeat(2, 12px);
+    grid-auto-rows: 12px;
+    min-height: 40px;
+    gap: 2px;
+  }
+
+  .mini-ball {
+    width: 12px;
+    height: 12px;
+  }
+
+  .calendar-meter-marker-set {
+    width: min(100%, 54px);
+  }
+
+  .calendar-meter-list {
+    gap: 2px;
+  }
+
+  .calendar-meter-row {
+    min-height: 12px;
+    gap: 2px;
+  }
+
+  .calendar-meter-count,
+  .calendar-meter-overflow {
+    font-size: 0.7rem;
+  }
+
+  .calendar-marker-desktop {
+    display: none;
+  }
+
+  .calendar-marker-mobile {
+    display: grid;
+  }
+
+  .category-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .calendar-overflow {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+
+@media (max-height: 560px) and (orientation: landscape) {
+  .calendar-grid {
+    grid-auto-rows: minmax(78px, auto);
+    gap: 5px;
+  }
+
+  .calendar-cell {
+    min-height: 78px;
+    gap: 4px;
+    padding: 6px;
+  }
+
+  .mini-ball-row {
+    grid-template-columns: repeat(auto-fit, 12px);
+    grid-auto-rows: 12px;
+    width: min(100%, 68px);
+    min-height: 26px;
+    gap: 2px;
+  }
+
+  .mini-ball {
+    width: 12px;
+    height: 12px;
+  }
+}

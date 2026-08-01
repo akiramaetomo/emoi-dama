@@ -1,0 +1,440 @@
+/* Shared Visual Primitives */
+
+.physics-ball,
+.happy-ball,
+.seed-ball,
+.settings-brand-ball {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--size, 92px);
+  height: var(--size, 92px);
+  transform: translate(calc(-50% + var(--x, 0px)), calc(-50% + var(--y, 0px)));
+  border: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.18) 24%, transparent 30%),
+    radial-gradient(circle at 66% 72%, rgba(26, 96, 78, 0.36), transparent 42%),
+    linear-gradient(145deg, #f4ca64, #f0765e 48%, #4fa88f);
+  box-shadow:
+    0 22px 48px rgba(48, 74, 67, 0.24),
+    inset -12px -14px 24px rgba(42, 49, 46, 0.18),
+    inset 8px 7px 16px rgba(255, 255, 255, 0.42);
+  animation: settle 5.6s ease-in-out var(--delay, 0ms) infinite;
+}
+
+.mini-ball,
+.category-swatch {
+  display: block;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 31% 25%, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.12) 18%, transparent 31%),
+    radial-gradient(circle at 72% 76%, hsl(var(--ball-hue, 34) max(0%, calc(var(--ball-saturation, 68%) - 9%)) max(8%, calc(var(--ball-lightness, 58%) - 20%)) / 0.88), transparent 56%),
+    conic-gradient(from 18deg, hsl(var(--ball-hue, 34) var(--ball-saturation, 68%) var(--ball-lightness, 58%)), hsl(var(--ball-hue, 34) min(100%, calc(var(--ball-saturation, 68%) + 5%)) min(92%, calc(var(--ball-lightness, 58%) + 8%))), hsl(var(--ball-hue, 34) max(0%, calc(var(--ball-saturation, 68%) - 7%)) max(10%, calc(var(--ball-lightness, 58%) - 9%))), hsl(var(--ball-hue, 34) var(--ball-saturation, 68%) var(--ball-lightness, 58%)));
+  box-shadow:
+    1px 2px 5px rgba(21, 32, 28, 0.28),
+    inset -2px -3px 5px rgba(24, 34, 30, 0.18);
+}
+
+.mini-ball {
+  width: 16px;
+  height: 16px;
+}
+
+.category-swatch {
+  border: 0;
+}
+
+.mini-ball.is-ring-ball,
+.category-swatch.is-ring-ball {
+  border: 0;
+  background:
+    radial-gradient(circle at 50% 50%, transparent 0 57%, hsl(var(--ball-hue, 34) var(--ball-saturation, 68%) min(94%, calc(var(--ball-lightness, 58%) + 18%))) 59% 67%, hsl(var(--ball-hue, 34) var(--ball-saturation, 68%) var(--ball-lightness, 58%)) 71% 82%, hsl(var(--ball-hue, 34) max(0%, calc(var(--ball-saturation, 68%) - 8%)) max(10%, calc(var(--ball-lightness, 58%) - 16%))) 86% 100%);
+  box-shadow:
+    1px 2px 5px rgba(21, 32, 28, 0.22),
+    inset -1px -2px 3px rgba(28, 42, 37, 0.12);
+}
+
+.category-swatch.is-ring-ball {
+  box-shadow: 1px 2px 5px rgba(21, 32, 28, 0.22);
+}
+
+.mini-ball.has-echo {
+  box-shadow:
+    0 0 0 var(--mini-echo-ring, 2px) hsl(var(--echo-hue, 44) calc(var(--echo-saturation, 54%) + 6%) calc(var(--echo-lightness, 58%) + 14%) / var(--mini-echo-alpha, 0.8)),
+    0 0 var(--mini-echo-blur, 10px) hsl(var(--echo-hue, 44) var(--echo-saturation, 54%) calc(var(--echo-lightness, 58%) + 8%) / var(--mini-echo-soft-alpha, 0.58)),
+    inset -3px -4px 6px rgba(28, 42, 37, 0.22);
+}
+
+.mini-ball.is-ring-ball.has-echo {
+  box-shadow:
+    0 0 0 var(--mini-echo-ring, 2px) hsl(var(--echo-hue, 44) calc(var(--echo-saturation, 54%) + 6%) calc(var(--echo-lightness, 58%) + 14%) / var(--mini-echo-alpha, 0.8)),
+    0 0 var(--mini-echo-blur, 10px) hsl(var(--echo-hue, 44) var(--echo-saturation, 54%) calc(var(--echo-lightness, 58%) + 8%) / var(--mini-echo-soft-alpha, 0.58)),
+    inset 0 0 0 3.5px hsl(var(--ball-hue, 34) calc(var(--ball-saturation, 68%) + 6%) min(86%, calc(var(--ball-lightness, 58%) + 8%)) / 0.96),
+    inset -2px -3px 5px rgba(28, 42, 37, 0.14);
+}
+
+.mini-ball.echo-weak {
+  --mini-echo-alpha: 0.82;
+  --mini-echo-blur: 10px;
+  --mini-echo-ring: 2px;
+  --mini-echo-soft-alpha: 0.58;
+}
+
+.mini-ball.echo-medium {
+  --mini-echo-alpha: 0.95;
+  --mini-echo-blur: 13px;
+  --mini-echo-ring: 3px;
+  --mini-echo-soft-alpha: 0.7;
+}
+
+.mini-ball.echo-strong {
+  --mini-echo-alpha: 1;
+  --mini-echo-blur: 16px;
+  --mini-echo-ring: 4px;
+  --mini-echo-soft-alpha: 0.82;
+}
+
+.mini-ball.lifecycle-archived {
+  background:
+    radial-gradient(circle at 42% 35%, rgba(255, 246, 218, 0.18), transparent 28%),
+    radial-gradient(circle, hsl(var(--ball-hue, 34) 18% 42% / 0.5), transparent 68%);
+  box-shadow:
+    0 0 9px hsl(var(--ball-hue, 34) 18% 36% / 0.46),
+    inset 0 0 8px rgba(255, 246, 218, 0.08);
+  filter: saturate(0.62) brightness(0.78);
+}
+
+/* Shared Form Controls */
+
+.ball-count-field {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  min-width: 0;
+}
+
+.ball-count-field-label {
+  padding-top: 9px;
+  color: #b8d8ce;
+  font-size: var(--readable-sm);
+  font-weight: 900;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.ball-count-control-body {
+  min-width: 0;
+}
+
+.ball-count-slider {
+  --ball-count-thumb-hit-size: 34px;
+  --ball-count-thumb-core-size: 24px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  min-width: 0;
+  padding: 4px 2px 0;
+}
+
+.ball-count-slider[hidden],
+.ball-count-legacy[hidden] {
+  display: none;
+}
+
+.ball-count-slider output {
+  align-self: start;
+  min-width: 58px;
+  padding-top: 10px;
+  color: var(--color-text-strong);
+  font-size: var(--readable-lg);
+  font-weight: 950;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.ball-count-range-stack {
+  position: relative;
+  display: grid;
+  min-width: 0;
+}
+
+.ball-count-slider input[type="range"] {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ball-count-visual-control {
+  position: relative;
+  height: 44px;
+  margin-inline: calc(var(--ball-count-thumb-hit-size) / 2);
+  pointer-events: none;
+  touch-action: pan-y;
+}
+
+.ball-count-rail {
+  position: absolute;
+  top: 19px;
+  right: 0;
+  left: 0;
+  height: 6px;
+  border: 1px solid rgba(184, 216, 206, 0.22);
+  border-radius: 999px;
+  background: rgba(145, 170, 162, 0.28);
+}
+
+.ball-count-thumb-hit {
+  position: absolute;
+  top: 5px;
+  left: var(--ball-count-position);
+  display: grid;
+  width: var(--ball-count-thumb-hit-size);
+  height: var(--ball-count-thumb-hit-size);
+  border-radius: 50%;
+  place-items: center;
+  transform: translateX(-50%);
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.ball-count-thumb-hit:active {
+  cursor: grabbing;
+}
+
+.ball-count-thumb-core {
+  width: var(--ball-count-thumb-core-size);
+  height: var(--ball-count-thumb-core-size);
+  border: 2px solid rgba(214, 231, 223, 0.72);
+  border-radius: 50%;
+  background: #6f8d83;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.34);
+}
+
+.ball-count-slider input[type="range"]:focus-visible + .ball-count-visual-control .ball-count-thumb-core {
+  outline: 3px solid rgba(240, 192, 111, 0.72);
+  outline-offset: 3px;
+}
+
+.ball-count-ticks {
+  position: relative;
+  height: 32px;
+  margin-inline: calc(var(--ball-count-thumb-hit-size) / 2);
+}
+
+.ball-count-tick {
+  position: absolute;
+  top: 0;
+  left: var(--ball-count-position);
+  display: grid;
+  width: 28px;
+  justify-items: center;
+  gap: 2px;
+  transform: translateX(-50%);
+  color: rgba(184, 216, 206, 0.72);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.ball-count-tick i {
+  width: 1px;
+  height: 6px;
+  border-radius: 2px;
+  background: rgba(145, 170, 162, 0.58);
+}
+
+.ball-count-tick b {
+  min-height: 1em;
+  font-weight: 800;
+}
+
+.ball-count-tick.is-emphasized {
+  color: rgba(214, 231, 223, 0.88);
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.ball-count-tick.is-emphasized i {
+  width: 2px;
+  height: 8px;
+  background: rgba(184, 216, 206, 0.78);
+}
+
+.ball-count-legacy {
+  display: grid;
+  gap: 9px;
+  padding: 10px 12px;
+  border: 1px solid rgba(244, 215, 160, 0.2);
+  border-radius: var(--radius-panel);
+  background: rgba(255, 246, 218, 0.05);
+}
+
+.ball-count-legacy strong {
+  color: #f6d58f;
+  font-size: var(--readable-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.ball-count-legacy button {
+  width: 100%;
+  min-height: 44px;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid var(--control-border);
+  border-radius: var(--control-radius);
+  background: var(--control-bg);
+  color: var(--color-text-strong);
+  outline: none;
+}
+
+input,
+select {
+  min-height: var(--control-height);
+  padding: 0 14px;
+}
+
+textarea {
+  resize: vertical;
+  padding: 12px 14px;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--control-focus-ring);
+}
+
+/* Shared Actions */
+
+.period-nav-button {
+  --period-nav-press-x: 1px;
+  --period-nav-background: rgba(66, 115, 101, 0.16);
+  --period-nav-hover-background: rgba(84, 143, 125, 0.24);
+  display: grid;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(167, 215, 200, 0.2);
+  border-radius: 12px;
+  background: var(--period-nav-background);
+  box-shadow: inset 0 1px 0 rgba(234, 255, 248, 0.04);
+  color: rgba(185, 229, 215, 0.9);
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+.period-nav-button-next {
+  --period-nav-press-x: -1px;
+}
+
+.period-chevron {
+  display: block;
+  width: 24px;
+  height: 24px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform: translateX(0) scaleX(1);
+  transition: color 120ms ease, transform 80ms ease;
+}
+
+.period-chevron-next {
+  transform: translateX(0) scaleX(-1);
+}
+
+.period-nav-button:active .period-chevron-previous {
+  transform: translateX(var(--period-nav-press-x)) scaleX(1);
+}
+
+.period-nav-button:active .period-chevron-next {
+  transform: translateX(var(--period-nav-press-x)) scaleX(-1);
+}
+
+.period-nav-button:focus-visible {
+  outline: 2px solid rgba(167, 215, 200, 0.72);
+  outline-offset: -5px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .period-nav-button:hover {
+    border-color: rgba(194, 238, 224, 0.34);
+    background: var(--period-nav-hover-background);
+    color: rgba(221, 248, 239, 0.98);
+  }
+}
+
+.share-ball,
+.edit-ball,
+.lifecycle-ball,
+.descend-ball,
+.delete-ball {
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: var(--readable-sm);
+  font-weight: 800;
+}
+
+.share-ball,
+.edit-ball,
+.lifecycle-ball,
+.descend-ball,
+.ghost-action.quiet-accent-action.descend-ball {
+  border: 1px solid rgba(184, 216, 206, 0.28);
+  background: rgba(28, 64, 55, 0.72);
+  color: #ccefe5;
+}
+
+.lifecycle-ball {
+  background: rgba(63, 64, 54, 0.72);
+  color: #f3dfb8;
+}
+
+.descend-ball,
+.ghost-action.quiet-accent-action.descend-ball {
+  background: rgba(40, 52, 78, 0.72);
+  color: #d8e5ff;
+}
+
+.delete-ball {
+  border: 1px solid var(--border-danger);
+  background: rgba(86, 27, 24, 0.58);
+  color: var(--color-danger);
+}
+
+.danger-action,
+.ghost-action.danger-action {
+  min-height: 50px;
+  border: 1px solid var(--border-danger);
+  border-radius: var(--radius-panel);
+  background: rgba(86, 27, 24, 0.68);
+  color: var(--color-danger);
+  font-weight: 900;
+}

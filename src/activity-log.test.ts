@@ -60,6 +60,34 @@ const sampleBall: HappyBall = {
 store.set("happyBall.activityLog.v1", "{broken");
 assertEqual(loadActivityLog().length, 0, "broken stored activity log should recover as empty");
 
+store.set("happyBall.activityLog.v1", JSON.stringify({
+  v: 1,
+  type: "happy-ball-activity-log",
+  exportedAt: "2026-07-09T09:00:00.000Z",
+  entries: [{
+    id: "activity_legacy_memorial",
+    recordedAt: "2026-07-09T09:00:00.000Z",
+    action: "lifecycle-change",
+    status: "success",
+    lifecycleStatus: "memorial",
+    previousLifecycleStatus: "memorial",
+    ballSnapshot: {
+      id: sampleBall.id,
+      title: sampleBall.title,
+      subject: sampleBall.subject,
+      issuedBy: sampleBall.issuedBy,
+      category: sampleBall.category,
+      date: sampleBall.date,
+      lifecycleStatus: "memorial",
+    },
+  }],
+}));
+const legacyMemorialActivity = loadActivityLog()[0];
+assertEqual(legacyMemorialActivity?.lifecycleStatus, "active", "legacy memorial activity lifecycle should normalize to active");
+assertEqual(legacyMemorialActivity?.previousLifecycleStatus, "active", "legacy memorial previous lifecycle should normalize to active");
+assertEqual(legacyMemorialActivity?.ballSnapshot?.lifecycleStatus, "active", "legacy memorial activity snapshot should normalize to active");
+store.clear();
+
 const firstEntries = recordActivity(createBallActivityInput(sampleBall, {
   action: "url-receive",
   sendMode: "casual",

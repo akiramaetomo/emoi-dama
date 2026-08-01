@@ -3,12 +3,18 @@ export interface PanelHeaderAction {
   formId: string;
 }
 
-export function renderPanelOverlay(title: string, body: string, kind: string, headerAction?: PanelHeaderAction): string {
+export function renderPanelOverlay(
+  title: string,
+  body: string,
+  kind: string,
+  headerAction?: PanelHeaderAction,
+  controlBarHtml = "",
+): string {
   const authoringSurfaceClass = kind === "create" ? " authoring-surface" : "";
   const authoringBackdropClass = kind === "create" ? " authoring-surface-backdrop" : "";
   const authoringHeaderClass = kind === "create" ? " authoring-surface-header" : "";
   return `
-    <div class="panel-backdrop panel-backdrop-${kind} app-modal-backdrop${authoringBackdropClass}" data-close-panel>
+    <div class="panel-backdrop panel-backdrop-${kind} app-modal-backdrop${authoringBackdropClass}${controlBarHtml ? " upper-control-surface" : ""}" data-close-panel>
       <aside class="floating-panel floating-panel-${kind} surface-shell${authoringSurfaceClass}" aria-label="${escapeAttribute(title)}">
         <div class="floating-panel-head surface-fixed-header${authoringHeaderClass}">
           <h2>${escapeHtml(title)}</h2>
@@ -23,6 +29,7 @@ export function renderPanelOverlay(title: string, body: string, kind: string, he
           ${body}
         </div>
       </aside>
+      ${controlBarHtml}
     </div>
   `;
 }

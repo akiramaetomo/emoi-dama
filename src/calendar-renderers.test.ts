@@ -83,6 +83,10 @@ assert(monthHtml.includes('data-filter-date="2026-07-03"'), "month view should r
 assert(monthHtml.includes("--ball-hue: 92; --ball-saturation: 22%; --ball-lightness: 54%;"), "calendar should render known categories with the current preset instead of the stored snapshot");
 assert(monthHtml.includes("--echo-hue: 43; --echo-saturation: 73%; --echo-lightness: 58%;"), "calendar should render known echo categories with the current preset");
 assert(monthHtml.includes("calendar-head calendar-month-head"), "month view should use the centered month header class");
+assert(countOccurrences(monthHtml, 'class="period-nav-button period-nav-button-') === 2, "month view should render two shared period-navigation buttons");
+assert(countOccurrences(monthHtml, "svg class=\"period-chevron") === 2, "month view should render shared SVG chevrons");
+assert(!monthHtml.includes(">‹</button>") && !monthHtml.includes(">›</button>"), "month view should remove legacy text chevrons");
+assert(monthHtml.includes("<h2>2026年 7月</h2>"), "month view should keep the existing non-period-button heading");
 assert(monthHtml.includes('data-calendar-open-panel="create"'), "calendar toolbar should render the create action");
 assert(monthHtml.includes('data-calendar-main'), "calendar toolbar should render the main-screen ball action");
 assert(monthHtml.includes('data-calendar-open-panel="calendar"'), "calendar toolbar should render the calendar action");
@@ -262,6 +266,9 @@ assert(dayListHtml.includes("<h2>2026-07-03</h2>"), "day list view should title 
 assert(!dayListHtml.includes("2026-07-03 の玉"), "day list view should not append no-tama to the title");
 assert(dayListHtml.includes('data-calendar-shift-day="-1"'), "day list view should offer a previous-day action");
 assert(dayListHtml.includes('data-calendar-shift-day="1"'), "day list view should offer a next-day action");
+assert(countOccurrences(dayListHtml, 'class="period-nav-button period-nav-button-') === 2, "day list view should render two shared period-navigation buttons");
+assert(countOccurrences(dayListHtml, "svg class=\"period-chevron") === 2, "day list view should render shared SVG chevrons");
+assert(!dayListHtml.includes(">‹</button>") && !dayListHtml.includes(">›</button>"), "day list view should remove legacy text chevrons");
 assert(!dayListHtml.includes('data-calendar-view="month"'), "day list view should not render the old month-back action");
 assert(!dayListHtml.includes('data-close-panel'), "day list view should not render a top close action");
 assert(!dayListHtml.includes("この日の玉"), "day list view should not render the redundant day heading");
@@ -291,9 +298,9 @@ assert(dayListHtml.includes("calendar-day-ball-item lifecycle-archived"), "day l
 assert(dayListHtml.includes("メモなし"), "day list view should show a quiet empty memo placeholder");
 assert(dayListHtml.includes('data-view-ball-id="ball_20260703_sample"'), "day list view should render content actions");
 assert(dayListHtml.includes('data-edit-ball-id="ball_20260703_sample"'), "day list view should render edit actions");
-assert(dayListHtml.includes('data-lifecycle-status="archived"'), "day list view should render shimau actions");
-assert(dayListHtml.includes('data-lifecycle-status="active"'), "day list view should render restore actions");
-assert(dayListHtml.includes('data-lifecycle-status="offered"'), "day list view should render kuyoh actions");
+assert(dayListHtml.includes('data-lifecycle-action="archive"'), "day list view should render shimau actions");
+assert(dayListHtml.includes('data-lifecycle-action="restore"'), "day list view should render restore actions");
+assert(dayListHtml.includes('data-lifecycle-action="offer"'), "day list view should render kuyoh actions");
 assert(dayListHtml.includes('data-delete-ball-id="ball_20260703_sample"'), "day list view should render otakiage actions");
 assert(!dayListHtml.includes("data-copy-ball-url-id"), "day list view should omit URL actions");
 assert(!dayListHtml.includes("data-copy-ball-line-url-id"), "day list view should omit LINE actions");
@@ -338,9 +345,10 @@ const offeredOnlyHtml = renderCalendarOverlay({
 assert(offeredOnlyHtml.includes('data-view-ball-id="ball_20260703_offered"'), "offered day-list balls should keep content actions");
 assert(offeredOnlyHtml.includes('data-edit-ball-id="ball_20260703_offered"'), "offered day-list balls should keep edit actions");
 assert(offeredOnlyHtml.includes('data-delete-ball-id="ball_20260703_offered"'), "offered day-list balls should keep otakiage actions");
-assert(!offeredOnlyHtml.includes('data-lifecycle-status="archived"'), "offered day-list balls should not render shimau actions");
-assert(!offeredOnlyHtml.includes('data-lifecycle-status="active"'), "offered day-list balls should not render restore actions");
-assert(!offeredOnlyHtml.includes('data-lifecycle-status="offered"'), "offered day-list balls should not render kuyoh actions");
+assert(!offeredOnlyHtml.includes('data-lifecycle-action="archive"'), "offered day-list balls should not render shimau actions");
+assert(offeredOnlyHtml.includes('data-lifecycle-action="restore"'), "offered day-list balls should render restore actions");
+assert(!offeredOnlyHtml.includes('data-lifecycle-action="offer"'), "offered day-list balls should not render kuyoh actions");
+assert(offeredOnlyHtml.includes("供養済み"), "offered day-list balls should keep their lifecycle state visible");
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {

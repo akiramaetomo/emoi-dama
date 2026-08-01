@@ -35,7 +35,7 @@ export const sendModeLabels: Record<SendMode, string> = {
 
 export const casualReceiptTitle = "お配り";
 
-export function renderBallDialog(ball: HappyBall, context: DialogRenderContext): string {
+export function renderBallDialog(ball: HappyBall, context: DialogRenderContext, controlBarHtml = ""): string {
   const keepers = ball.keepers.length > 0 ? ball.keepers.join(", ") : "未設定";
   const approvedBy = ball.approvedBy || "なし";
   const issueLabel = formatIssueLabel(ball);
@@ -43,7 +43,7 @@ export function renderBallDialog(ball: HappyBall, context: DialogRenderContext):
   const showIssuer = canShowIssuer(ball);
 
   return `
-    <div class="ball-dialog-backdrop ball-detail-backdrop app-modal-backdrop" data-dialog-backdrop>
+    <div class="ball-dialog-backdrop ball-detail-backdrop app-modal-backdrop${controlBarHtml ? " upper-control-surface" : ""}" data-dialog-backdrop>
       <section class="ball-dialog ball-detail-dialog surface-shell" role="dialog" aria-modal="true" aria-labelledby="ball-dialog-title">
         <div class="surface-fixed-header detail-surface-header">
           <p class="detail-screen-name">玉の中身</p>
@@ -127,6 +127,7 @@ export function renderBallDialog(ball: HappyBall, context: DialogRenderContext):
           </div>
         </div>
       </section>
+      ${controlBarHtml}
     </div>
   `;
 }

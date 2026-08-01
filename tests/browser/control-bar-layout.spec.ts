@@ -105,23 +105,29 @@ test("primary controls are enlarged and the create/settings utilities stay insid
   await expect(page.locator(".play-world-guidance, .play-display-state-label, .world-action-prompt")).toHaveCount(0);
 
   const primaryBox = await group.boundingBox();
+  const sieveBox = await page.locator("[data-toggle-ball-sieve]").boundingBox();
   const playModeBox = await page.locator("[data-toggle-play-modes]").boundingBox();
   const settingsBox = await page.locator("[data-open-panel='settings']").boundingBox();
   const barBox = await page.locator(".app-control-bar").boundingBox();
   expect(primaryBox).not.toBeNull();
+  expect(sieveBox).not.toBeNull();
   expect(playModeBox).not.toBeNull();
   expect(settingsBox).not.toBeNull();
   expect(barBox).not.toBeNull();
-  expect(playModeBox!.x - (primaryBox!.x + primaryBox!.width)).toBeLessThanOrEqual(8);
+  expect(sieveBox!.x - (primaryBox!.x + primaryBox!.width)).toBeLessThanOrEqual(8);
+  expect(playModeBox!.x - (sieveBox!.x + sieveBox!.width)).toBeLessThanOrEqual(0.1);
   expect(Math.abs(settingsBox!.x + settingsBox!.width - (barBox!.x + barBox!.width))).toBeLessThanOrEqual(7);
 
   await page.locator("[data-open-panel='calendar']").click();
   const calendarShell = page.locator("[data-calendar-primary-shell]");
   const calendarPrimaryBox = await calendarShell.locator(".primary-screen-control-group").boundingBox();
+  const calendarSieveBox = await calendarShell.locator("[data-toggle-ball-sieve]").boundingBox();
   const markerModeBox = await calendarShell.locator("[data-calendar-cycle-marker-mode]").boundingBox();
   expect(calendarPrimaryBox).not.toBeNull();
+  expect(calendarSieveBox).not.toBeNull();
   expect(markerModeBox).not.toBeNull();
-  expect(markerModeBox!.x - (calendarPrimaryBox!.x + calendarPrimaryBox!.width)).toBeLessThanOrEqual(8);
+  expect(calendarSieveBox!.x - (calendarPrimaryBox!.x + calendarPrimaryBox!.width)).toBeLessThanOrEqual(8);
+  expect(markerModeBox!.x - (calendarSieveBox!.x + calendarSieveBox!.width)).toBeLessThanOrEqual(0.1);
 });
 
 test("PC and iPad keep the primary group centered while side controls move inward", async ({ page }) => {
@@ -137,23 +143,27 @@ test("PC and iPad keep the primary group centered while side controls move inwar
     const bar = page.locator(".app-control-bar");
     const primary = bar.locator(".primary-screen-control-group");
     const create = bar.locator("[data-open-panel='create']");
+    const sieve = bar.locator("[data-toggle-ball-sieve]");
     const playMode = bar.locator("[data-toggle-play-modes]");
     const settings = bar.locator("[data-open-panel='settings']");
-    const [barBox, primaryBox, createBox, playModeBox, settingsBox] = await Promise.all([
+    const [barBox, primaryBox, createBox, sieveBox, playModeBox, settingsBox] = await Promise.all([
       bar.boundingBox(),
       primary.boundingBox(),
       create.boundingBox(),
+      sieve.boundingBox(),
       playMode.boundingBox(),
       settings.boundingBox(),
     ]);
     expect(barBox).not.toBeNull();
     expect(primaryBox).not.toBeNull();
     expect(createBox).not.toBeNull();
+    expect(sieveBox).not.toBeNull();
     expect(playModeBox).not.toBeNull();
     expect(settingsBox).not.toBeNull();
     expect(Math.abs((primaryBox!.x + primaryBox!.width / 2) - (barBox!.x + barBox!.width / 2))).toBeLessThanOrEqual(1);
     expect(primaryBox!.x - (createBox!.x + createBox!.width)).toBeCloseTo(27, 0);
-    expect(playModeBox!.x - (primaryBox!.x + primaryBox!.width)).toBeCloseTo(27, 0);
+    expect(sieveBox!.x - (primaryBox!.x + primaryBox!.width)).toBeCloseTo(27, 0);
+    expect(playModeBox!.x - (sieveBox!.x + sieveBox!.width)).toBeCloseTo(4, 0);
     expect(settingsBox!.x).toBeGreaterThan(playModeBox!.x);
     expect(settingsBox!.x + settingsBox!.width).toBeLessThan(barBox!.x + barBox!.width - 20);
 
@@ -174,9 +184,18 @@ test("period label cycles display mode and symmetric SVG chevrons shift the peri
   await page.locator("[data-calendar-main]").click();
 
   const modeButton = page.locator(".play-period-nav [data-cycle-display-mode]");
+  const screenName = page.locator(".stage-topline [data-cycle-workspace]");
   await expect(modeButton).toHaveAttribute("aria-label", /表示期間: 日/);
   await expect(modeButton).toHaveText(/^\d{4}-\d{2}-\d{2}$/);
   expect(parseFloat(await modeButton.evaluate((element) => getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(18);
+  const [screenNameBox, modeNavBox] = await Promise.all([
+    screenName.boundingBox(),
+    page.locator(".play-period-nav").boundingBox(),
+  ]);
+  expect(screenNameBox).not.toBeNull();
+  expect(modeNavBox).not.toBeNull();
+  expect(modeNavBox!.y - (screenNameBox!.y + screenNameBox!.height)).toBeGreaterThanOrEqual(1);
+  expect(modeNavBox!.y - (screenNameBox!.y + screenNameBox!.height)).toBeLessThanOrEqual(3);
   const translucentControls = page.locator(".play-period-nav button");
   for (const control of await translucentControls.all()) {
     const style = await control.evaluate((element) => {
@@ -205,7 +224,7 @@ test("period label cycles display mode and symmetric SVG chevrons shift the peri
     expect(box).not.toBeNull();
     expect(iconBox).not.toBeNull();
     expect(box!.width).toBeGreaterThanOrEqual(44);
-    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBe(40);
     expect(Math.abs((box!.x + box!.width / 2) - (iconBox!.x + iconBox!.width / 2))).toBeLessThanOrEqual(0.75);
     expect(Math.abs((box!.y + box!.height / 2) - (iconBox!.y + iconBox!.height / 2))).toBeLessThanOrEqual(0.75);
   }
@@ -219,11 +238,15 @@ test("period label cycles display mode and symmetric SVG chevrons shift the peri
   expect(weekRange).not.toMatch(/[の玉週月]/);
   const weekBox = await page.locator(".play-period-mode-button").boundingBox();
   expect(weekBox).not.toBeNull();
-  expect(weekBox!.height).toBe(44);
+  expect(weekBox!.height).toBe(40);
   await page.locator("[data-shift-display-period='1']").click();
   await expect(page.locator(".play-period-mode-button")).not.toHaveText(weekRange ?? "");
   await page.locator(".play-period-mode-button").click();
   await expect(page.locator(".play-period-mode-button")).toHaveText(/^\d{4}-\d{2}$/);
+  const monthRange = (await page.locator(".play-period-mode-button").textContent())?.trim();
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator(".play-period-mode-button")).not.toHaveText(monthRange ?? "");
 });
 
 async function expectCenteredIcon(button: Locator, icon: Locator, size: number): Promise<void> {

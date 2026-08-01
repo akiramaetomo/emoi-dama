@@ -247,11 +247,13 @@ function normalizeActivityEntry(value: unknown): ActivityLogEntry | null {
   if (value.sendMode === "casual" || value.sendMode === "formal") {
     entry.sendMode = value.sendMode;
   }
-  if (isLifecycleStatus(value.lifecycleStatus)) {
-    entry.lifecycleStatus = value.lifecycleStatus;
+  const lifecycleStatus = normalizeLifecycleStatus(value.lifecycleStatus);
+  if (lifecycleStatus) {
+    entry.lifecycleStatus = lifecycleStatus;
   }
-  if (isLifecycleStatus(value.previousLifecycleStatus)) {
-    entry.previousLifecycleStatus = value.previousLifecycleStatus;
+  const previousLifecycleStatus = normalizeLifecycleStatus(value.previousLifecycleStatus);
+  if (previousLifecycleStatus) {
+    entry.previousLifecycleStatus = previousLifecycleStatus;
   }
   if (isPositiveInteger(value.descentSequence)) {
     entry.descentSequence = Math.floor(value.descentSequence);
@@ -271,7 +273,7 @@ function normalizeBallSnapshot(value: ActivityBallSnapshot | Record<string, unkn
     issuedBy: readText(value.issuedBy) || "",
     category: readText(value.category) || "",
     date: readText(value.date) || "",
-    lifecycleStatus: isLifecycleStatus(value.lifecycleStatus) ? value.lifecycleStatus : "active",
+    lifecycleStatus: normalizeLifecycleStatus(value.lifecycleStatus) ?? "active",
   };
 }
 
@@ -297,7 +299,14 @@ function isActivityLogAction(value: unknown): value is ActivityLogAction {
 }
 
 function isLifecycleStatus(value: unknown): value is LifecycleStatus {
-  return value === "active" || value === "archived" || value === "memorial" || value === "offered";
+  return value === "active" || value === "archived" || value === "offered";
+}
+
+function normalizeLifecycleStatus(value: unknown): LifecycleStatus | null {
+  if (value === "memorial") {
+    return "active";
+  }
+  return isLifecycleStatus(value) ? value : null;
 }
 
 function isPositiveInteger(value: unknown): value is number {

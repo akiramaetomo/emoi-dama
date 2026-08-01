@@ -64,6 +64,7 @@ Object.assign(liveStage, {
   height: 600,
   sourceCount: 1,
   options: {},
+  field: { dataset: {} },
   renderer: {
     updateAppearanceProfile: () => undefined,
     updateSources: () => {

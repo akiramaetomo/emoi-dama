@@ -12,6 +12,29 @@ test("standard-size balls use faithful Pixi without URL arguments", async ({ pag
   await expect(field.locator("canvas.pixi-ball-canvas")).toBeVisible({ timeout: 20_000 });
 });
 
+test("echo settings refresh the actual Pixi visual sources without rebuilding physics", async ({ page }) => {
+  await seedBalls(page, 1, true);
+  await page.goto("/");
+  await page.locator("[data-calendar-main]").click();
+
+  const canvas = page.locator("canvas.pixi-ball-canvas");
+  await expect(canvas).toBeVisible({ timeout: 20_000 });
+  await expect(canvas).toHaveAttribute("data-visible-echo-count", "1");
+  await canvas.evaluate((element) => {
+    element.setAttribute("data-identity-check", "preserve-echo-toggle");
+  });
+
+  await page.locator("[data-open-panel='settings']").click();
+  await page.locator("details.display-settings summary").click();
+  await page.locator("#setting-echo-strength").selectOption("off");
+  await expect(canvas).toHaveAttribute("data-visible-echo-count", "0");
+  await expect(canvas).toHaveAttribute("data-identity-check", "preserve-echo-toggle");
+
+  await page.locator("#setting-echo-strength").selectOption("weak");
+  await expect(canvas).toHaveAttribute("data-visible-echo-count", "1");
+  await expect(canvas).toHaveAttribute("data-identity-check", "preserve-echo-toggle");
+});
+
 test("an empty-world tap activates armed buoyancy without creating Parent", async ({ page }) => {
   await seedBalls(page, 1, true);
   await page.goto("/");
@@ -307,6 +330,10 @@ test("160 phone balls use faithful Pixi and route changes stay responsive", asyn
   expect(createTransitionMs).toBeLessThan(250);
   await expect(page.locator("#app")).toHaveAttribute("data-primary-route", "create");
   await page.locator(".dialog-close[data-close-panel]").click();
+  await expect(page.locator("#app")).toHaveAttribute("data-primary-route", "play");
+  await expect(page.locator("#ball-field")).toHaveAttribute("data-ball-renderer", "pixi");
+  await expect(page.locator("#ball-field canvas.pixi-ball-canvas")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".runtime-fault-banner")).toHaveCount(0);
 
   const settingsTransitionMs = await clickAndMeasure(page, "[data-open-panel='settings']");
   expect(settingsTransitionMs).toBeLessThan(250);

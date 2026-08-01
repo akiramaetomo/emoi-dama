@@ -84,6 +84,10 @@ assertIncludes(detailHtml, "app-modal-scroll", "ball detail should expose one sh
 assertOrder(detailHtml, "surface-fixed-header", "surface-scroll-body", "ball detail header should remain outside its scroll owner");
 assertOrder(detailHtml, "detail-screen-name", "detail-edit-top", "detail header should place its name before the edit action");
 assertOrder(detailHtml, "detail-edit-top", "data-dialog-close", "detail header should place edit before close in visual and tab order");
+assertNotIncludes(detailHtml, "upper-control-surface", "detail should not claim an upper control surface without supplied controls");
+const detailWithControlBar = renderBallDialog(sampleBall, context, '<div data-test-upper-bar></div>');
+assertIncludes(detailWithControlBar, "upper-control-surface", "detail should claim its own control surface when supplied");
+assertOrder(detailWithControlBar, "surface-scroll-body", "data-test-upper-bar", "detail controls should follow the internal scroll region");
 
 assertIncludes(detailHtml, 'detail-card-label">玉を送る</span>', "detail card should use the explicit send-ball title");
 assertIncludes(detailHtml, "お配り", "detail card should offer casual send");

@@ -557,6 +557,7 @@ export class RapierStage {
     this.createBoundaryColliders();
 
     if (sources.length === 0) {
+      this.field.dataset.visualBallCount = "0";
       this.renderer.mount([], this.settings.radius);
       return;
     }
@@ -759,6 +760,7 @@ export class RapierStage {
       });
     });
     this.renderer.mount(this.balls.map(stripPhysicalBall), this.settings.radius);
+    this.field.dataset.visualBallCount = String(this.balls.length);
     this.scheduleRadiusTransition(performance.now());
     this.paint();
   }
@@ -1059,6 +1061,7 @@ export class RapierStage {
 
   private syncRendererSources(): void {
     const sources = this.balls.map(stripPhysicalBall);
+    this.field.dataset.visualBallCount = String(sources.length);
     const denseRadius = calculateDenseBallRadius(this.width, this.height, sources.length);
     const denseAppearance = sources.length > 120 && denseRadius * 2 <= DENSE_APPEARANCE_MAX_DIAMETER_PX;
     this.renderer.updateAppearanceProfile(denseAppearance ? "dense-gloss" : "faithful", denseAppearance ? "dense" : "normal");

@@ -1,7 +1,7 @@
 export type IssuerType = "self" | "assisted" | "proxy";
 export type Visibility = "category" | "issuer" | "title" | "open";
 export type LegacyVisibility = Visibility | "hidden";
-export type LifecycleStatus = "active" | "archived" | "memorial" | "offered";
+export type LifecycleStatus = "active" | "archived" | "offered";
 export type NameRole = "self" | "proxy";
 export type BallVisualKind = "filled" | "ring";
 export type SendMode = "formal" | "casual";

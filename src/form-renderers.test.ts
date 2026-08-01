@@ -117,6 +117,10 @@ assert(editHtml.includes("ball-edit-dialog surface-shell"), "edit form should re
 assert(editHtml.includes("app-modal-backdrop"), "edit form should use the shared fixed modal backdrop");
 assert(editHtml.includes("app-modal-scroll"), "edit form should expose one shared modal scroll region");
 assert(editHtml.indexOf("surface-fixed-header") < editHtml.indexOf("surface-scroll-body"), "edit header should remain outside its scroll owner");
+assert(!editHtml.includes("upper-control-surface"), "edit should not claim an upper control surface without supplied controls");
+const editWithControlBar = renderBallEditDialog(sampleBall, context, '<div data-test-upper-bar></div>');
+assert(editWithControlBar.includes("upper-control-surface"), "edit should claim its own control surface when supplied");
+assert(editWithControlBar.indexOf("surface-scroll-body") < editWithControlBar.indexOf("data-test-upper-bar"), "edit controls should follow the internal scroll region");
 assert(editHtml.includes("authoring-surface-backdrop"), "edit form should use the shared authoring backdrop contract");
 assert(editHtml.includes("authoring-surface-header"), "edit form should use the shared authoring header contract");
 assert(editHtml.indexOf('id="ball-edit-title"') < editHtml.indexOf("data-dialog-close"), "edit header should place its title before close in DOM and tab order");
@@ -172,7 +176,7 @@ assert(editHtml.includes('class="edit-descent-history" aria-label="降臨"'), "e
 assert(editHtml.includes('data-descend-ball-id="ball_20260705_sample">降臨</button>'), "empty edit descent group should expose its descent action as the group heading");
 assert(editHtml.includes("降臨なし"), "empty edit descent group should explain that it has no records");
 assert(!editHtml.includes('class="edit-lifecycle-actions"'), "edit form should leave lifecycle management to list surfaces");
-assert(!editHtml.includes("data-lifecycle-status"), "edit form should not render lifecycle actions");
+assert(!editHtml.includes("data-lifecycle-action"), "edit form should not render lifecycle actions");
 assert(!editHtml.includes("data-delete-ball-id"), "edit form should not render the final delete action");
 assert(editHtml.includes('class="dialog-actions authoring-bottom-actions"'), "edit form should keep the shared footer actions");
 

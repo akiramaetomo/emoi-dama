@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
@@ -63,6 +63,39 @@ test("iPad portrait and landscape center the full month header", async ({ page }
   }
 });
 
+test("Calendar and Ball List share centered Play-shaped date navigation", async ({ page }) => {
+  await page.locator("[data-calendar-main]").click();
+  const playBackground = await page.locator("[data-shift-display-period='-1']").evaluate((button) => (
+    getComputedStyle(button).backgroundColor
+  ));
+  expect(playBackground).toBe("rgba(66, 115, 101, 0.16)");
+  await page.locator("[data-open-panel='calendar']").click();
+
+  for (const viewport of [
+    { width: 360, height: 640 },
+    { width: 768, height: 1024 },
+    { width: 1024, height: 768 },
+    { width: 1280, height: 800 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expectDateNavigationGeometry(page, ".calendar-month-head", viewport.width);
+    await page.locator("[data-calendar-open-panel='dayList']").click();
+    await expectDateNavigationGeometry(page, ".calendar-day-list-head", viewport.width);
+    await page.locator("[data-calendar-open-panel='calendar']").click();
+  }
+
+  const monthHeading = page.locator(".calendar-month-head h2");
+  const initialMonth = await monthHeading.textContent();
+  await page.locator("[data-calendar-month]").first().click();
+  await expect(monthHeading).not.toHaveText(initialMonth ?? "");
+
+  await page.locator("[data-calendar-open-panel='dayList']").click();
+  const dayHeading = page.locator(".calendar-day-list-head h2");
+  const initialDay = await dayHeading.textContent();
+  await page.locator("[data-calendar-shift-day='1']").click();
+  await expect(dayHeading).not.toHaveText(initialDay ?? "");
+});
+
 test("phone and iPad keep lifecycle actions readable without adding an action row", async ({ page }) => {
   await page.locator("[data-calendar-open-panel='create']").click();
   await page.locator("#ball-form input[name='title']").fill("管理ボタン確認");
@@ -97,3 +130,48 @@ test("phone and iPad keep lifecycle actions readable without adding an action ro
     await page.locator("[data-calendar-open-panel='calendar']").click();
   }
 });
+
+async function expectDateNavigationGeometry(page: Page, headerSelector: string, viewportWidth: number): Promise<void> {
+  const header = page.locator(headerSelector);
+  const previous = header.locator(".period-nav-button-previous");
+  const next = header.locator(".period-nav-button-next");
+  await expect(previous).toHaveAttribute("aria-label", /前/);
+  await expect(next).toHaveAttribute("aria-label", /次/);
+  await expect(previous.locator("svg.period-chevron path")).toHaveCount(1);
+  await expect(next.locator("svg.period-chevron path")).toHaveCount(1);
+
+  const metrics = await header.evaluate((element) => {
+    const previousButton = element.querySelector<HTMLElement>(".period-nav-button-previous")!;
+    const heading = element.querySelector<HTMLElement>(".screen-heading-block")!;
+    const nextButton = element.querySelector<HTMLElement>(".period-nav-button-next")!;
+    const headerRect = element.getBoundingClientRect();
+    const previousRect = previousButton.getBoundingClientRect();
+    const headingRect = heading.getBoundingClientRect();
+    const nextRect = nextButton.getBoundingClientRect();
+    const style = getComputedStyle(previousButton);
+    return {
+      headerCenter: headerRect.left + headerRect.width / 2,
+      previousWidth: previousRect.width,
+      previousHeight: previousRect.height,
+      nextWidth: nextRect.width,
+      nextHeight: nextRect.height,
+      leftGap: headingRect.left - previousRect.right,
+      rightGap: nextRect.left - headingRect.right,
+      leftDistance: headingRect.left + headingRect.width / 2 - (previousRect.left + previousRect.width / 2),
+      rightDistance: nextRect.left + nextRect.width / 2 - (headingRect.left + headingRect.width / 2),
+      borderRadius: style.borderRadius,
+      backgroundColor: style.backgroundColor,
+    };
+  });
+
+  expect(Math.abs(metrics.headerCenter - viewportWidth / 2)).toBeLessThanOrEqual(1);
+  expect(metrics.previousWidth).toBe(44);
+  expect(metrics.previousHeight).toBe(44);
+  expect(metrics.nextWidth).toBe(44);
+  expect(metrics.nextHeight).toBe(44);
+  expect(metrics.leftGap).toBeCloseTo(10, 1);
+  expect(metrics.rightGap).toBeCloseTo(10, 1);
+  expect(metrics.leftDistance).toBeCloseTo(metrics.rightDistance, 1);
+  expect(metrics.borderRadius).toBe("12px");
+  expect(metrics.backgroundColor).toBe("rgba(66, 115, 101, 0.24)");
+}

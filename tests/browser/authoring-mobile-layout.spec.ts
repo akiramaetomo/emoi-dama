@@ -439,12 +439,15 @@ async function expectPhoneAuthoringSurface(
   viewport: { width: number; height: number },
 ): Promise<void> {
   const metrics = await readAuthoringMetrics(page, selector);
+  const upperDockLocator = page.locator(".upper-surface-control-dock");
+  const upperDock = await upperDockLocator.count() > 0 ? await upperDockLocator.boundingBox() : null;
+  const expectedSurfaceHeight = viewport.height - (upperDock?.height ?? 0);
   expect(metrics.title).toBe(expectedTitle);
   expect(metrics.pointerCoarse).toBe(true);
   expect(metrics.surface.x).toBeCloseTo(0, 0);
   expect(metrics.surface.y).toBeCloseTo(0, 0);
   expect(metrics.surface.width).toBeCloseTo(viewport.width, 0);
-  expect(metrics.surface.height).toBeCloseTo(viewport.height, 0);
+  expect(metrics.surface.height).toBeCloseTo(expectedSurfaceHeight, 0);
   expect(metrics.surface.borderRadius).toBe("0px");
   expect(metrics.surface.paddingLeft).toBeGreaterThanOrEqual(12);
   expect(metrics.surface.backgroundAlpha).toBeCloseTo(0.9, 2);

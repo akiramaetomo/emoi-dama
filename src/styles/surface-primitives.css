@@ -1,0 +1,231 @@
+/* Floating Panels / Overlays */
+
+.selected-summary {
+  display: grid;
+  gap: 10px;
+  min-height: 98px;
+  padding: 18px;
+  border-left: 4px solid #4fa88f;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.selected-summary div:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: baseline;
+}
+
+.selected-summary span {
+  color: #60736d;
+  font-size: var(--readable-sm);
+  font-weight: 700;
+}
+
+.selected-summary strong {
+  color: #1d2d28;
+}
+
+.selected-summary p {
+  margin-bottom: 0;
+  color: #3b4b46;
+}
+
+.summary-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.summary-meta div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(36, 48, 44, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.summary-meta dt {
+  color: #60736d;
+  font-size: var(--readable-xs);
+  font-weight: 800;
+}
+
+.summary-meta dd {
+  margin: 0;
+  overflow: hidden;
+  color: #24302c;
+  font-size: var(--readable-sm);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ball-dialog-backdrop {
+  z-index: var(--z-dialog);
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(27, 38, 34, 0.38);
+  backdrop-filter: blur(6px);
+}
+
+.panel-backdrop {
+  z-index: var(--z-panel);
+  display: grid;
+  justify-items: end;
+  padding: 18px;
+  background: rgba(6, 10, 9, 0.48);
+  backdrop-filter: blur(8px);
+}
+
+.panel-backdrop-create {
+  place-items: center;
+  justify-items: center;
+}
+
+.panel-backdrop-settings {
+  place-items: center;
+  justify-items: center;
+}
+
+.app-modal-backdrop {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.floating-panel {
+  color-scheme: dark;
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  width: min(430px, 100%);
+  padding: 20px;
+  border: 1px solid rgba(244, 215, 160, 0.2);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(255, 231, 182, 0.055), transparent 38%),
+    rgba(15, 23, 20, 0.94);
+  color: #f7ead3;
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 246, 218, 0.08);
+}
+
+.floating-panel-list {
+  grid-template-rows: auto minmax(0, 1fr);
+  height: calc(var(--app-visible-height) - 36px);
+}
+
+.floating-panel-list .ledger-list {
+  max-height: none;
+  min-height: 0;
+}
+
+.floating-panel-settings {
+  width: min(720px, 100%);
+}
+
+.floating-panel-head {
+  position: relative;
+  display: flex;
+  min-height: var(--close-control-size);
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.floating-panel-head h2 {
+  color: #fff4de;
+}
+
+.floating-panel-head .dialog-close {
+  position: static;
+  flex: 0 0 auto;
+}
+
+.floating-panel-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.floating-panel-create {
+  width: min(520px, 100%);
+}
+
+.authoring-surface-header {
+  display: grid;
+  grid-template-columns: minmax(var(--close-control-size), 1fr) auto minmax(var(--close-control-size), 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.authoring-surface-header h2 {
+  grid-column: 2;
+  margin: 0;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.authoring-surface-header .panel-header-action {
+  grid-column: 2;
+  justify-self: center;
+  min-height: 40px;
+  padding-inline: 18px;
+  white-space: nowrap;
+}
+
+.authoring-surface-header .dialog-close {
+  position: static;
+  grid-column: 3;
+  justify-self: end;
+  transform: none;
+}
+
+.authoring-surface-header .floating-panel-header-actions {
+  grid-column: 3;
+  justify-self: end;
+}
+
+.edit-surface-header {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.edit-surface-header h2 {
+  grid-column: 2;
+  justify-self: center;
+}
+
+.edit-surface-header .panel-header-action {
+  grid-column: auto;
+}
+
+.edit-header-actions {
+  display: flex;
+  grid-column: 3;
+  justify-self: end;
+  gap: 12px;
+  align-items: center;
+}
+
+.floating-panel-create .floating-panel-head h2,
+.detail-screen-name,
+#ball-edit-title {
+  margin-block: 0;
+  color: var(--color-accent-soft);
+  font-family:
+    "Yu Mincho", "Hiragino Mincho ProN", "Hiragino Mincho Pro", "YuMincho",
+    "Noto Serif CJK JP", serif;
+  font-size: var(--readable-lg);
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.2;
+  text-align: center;
+  text-shadow: 0 1px 0 rgba(255, 246, 218, 0.18), 0 10px 24px rgba(0, 0, 0, 0.24);
+}

@@ -127,12 +127,13 @@ async function expectPhoneDetailLayout(
     element.scrollTop = 0;
   });
   const beforeScroll = await readDetailMetrics(page);
+  const upperDock = await page.locator(".upper-surface-control-dock").boundingBox();
 
   expect(beforeScroll.pointerCoarse).toBe(true);
   expect(beforeScroll.dialog.x).toBeCloseTo(0, 0);
   expect(beforeScroll.dialog.y).toBeCloseTo(0, 0);
   expect(beforeScroll.dialog.width).toBeCloseTo(viewport.width, 0);
-  expect(beforeScroll.dialog.height).toBeCloseTo(viewport.height, 0);
+  expect(beforeScroll.dialog.height).toBeCloseTo(viewport.height - (upperDock?.height ?? 0), 0);
   expect(beforeScroll.dialog.borderRadius).toBe("0px");
   expect(beforeScroll.dialog.backgroundAlpha).toBeGreaterThan(0);
   expect(beforeScroll.dialog.backgroundAlpha).toBeLessThan(1);

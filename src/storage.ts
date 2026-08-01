@@ -1,5 +1,6 @@
 import { getCategoryColorPreset } from "./categories.js";
 import { applyDescentRecordsToBall, normalizeDescentBadgeCount, normalizeDescentRecords } from "./descent.js";
+import { resolveBallLifecycleTransition, type BallLifecycleAction } from "./ball-lifecycle.js";
 import { normalizeBallTime, normalizeVisibilityValue, type BallVisualKind } from "./models.js";
 import type { BallDraft, HappyBall, HappyBallDescentRecord, HappyBallEmotionSnapshot, HappyBallLedger, HappyBallVisual, LifecycleStatus, NameBookEntry, NameRole } from "./models";
 import { createDurableId } from "./durable-id.js";
@@ -103,6 +104,9 @@ export function normalizeStoredLedger(value: unknown): StoredLedgerRecovery {
       shouldSave = true;
     }
     if (isPlainObject(rawBall) && normalizeVisibilityValue(rawBall.visibility) !== rawBall.visibility) {
+      shouldSave = true;
+    }
+    if (isPlainObject(rawBall) && normalizeLifecycleStatus(rawBall.lifecycleStatus) !== rawBall.lifecycleStatus) {
       shouldSave = true;
     }
     balls.push(ball);
@@ -265,6 +269,20 @@ export function updateBallLifecycleStatus(
     saveLedger(next);
   }
   return next;
+}
+
+export function applyBallLifecycleAction(
+  ledger: HappyBallLedger,
+  id: string,
+  action: BallLifecycleAction,
+  persist = true,
+): HappyBallLedger {
+  const target = ledger.balls.find((ball) => ball.id === id);
+  if (!target) {
+    return ledger;
+  }
+  const nextStatus = resolveBallLifecycleTransition(target.lifecycleStatus, action);
+  return nextStatus ? updateBallLifecycleStatus(ledger, id, nextStatus, persist) : ledger;
 }
 
 export function markReceiptCreated(ledger: HappyBallLedger, id: string, persist = true): HappyBallLedger {
@@ -616,7 +634,10 @@ function normalizeVisibility(value: unknown): HappyBall["visibility"] {
 }
 
 function normalizeLifecycleStatus(value: unknown): HappyBall["lifecycleStatus"] {
-  return value === "archived" || value === "memorial" || value === "offered" || value === "active" ? value : "active";
+  if (value === "archived" || value === "offered") {
+    return value;
+  }
+  return "active";
 }
 
 function readBoolean(value: unknown, fallback: boolean): boolean {

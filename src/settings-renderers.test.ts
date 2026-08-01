@@ -210,9 +210,9 @@ assert(ledgerListHtml.includes("発行者: エモ次郎"), "ledger list should s
 assert(ledgerListHtml.includes("送り手段: お預け"), "ledger list should show latest send method metadata");
 assert(ledgerListHtml.includes("data-clear-ledger-list-date"), "ledger list should offer a way back to all saved balls");
 assert(!ledgerListHtml.includes("現役"), "ledger list should omit the default active lifecycle label");
-assert(ledgerListHtml.includes('data-lifecycle-status="archived"'), "ledger list should render the archive/shimau action");
+assert(ledgerListHtml.includes('data-lifecycle-action="archive"'), "ledger list should render the archive/shimau action");
 assert(ledgerListHtml.includes(">しまう</button>"), "active balls should show the shimau action");
-assert(ledgerListHtml.includes('data-lifecycle-status="offered"'), "ledger list should render the kuyoh action");
+assert(ledgerListHtml.includes('data-lifecycle-action="offer"'), "ledger list should render the kuyoh action");
 assert(ledgerListHtml.includes('data-delete-ball-id="ball_20260703_sample"'), "ledger list should render the otakiage action");
 assert(ledgerListHtml.includes('data-descend-ball-id="ball_20260703_sample"'), "ledger list should render the kourin action");
 
@@ -220,10 +220,16 @@ const externalWorkspaceLedgerListHtml = renderLedgerList([sampleBall], sampleBal
 assert(externalWorkspaceLedgerListHtml.includes("ledger-actions"), "external-origin workspaces should retain every ledger action");
 
 const archivedLedgerListHtml = renderLedgerList([{ ...sampleBall, lifecycleStatus: "archived" }], sampleBall.id, { dateFilter: null });
-assert(archivedLedgerListHtml.includes('data-lifecycle-status="active"'), "archived balls should render the restore action");
+assert(archivedLedgerListHtml.includes('data-lifecycle-action="restore"'), "archived balls should render the restore action");
 assert(archivedLedgerListHtml.includes(">戻す</button>"), "archived balls should show the restore label");
 assert(!archivedLedgerListHtml.includes(">しまう</button>"), "archived balls should not show the shimau label");
 assert(archivedLedgerListHtml.includes("しまい中"), "archived balls should retain their exceptional lifecycle label");
+
+const offeredLedgerListHtml = renderLedgerList([{ ...sampleBall, lifecycleStatus: "offered" }], sampleBall.id, { dateFilter: null });
+assert(offeredLedgerListHtml.includes('data-lifecycle-action="restore"'), "offered balls should render the restore action");
+assert(!offeredLedgerListHtml.includes('data-lifecycle-action="archive"'), "offered balls should not render shimau");
+assert(!offeredLedgerListHtml.includes('data-lifecycle-action="offer"'), "offered balls should not render duplicate kuyoh");
+assert(offeredLedgerListHtml.includes("供養済み"), "offered balls should retain their lifecycle label");
 
 const emptyActivityLogPanelHtml = renderToolsPanel({
   appSettings: DEFAULT_APP_SETTINGS,

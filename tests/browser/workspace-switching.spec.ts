@@ -121,6 +121,48 @@ test("screen names cycle a received workspace without adding a main control", as
   await expect(page.locator("[data-open-panel='create']")).toHaveCount(1);
 });
 
+test("workspace management renames and deletes an external-origin environment", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    const store = JSON.parse(localStorage.getItem("happyBall.workspaces.v1") ?? "{}");
+    const self = store.workspaces[0];
+    store.workspaces.push({
+      ...self,
+      workspaceId: "workspace_manage00000000000000000000000000",
+      sourceWorkspaceId: "workspace_manage00000000000000000000000000",
+      role: "received",
+      displayName: "変更前",
+      ledger: {
+        ...self.ledger,
+        ledgerId: "ledger_manage000000000000000000000000000",
+        ownerProfile: { name: "変更前", nameBook: [] },
+        balls: [],
+      },
+    });
+    localStorage.setItem("happyBall.workspaces.v1", JSON.stringify(store));
+  });
+  await page.reload();
+  await page.locator("[data-calendar-open-panel='settings']").click();
+  await page.locator(".workspace-management > summary").click();
+
+  const nameInput = page.locator("[data-workspace-display-name]");
+  await expect(nameInput).toHaveValue("変更前");
+  await nameInput.fill("変更後");
+  await nameInput.press("Tab");
+  await expect.poll(() => page.evaluate(() => {
+    const store = JSON.parse(localStorage.getItem("happyBall.workspaces.v1") ?? "{}");
+    return store.workspaces.find((workspace: any) => workspace.role === "received")?.displayName;
+  })).toBe("変更後");
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.locator("[data-delete-workspace-id]").click();
+  await expect(page.locator("[data-workspace-display-name]")).toHaveCount(0);
+  expect(await page.evaluate(() => {
+    const store = JSON.parse(localStorage.getItem("happyBall.workspaces.v1") ?? "{}");
+    return store.workspaces.some((workspace: any) => workspace.role === "received");
+  })).toBe(false);
+});
+
 test("workspace import review can be cancelled without any storage mutation", async ({ page }) => {
   await page.goto("/");
   await page.locator("[data-calendar-open-panel='settings']").click();
@@ -297,7 +339,45 @@ test("the primary Ball List downloads an inclusive period without an arbitrary-b
   expect(payload.activityLog).toBeUndefined();
 });
 
-test("phone sharing keeps each date row horizontal and action text on one line", async ({ page }) => {
+test("PC and iPad keep readable sharing dates inside separate columns", async ({ page }, testInfo) => {
+  const isIpadWebKit = testInfo.project.name === "webkit";
+  const viewports = isIpadWebKit
+    ? [{ width: 768, height: 1024 }, { width: 1024, height: 768 }]
+    : [{ width: 1280, height: 800 }];
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await page.locator("[data-calendar-open-panel='dayList']").click();
+    await page.locator(".workspace-share-panel > summary").click();
+
+    const panelBox = await page.locator(".workspace-share-panel").boundingBox();
+    const from = page.locator("[name='workspace-share-from']");
+    const to = page.locator("[name='workspace-share-to']");
+    const [fromBox, toBox, fromLabelBox, toLabelBox] = await Promise.all([
+      from.boundingBox(),
+      to.boundingBox(),
+      from.locator("..").boundingBox(),
+      to.locator("..").boundingBox(),
+    ]);
+    expect(panelBox).not.toBeNull();
+    expect(fromBox).not.toBeNull();
+    expect(toBox).not.toBeNull();
+    expect(fromLabelBox).not.toBeNull();
+    expect(toLabelBox).not.toBeNull();
+    expect(fromBox!.x).toBeGreaterThanOrEqual(panelBox!.x);
+    expect(toBox!.x + toBox!.width).toBeLessThanOrEqual(panelBox!.x + panelBox!.width);
+    expect(fromBox!.x + fromBox!.width).toBeLessThan(toBox!.x);
+    expect(Math.abs(fromBox!.y - toBox!.y)).toBeLessThanOrEqual(1);
+    expect(fromBox!.x).toBeGreaterThanOrEqual(fromLabelBox!.x);
+    expect(fromBox!.x + fromBox!.width).toBeLessThanOrEqual(fromLabelBox!.x + fromLabelBox!.width);
+    expect(toBox!.x).toBeGreaterThanOrEqual(toLabelBox!.x);
+    expect(toBox!.x + toBox!.width).toBeLessThanOrEqual(toLabelBox!.x + toLabelBox!.width);
+    expect(parseFloat(await from.evaluate((element) => getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(19);
+    expect(parseFloat(await to.evaluate((element) => getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(19);
+  }
+});
+
+test("phone sharing keeps each readable date row horizontal and action text on one line", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 640 });
   await page.goto("/");
   await page.locator("[data-calendar-open-panel='dayList']").click();
@@ -312,6 +392,7 @@ test("phone sharing keeps each date row horizontal and action text on one line",
     expect(textBox).not.toBeNull();
     expect(Math.abs((inputBox!.y + inputBox!.height / 2) - (textBox!.y + textBox!.height / 2))).toBeLessThan(4);
     expect(inputBox!.x).toBeGreaterThan(textBox!.x + textBox!.width);
+    expect(parseFloat(await input.evaluate((element) => getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(19);
   }
 
   const shareAction = page.locator("[data-workspace-share-mode='share']");

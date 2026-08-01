@@ -128,6 +128,85 @@ test("a new ball stages its first descent and cancel or save applies the whole s
   await expect.poll(() => readLatestActivityAction(page)).toBe("descent-create");
 });
 
+test("edit discard, echo save, and correction save change only the final stored result", async ({ page }) => {
+  await page.goto("/");
+  await createBall(page, "編集前の玉");
+
+  await openFirstBallEdit(page);
+  await page.locator("#ball-edit-form textarea[name='note']").fill("保存しないメモ");
+  await page.locator(".ball-edit-dialog .authoring-surface-header [data-dialog-close]").click();
+  await expect(page.locator("[data-edit-unsaved-confirm]")).toBeVisible();
+  await page.locator("[data-edit-discard-close]").click();
+  await expect.poll(async () => (await readFirstStoredBall(page)).note).toBe("");
+
+  await openFirstBallEdit(page);
+  await page.locator("#ball-edit-form input[name='title']").fill("余韻保存後の玉");
+  await page.locator("#ball-edit-form button[type='submit']").click();
+  await expect(page.locator("[data-edit-save-echo]")).toBeVisible();
+  await page.locator("[data-edit-save-echo]").click();
+  await expect.poll(() => readFirstStoredBall(page)).toMatchObject({
+    title: "余韻保存後の玉",
+    emotionEcho: { title: "編集前の玉" },
+  });
+
+  await page.locator(".ball-detail-dialog [data-dialog-edit-ball-id]").first().click();
+  await page.locator("#ball-edit-form input[name='title']").fill("訂正保存後の玉");
+  await page.locator("#ball-edit-form button[type='submit']").click();
+  await expect(page.locator("[data-edit-save-correction]")).toBeVisible();
+  await page.locator("[data-edit-save-correction]").click();
+  await expect.poll(() => readFirstStoredBall(page)).toMatchObject({
+    title: "訂正保存後の玉",
+    emotionEcho: { title: "編集前の玉" },
+  });
+});
+
+test("editing descent GPS stays staged until the edit is saved", async ({ page }) => {
+  await page.addInitScript(() => {
+    const position = () => ({
+      coords: {
+        latitude: 35.681236,
+        longitude: 139.767125,
+        accuracy: 8,
+        altitude: null,
+        altitudeAccuracy: null,
+        heading: null,
+        speed: null,
+      },
+      timestamp: Date.now(),
+    }) as GeolocationPosition;
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition: (success: PositionCallback) => success(position()),
+        watchPosition: () => { throw new Error("finish test watch immediately"); },
+        clearWatch: () => undefined,
+      },
+    });
+  });
+  await page.goto("/");
+  await createBall(page, "GPS編集の玉");
+  await seedGpslessDescent(page);
+  await page.reload();
+
+  await openFirstBallEdit(page);
+  await page.locator("[data-descent-gps-record-id='descent_gpsless']").click();
+  await expect(page.locator("[data-descent-field='latitude']")).toHaveValue("35.681236");
+  await expect(page.locator("[data-descent-action-feedback]")).toHaveText("GPS取得できました");
+  await page.locator(".ball-edit-dialog .authoring-surface-header [data-dialog-close]").click();
+  await page.locator("[data-edit-discard-close]").click();
+  await expect.poll(async () => (await readFirstStoredBall(page)).descents[0].latitude ?? null).toBeNull();
+
+  await openFirstBallEdit(page);
+  await page.locator("[data-descent-gps-record-id='descent_gpsless']").click();
+  await page.locator("#ball-edit-form button[type='submit']").click();
+  await expect.poll(async () => (await readFirstStoredBall(page)).descents[0]).toMatchObject({
+    latitude: 35.681236,
+    longitude: 139.767125,
+    accuracyMeters: 8,
+  });
+  await expect.poll(() => readLatestActivityAction(page)).toBe("descent-gps-update");
+});
+
 async function createBall(page: Page, title: string): Promise<void> {
   await page.locator("[data-calendar-open-panel='create']").click();
   const form = page.locator("#ball-form");
@@ -171,6 +250,26 @@ async function seedTwoDescents(page: Page): Promise<void> {
     ];
     ball.descentBadgeCount = 2;
     ball.isKamiBall = false;
+    localStorage.setItem("happyBall.ledger.v1", JSON.stringify(ledger));
+  });
+}
+
+async function seedGpslessDescent(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const stored = localStorage.getItem("happyBall.ledger.v1");
+    if (!stored) {
+      throw new Error("created ledger is missing");
+    }
+    const ledger = JSON.parse(stored);
+    const ball = ledger.balls[0];
+    ball.descents = [{
+      id: "descent_gpsless",
+      sequence: 1,
+      recordedAt: "2026-07-15T08:00:00.000Z",
+      badgeAwarded: true,
+      memo: "あとでGPS",
+    }];
+    ball.descentBadgeCount = 1;
     localStorage.setItem("happyBall.ledger.v1", JSON.stringify(ledger));
   });
 }

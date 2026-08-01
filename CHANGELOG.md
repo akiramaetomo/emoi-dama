@@ -12,6 +12,57 @@ This project follows a lightweight changelog discipline:
 
 ## Unreleased
 
+## 0.10.0 - 2026-08-02
+
+- Promoted the accepted cross-screen sieve, persistent upper-surface control
+  bar, shared date-navigation controls, and responsive display polish since
+  `0.9.0` to the formal `0.10.0` Pages release.
+
+- Polished several compact display details: Ball List workspace-share dates now
+  remain in two contained columns on iPad without native-control overlap or
+  right-edge clipping, use larger date text on PC/iPad/phone, and show a readable
+  desktop calendar indicator; Emotion Play's period controls are shorter and
+  sit closer to its screen name; and the redundant explanatory subtitle was
+  removed from the `ふるい分け` menu.
+- Aligned Calendar month and Ball List day navigation with Emotion Play's
+  compact period controls. Both headers now keep their unchanged center text
+  close to shared 44px rounded SVG-chevron buttons, with a slightly stronger
+  translucent surface for readability on the Calendar and List backgrounds.
+- Added an always-visible common control bar to Ball Detail, Ball Edit, and
+  Settings. Users can now move directly to Emotion Play, Calendar, Ball List,
+  Settings, or create without closing through an intermediate screen. Dirty
+  edits retain the tapped destination through the existing correction/echo/
+  discard confirmation, while continue and Escape preserve the edit. The bar
+  remains fixed above the phone safe area and the page body scrolls beneath a
+  fixed header without rebuilding the paused Play canvas.
+- Fixed the shared sieve control so status and completion copy no longer
+  changes toolbar height or the Play physics boundary. The control is now a
+  quiet mesh icon outside the three-screen pill and directly beside Jutsu or
+  Calendar's marker display switch. Phone layouts now keep 2px between the
+  three-screen group, sieve, and adjacent Jutsu/display control while retaining
+  Create and Settings at the outer edges. On iPad/PC, all three primary screens
+  use common sieve/function/Settings slots, aligning Settings with Emotion Play
+  even when Ball List has no middle function.
+  It shares Jutsu's surface, foreground, and glow, lighting only for non-default
+  filters; matching status appears as a non-layout overlay
+  at the bottom of Play, Calendar, and Ball List. Its popover options and
+  full-screen dismiss backdrop are isolated from toolbar button styling, and
+  Calendar remains a single full-width column with status/marker labels at the
+  content area's lower edge and behind the open popover. Existing create,
+  primary-screen, Jutsu, and settings button treatments remain unchanged.
+- Added a shared `ふるい分け` popover to Emotion Play, Calendar, and Ball List.
+  `いつもの玉`, `しまい中`, `供養済み`, and `降臨` now call the same matching
+  memories into every screen, including physical Play balls and filtered month
+  markers, while keeping the choice through screen and workspace changes until
+  reload.
+- Added `戻す` for offered balls in Ball List, calm no-match states, accessible
+  selected-state controls, and reduced-motion-aware transitions. Viewing or
+  filtering never changes saved data, logs, backups, or sharing scope; legacy
+  `memorial` data now loads as `active` and is no longer re-written.
+- Fixed Play's `余韻光芒` setting so switching between disabled and enabled
+  states updates the actual Pixi echo visuals immediately while preserving the
+  existing physics world and ball positions.
+
 ## 0.9.0 - 2026-07-27
 
 - Promoted the accepted workspace-sharing, full workspace editing, and unified

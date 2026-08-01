@@ -15,6 +15,10 @@ assert(html.includes('class="primary-action panel-header-action"'), "create head
 assert(html.includes('type="submit" form="ball-form">保存</button>'), "create header action should submit the create form with the shared save label");
 assert(html.indexOf("panel-header-action") < html.indexOf('class="dialog-close"'), "create header should place its action before close in DOM and tab order");
 
+const settingsHtml = renderPanelOverlay("設定とデータ", "<div>設定本文</div>", "settings", undefined, '<div data-test-upper-bar></div>');
+assert(settingsHtml.includes("upper-control-surface"), "Settings should claim its own control surface when supplied");
+assert(settingsHtml.indexOf("surface-scroll-body") < settingsHtml.indexOf("data-test-upper-bar"), "Settings controls should follow the internal scroll region");
+
 function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);

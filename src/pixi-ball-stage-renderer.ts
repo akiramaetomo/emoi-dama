@@ -34,6 +34,7 @@ interface PixiBallVisual {
   root: Container;
   baseScale: number;
   rotatingCore: Sprite | null;
+  echoRoot: Container | null;
   rotatingEcho: Sprite | null;
   echoRotation: number;
   echoCurrentAngularVelocity: number;
@@ -105,11 +106,14 @@ export class PixiBallStageRenderer implements BallStageRenderer {
 
     for (const source of sources) {
       let visual = this.visuals.get(source.id);
+      const previousSource = previousById.get(source.id);
       if (!visual) {
         visual = this.createVisual(source);
         this.visuals.set(source.id, visual);
         this.app.stage.addChild(visual.root);
-      } else if (previousById.get(source.id)?.radius !== source.radius) {
+      } else if (previousSource && hasBallSourceAppearanceChanged(previousSource, source)) {
+        visual = this.replaceVisualPreservingTransform(source, visual);
+      } else if (previousSource?.radius !== source.radius) {
         visual.baseScale = source.radius / Math.max(this.radius, 1);
         visual.root.scale.set(visual.baseScale);
       }
@@ -294,6 +298,21 @@ export class PixiBallStageRenderer implements BallStageRenderer {
       : this.createFaithfulVisual(source);
   }
 
+  private replaceVisualPreservingTransform(source: VisualBallSource, previous: PixiBallVisual): PixiBallVisual {
+    const position = { x: previous.root.position.x, y: previous.root.position.y };
+    const rotation = previous.root.rotation;
+    const zIndex = previous.root.zIndex;
+    const next = this.createVisual(source);
+    next.root.position.set(position.x, position.y);
+    next.root.rotation = rotation;
+    next.root.zIndex = zIndex;
+    previous.root.removeFromParent();
+    previous.root.destroy({ children: true });
+    this.visuals.set(source.id, next);
+    this.app.stage.addChild(next.root);
+    return next;
+  }
+
   private syncFieldRenderingState(): void {
     this.field.dataset.ballDensity = this.densityMode;
     this.field.dataset.ballAppearance = this.appearanceProfile;
@@ -306,6 +325,7 @@ export class PixiBallStageRenderer implements BallStageRenderer {
     }
     this.app.canvas.dataset.ballLabelMode = this.settings.ballLabelMode;
     this.app.canvas.dataset.visibleBallLabelCount = `${Array.from(this.visuals.values()).filter((visual) => visual.labelVisible).length}`;
+    this.app.canvas.dataset.visibleEchoCount = `${Array.from(this.visuals.values()).filter((visual) => visual.echoRoot !== null).length}`;
   }
 
   private createDenseVisual(source: VisualBallSource): PixiBallVisual {
@@ -324,6 +344,7 @@ export class PixiBallStageRenderer implements BallStageRenderer {
       root,
       baseScale,
       rotatingCore: null,
+      echoRoot: null,
       rotatingEcho: null,
       echoRotation: 0,
       echoCurrentAngularVelocity: 0,
@@ -427,6 +448,7 @@ export class PixiBallStageRenderer implements BallStageRenderer {
       root,
       baseScale,
       rotatingCore: core,
+      echoRoot,
       rotatingEcho,
       echoRotation,
       echoCurrentAngularVelocity: echoIdleAngularVelocity,
@@ -1096,6 +1118,28 @@ function faithfulSurfaceSize(radius: number): number {
 
 function faithfulOverlaySize(radius: number): number {
   return Math.max(24, Math.ceil(radius * 2.9));
+}
+
+function hasBallSourceAppearanceChanged(previous: VisualBallSource, next: VisualBallSource): boolean {
+  return previous.ballId !== next.ballId
+    || previous.fragmentIndex !== next.fragmentIndex
+    || previous.hue !== next.hue
+    || previous.saturation !== next.saturation
+    || previous.lightness !== next.lightness
+    || previous.visualKind !== next.visualKind
+    || previous.lifecycleStatus !== next.lifecycleStatus
+    || previous.descentBadgeCount !== next.descentBadgeCount
+    || previous.isKamiBall !== next.isKamiBall
+    || !echoColorsEqual(previous.echo, next.echo);
+}
+
+function echoColorsEqual(previous: VisualBallSource["echo"], next: VisualBallSource["echo"]): boolean {
+  if (!previous || !next) {
+    return previous === next;
+  }
+  return previous.hue === next.hue
+    && previous.saturation === next.saturation
+    && previous.lightness === next.lightness;
 }
 
 function faithfulEchoSize(radius: number, strength: AppSettings["emotionEchoStrength"]): number {

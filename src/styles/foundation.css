@@ -1,0 +1,257 @@
+/* Base / Document */
+
+:root {
+  --color-app-bg: #111612;
+  --color-text-strong: #fff4de;
+  --color-text-muted: #b8d8ce;
+  --color-accent: #f0c06f;
+  --color-accent-soft: #f6dfb1;
+  --color-danger: #ffd8d0;
+  --color-danger-strong: #ffb5a8;
+  --surface-panel: rgba(10, 17, 15, 0.58);
+  --surface-panel-soft: rgba(8, 14, 12, 0.46);
+  --border-panel-subtle: rgba(244, 215, 160, 0.14);
+  --border-panel-strong: rgba(244, 215, 160, 0.24);
+  --authoring-group-background: rgba(255, 246, 218, 0.025);
+  --border-danger: rgba(255, 181, 168, 0.32);
+  --radius-panel: 8px;
+  --control-height: 50px;
+  --control-radius: var(--radius-panel);
+  --control-bg: rgba(9, 15, 13, 0.78);
+  --control-border: rgba(244, 215, 160, 0.22);
+  --control-focus-ring: rgba(240, 192, 111, 0.18);
+  --button-primary-bg: #c99545;
+  --button-ghost-bg: rgba(20, 32, 28, 0.76);
+  --close-control-size: 48px;
+  --close-control-offset: 12px;
+  --z-stage-ui: 8;
+  --z-reminder: 9;
+  --z-play-floating-ui: 10;
+  --z-panel: 18;
+  --z-calendar: 19;
+  --z-dialog: 20;
+  --layer-base: 0;
+  --layer-primary: 20;
+  --layer-modal: 30;
+  --layer-confirm: 40;
+  --layer-transient: 50;
+  --ui-ime-top: 0px;
+  --ui-ime-height: 100vh;
+  --app-viewport-height: 100vh;
+  --app-visible-height: 100vh;
+  color: #f5ead8;
+  background: var(--color-app-bg);
+  font-family:
+    "Inter", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", Meiryo, system-ui,
+    sans-serif;
+  font-synthesis: none;
+  line-height: 1.5;
+  text-rendering: optimizeLegibility;
+  --readable-xs: 1.05rem;
+  --readable-sm: 1.2rem;
+  --readable-md: 1.24rem;
+  --readable-lg: 1.35rem;
+  --ball-label-size: 1.2rem;
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --app-viewport-height: 100dvh;
+    --app-visible-height: 100dvh;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: var(--app-viewport-height);
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--color-app-bg);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: var(--app-viewport-height);
+  overflow: hidden;
+  overscroll-behavior: none;
+  font-size: 1.15rem;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--color-app-bg);
+}
+
+.ui-layer {
+  position: fixed;
+  inset: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ui-base-layer {
+  z-index: var(--layer-base);
+}
+
+.ui-primary-layer {
+  z-index: var(--layer-primary);
+}
+
+.ui-modal-layer {
+  z-index: var(--layer-modal);
+}
+
+.ui-confirm-layer {
+  z-index: var(--layer-confirm);
+}
+
+.ui-transient-layer {
+  z-index: var(--layer-transient);
+  pointer-events: none;
+}
+
+.ui-layer[hidden] {
+  display: none;
+}
+
+.ui-layer-surface {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  touch-action: pan-y;
+}
+
+.ui-modal-layer > .ui-layer-surface:not(:last-child) {
+  visibility: hidden;
+}
+
+#app[data-ime-active="true"] .ui-layer[data-ime-owner="true"] {
+  top: var(--ui-ime-top);
+  bottom: auto;
+  height: var(--ui-ime-height);
+}
+
+#app[data-world-chrome="hidden"] .world-control-dock {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.app-interaction-surface,
+.app-interaction-surface *:not(input):not(textarea):not(select):not(option):not([contenteditable="true"]):not([data-text-selectable]) {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.app-interaction-surface input,
+.app-interaction-surface textarea,
+.app-interaction-surface [contenteditable="true"],
+.app-interaction-surface [data-text-selectable] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+button {
+  touch-action: manipulation;
+}
+
+.app-build-badge {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 5px);
+  left: calc(env(safe-area-inset-left, 0px) + 6px);
+  z-index: var(--layer-transient);
+  padding: 2px 5px;
+  border: 1px solid rgba(255, 244, 222, 0.24);
+  border-radius: 4px;
+  color: rgba(255, 244, 222, 0.78);
+  background: rgba(5, 9, 8, 0.62);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
+  pointer-events: none;
+  user-select: none;
+}
+
+.runtime-fault-banner {
+  position: fixed;
+  right: 12px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  display: grid;
+  gap: 2px;
+  max-width: min(360px, calc(100vw - 24px));
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 181, 168, 0.5);
+  border-radius: 8px;
+  background: rgba(45, 18, 16, 0.92);
+  color: var(--color-danger);
+  pointer-events: none;
+}
+
+.ui-debug-diagnostics {
+  position: fixed;
+  top: max(4px, env(safe-area-inset-top));
+  right: 4px;
+  left: auto;
+  z-index: 2147483647;
+  max-width: calc(100vw - 8px);
+  max-height: min(44vh, 320px);
+  overflow: hidden;
+  margin: 0;
+  padding: 5px 7px;
+  border: 1px solid rgba(255, 220, 120, 0.8);
+  border-radius: 5px;
+  background: rgba(4, 8, 7, 0.86);
+  color: #fff4c4;
+  font: 10px/1.25 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  user-select: none;
+}
+
+.loading-shell {
+  display: grid;
+  min-height: var(--app-viewport-height);
+  place-items: center;
+  background: var(--color-app-bg);
+  color: #f0d29a;
+  font-weight: 800;
+}
+
+.error-shell {
+  padding: 24px;
+  color: #8b3129;
+}
+
+.error-shell div {
+  display: grid;
+  gap: 12px;
+  max-width: 760px;
+}
+
+.error-shell pre {
+  max-height: 55vh;
+  white-space: pre-wrap;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
