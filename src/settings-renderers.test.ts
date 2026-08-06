@@ -160,6 +160,7 @@ const sampleBall: HappyBall = {
     lightness: 50,
     kind: "filled",
     label: "今日",
+    motionClass: "neutral",
   },
   lifecycleStatus: "active",
   createdAt: "2026-07-03T10:00:00.000Z",

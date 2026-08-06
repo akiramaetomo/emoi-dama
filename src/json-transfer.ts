@@ -6,6 +6,7 @@ import { looksLikeAppSettings, normalizeAppSettings, type AppSettings } from "./
 import { MAX_NAME_BOOK_ENTRIES } from "./storage.js";
 import { reviewWorkspaceShare, type WorkspaceShareReview } from "./workspace-transfer.js";
 import { normalizeWorkspaceStore, type HappyBallWorkspaceStore } from "./workspace.js";
+import { withLedgerMotionClasses } from "./ball-motion-class.js";
 
 export type ExportSection = "ledger" | "appSettings" | "categories" | "activityLog";
 export type JsonImportSection = ExportSection;
@@ -69,9 +70,9 @@ export function createExportPayload(
   };
 
   if (sections.includes("ledger")) {
-    payload.ledger = source.ledger;
+    payload.ledger = withLedgerMotionClasses(source.ledger);
     if (source.workspaceStore) {
-      payload.workspaceStore = source.workspaceStore;
+      payload.workspaceStore = withWorkspaceMotionClasses(source.workspaceStore);
     }
   }
   if (sections.includes("appSettings")) {
@@ -104,7 +105,17 @@ export function createDeviceBackupPayload(
     v: 1,
     type: DEVICE_BACKUP_TYPE,
     exportedAt,
-    workspaceStore,
+    workspaceStore: withWorkspaceMotionClasses(workspaceStore),
+  };
+}
+
+function withWorkspaceMotionClasses(store: HappyBallWorkspaceStore): HappyBallWorkspaceStore {
+  return {
+    ...store,
+    workspaces: store.workspaces.map((workspace) => ({
+      ...workspace,
+      ledger: withLedgerMotionClasses(workspace.ledger),
+    })),
   };
 }
 

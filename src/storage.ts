@@ -1,9 +1,10 @@
-import { getCategoryColorPreset } from "./categories.js";
+import { categoryColorPresets, type CategoryColorPreset } from "./categories.js";
 import { applyDescentRecordsToBall, normalizeDescentBadgeCount, normalizeDescentRecords } from "./descent.js";
 import { resolveBallLifecycleTransition, type BallLifecycleAction } from "./ball-lifecycle.js";
 import { normalizeBallTime, normalizeVisibilityValue, type BallVisualKind } from "./models.js";
 import type { BallDraft, HappyBall, HappyBallDescentRecord, HappyBallEmotionSnapshot, HappyBallLedger, HappyBallVisual, LifecycleStatus, NameBookEntry, NameRole } from "./models";
 import { createDurableId } from "./durable-id.js";
+import { isMotionClass, resolveMotionClass, resolveVisualMotionClass } from "./play-physics-classification.js";
 
 const STORAGE_KEY = "happyBall.ledger.v1";
 const LEDGER_TYPE = "happy-ball-ledger";
@@ -23,6 +24,7 @@ export interface NewBallOptions {
   createdAt?: string;
   descents?: HappyBallDescentRecord[];
   persist?: boolean;
+  categories?: readonly CategoryColorPreset[];
 }
 
 export function todayIsoDate(date = new Date()): string {
@@ -136,14 +138,14 @@ export function saveLedger(ledger: HappyBallLedger): void {
 
 export function createPendingBall(ledger: HappyBallLedger, draft: BallDraft, options: NewBallOptions = {}): HappyBall {
   const createdAt = options.createdAt ?? new Date().toISOString();
-  const ball = createBall(draft, createdAt, getPrimarySelfName(ledger), options.id);
+  const ball = createBall(draft, createdAt, getPrimarySelfName(ledger), options.id, options.categories);
   return applyDescentRecordsToBall(ball, options.descents ?? [], createdAt);
 }
 
 export function addBall(ledger: HappyBallLedger, draft: BallDraft, options: NewBallOptions = {}): HappyBallLedger {
   const now = new Date().toISOString();
   const createdAt = options.createdAt ?? now;
-  const baseBall = createBall(draft, createdAt, getPrimarySelfName(ledger), options.id);
+  const baseBall = createBall(draft, createdAt, getPrimarySelfName(ledger), options.id, options.categories);
   const ball = applyDescentRecordsToBall(baseBall, options.descents ?? [], now);
   const next: HappyBallLedger = {
     ...ledger,
@@ -184,6 +186,7 @@ export function updateBall(
   saveMode: BallSaveMode = "withEcho",
   descents?: HappyBallDescentRecord[],
   persist = true,
+  categories: readonly CategoryColorPreset[] = categoryColorPresets,
 ): HappyBallLedger {
   const now = new Date().toISOString();
   let updated = false;
@@ -192,7 +195,7 @@ export function updateBall(
       return ball;
     }
     updated = true;
-    const editedBall = updateExistingBall(ball, draft, now, saveMode);
+    const editedBall = updateExistingBall(ball, draft, now, saveMode, categories);
     return descents === undefined ? editedBall : applyDescentRecordsToBall(editedBall, descents, now);
   });
   if (!updated) {
@@ -380,10 +383,17 @@ function createEmptyLedger(): HappyBallLedger {
   };
 }
 
-function createBall(draft: BallDraft, now: string, localSelfName: string, forcedId?: string): HappyBall {
+function createBall(
+  draft: BallDraft,
+  now: string,
+  localSelfName: string,
+  forcedId?: string,
+  categories: readonly CategoryColorPreset[] = categoryColorPresets,
+): HappyBall {
   const subject = draft.subject.trim() || localSelfName || DEFAULT_SAMPLE_NAME;
   const title = draft.title.trim() || "小さなえもいゴト";
-  const category = draft.category.trim() || "日常";
+  const requestedCategory = draft.category.trim() || "日常";
+  const category = getCategoryDefinition(requestedCategory, categories).name;
   const note = draft.note.trim();
   const enteredBy = localSelfName || subject || DEFAULT_SAMPLE_NAME;
   const issuedBy = subject;
@@ -406,7 +416,7 @@ function createBall(draft: BallDraft, now: string, localSelfName: string, forced
     category,
     note,
     visibility: draft.visibility,
-    visual: createBallVisual(id, title, category),
+    visual: createBallVisual(id, title, category, categories),
     descents: [],
     descentBadgeCount: 0,
     isKamiBall: false,
@@ -416,10 +426,19 @@ function createBall(draft: BallDraft, now: string, localSelfName: string, forced
   };
 }
 
-function updateExistingBall(ball: HappyBall, draft: BallDraft, now: string, saveMode: BallSaveMode): HappyBall {
+function updateExistingBall(
+  ball: HappyBall,
+  draft: BallDraft,
+  now: string,
+  saveMode: BallSaveMode,
+  categories: readonly CategoryColorPreset[],
+): HappyBall {
   const subject = draft.subject.trim() || ball.subject || DEFAULT_SAMPLE_NAME;
   const title = draft.title.trim() || "小さなえもいゴト";
-  const category = draft.category.trim() || "日常";
+  const requestedCategory = draft.category.trim() || "日常";
+  const category = requestedCategory === ball.category
+    ? ball.category
+    : getCategoryDefinition(requestedCategory, categories).name;
   const note = draft.note.trim();
   const issuedBy = subject;
   const approvedBy = draft.issuerType === "self" ? null : subject;
@@ -437,7 +456,7 @@ function updateExistingBall(ball: HappyBall, draft: BallDraft, now: string, save
     category,
     note,
     visibility: draft.visibility,
-    visual: updateVisualForDraft(ball, title, category),
+    visual: updateVisualForDraft(ball, title, category, categories),
     emotionEcho: saveMode === "withEcho" ? createEmotionSnapshot(ball, now) : ball.emotionEcho,
     updatedAt: now,
   };
@@ -528,7 +547,7 @@ function createEmotionSnapshot(ball: HappyBall, recordedAt: string): HappyBallEm
     category: ball.category,
     note: ball.note,
     visibility: ball.visibility,
-    visual: { ...ball.visual },
+    visual: { ...ball.visual, motionClass: resolveVisualMotionClass(ball.visual) },
   };
 }
 
@@ -667,7 +686,14 @@ function normalizeVisual(
   const label = existingLabel && Array.from(existingLabel).length >= 4
     ? Array.from(existingLabel).slice(0, 4).join("")
     : createVisualLabel(ball.title, ball.category);
-  return { hue, saturation, lightness, kind, label };
+  return {
+    hue,
+    saturation,
+    lightness,
+    kind,
+    ...(isMotionClass(visual?.motionClass) ? { motionClass: visual.motionClass } : {}),
+    label,
+  };
 }
 
 function normalizeSnapshotVisual(visual: Partial<HappyBallVisual> | undefined, title: string, category: string): HappyBallVisual | null {
@@ -691,7 +717,14 @@ function normalizeSnapshotVisual(visual: Partial<HappyBallVisual> | undefined, t
   const label = existingLabel
     ? Array.from(existingLabel).slice(0, 4).join("")
     : createVisualLabel(title, category);
-  return { hue, saturation, lightness, kind, label };
+  return {
+    hue,
+    saturation,
+    lightness,
+    kind,
+    ...(isMotionClass(visual.motionClass) ? { motionClass: visual.motionClass } : {}),
+    label,
+  };
 }
 
 function hasValidVisual(visual: Partial<HappyBallVisual> | undefined): boolean {
@@ -733,31 +766,54 @@ function normalizeStringArray(value: unknown): string[] {
     .map((item) => item.trim());
 }
 
-function createBallVisual(_id: string, title: string, category: string): HappyBallVisual {
-  const preset = getCategoryColorPreset(category);
+function createBallVisual(
+  _id: string,
+  title: string,
+  category: string,
+  categories: readonly CategoryColorPreset[],
+): HappyBallVisual {
+  const preset = getCategoryDefinition(category, categories);
   return {
     hue: preset.hue,
     saturation: preset.saturation,
     lightness: preset.lightness,
     kind: preset.visualKind,
+    motionClass: resolveMotionClass(preset.tone, preset.visualKind),
     label: createVisualLabel(title, category),
   };
 }
 
-function updateVisualForDraft(ball: HappyBall, title: string, category: string): HappyBallVisual {
+function updateVisualForDraft(
+  ball: HappyBall,
+  title: string,
+  category: string,
+  categories: readonly CategoryColorPreset[],
+): HappyBallVisual {
   const label = createVisualLabel(title, category);
   if (category === ball.category) {
-    return { ...ball.visual, label };
+    return { ...ball.visual, motionClass: resolveVisualMotionClass(ball.visual), label };
   }
 
-  const preset = getCategoryColorPreset(category);
+  const preset = getCategoryDefinition(category, categories);
   return {
     hue: preset.hue,
     saturation: preset.saturation,
     lightness: preset.lightness,
     kind: preset.visualKind,
+    motionClass: resolveMotionClass(preset.tone, preset.visualKind),
     label,
   };
+}
+
+function getCategoryDefinition(
+  category: string,
+  categories: readonly CategoryColorPreset[],
+): CategoryColorPreset {
+  const preset = categories.find((item) => item.name === category) ?? categories[0];
+  if (!preset) {
+    throw new Error("Category definitions are required to assign visual identity.");
+  }
+  return preset;
 }
 
 function normalizeVisualKind(value: unknown): BallVisualKind {

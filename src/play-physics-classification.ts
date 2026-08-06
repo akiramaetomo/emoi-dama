@@ -1,6 +1,7 @@
 import type { CategoryTone, CategoryVisualKind } from "./categories.js";
+import type { BallMotionClass, BallVisualKind } from "./models.js";
 
-export type MotionClass = "dark" | "neutral" | "bright" | "ring";
+export type MotionClass = BallMotionClass;
 export type PlayGravityMode = "free" | "fixed-down";
 export type PlayInteractionMode = "grab" | "parent";
 export type PlayFragmentationMode = "count-limit" | "fill";
@@ -68,6 +69,35 @@ export function resolveMotionClass(tone: CategoryTone, visualKind: CategoryVisua
     return "ring";
   }
   return tone === "dark" ? "dark" : tone === "bright" ? "bright" : "neutral";
+}
+
+export function isMotionClass(value: unknown): value is MotionClass {
+  return value === "bright" || value === "dark" || value === "neutral" || value === "ring";
+}
+
+export function deriveLegacyMotionClass(visual: {
+  saturation: number;
+  lightness: number;
+  kind: BallVisualKind;
+}): MotionClass {
+  if (visual.kind === "ring") {
+    return "ring";
+  }
+  if (visual.lightness <= 40) {
+    return "dark";
+  }
+  return visual.saturation >= 40 ? "bright" : "neutral";
+}
+
+export function resolveVisualMotionClass(visual: {
+  saturation: number;
+  lightness: number;
+  kind: BallVisualKind;
+  motionClass?: unknown;
+}): MotionClass {
+  return isMotionClass(visual.motionClass)
+    ? visual.motionClass
+    : deriveLegacyMotionClass(visual);
 }
 
 export function getMotionProfile(

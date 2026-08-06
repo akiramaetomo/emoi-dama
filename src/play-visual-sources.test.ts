@@ -54,13 +54,26 @@ const knownVisual = planPlayVisualSources([
   createBall({
     id: "ball_known",
     category: "現在の暗色",
-    visual: { hue: 1, saturation: 2, lightness: 3, kind: "ring", label: "保存色" },
+    visual: { hue: 1, saturation: 2, lightness: 3, kind: "filled", label: "保存色", motionClass: "dark" },
   }),
 ], categories, "none", 42, "weak", new Map())[0]!;
 assertDeepEqual(
   pickVisual(knownVisual),
   { hue: 220, saturation: 45, lightness: 22, visualKind: "filled", motionClass: "dark" },
   "known categories should use the current preset and tone",
+);
+
+const reusedNameVisual = planPlayVisualSources([
+  createBall({
+    id: "ball_reused_name",
+    category: "現在の暗色",
+    visual: { hue: 301, saturation: 33, lightness: 44, kind: "ring", label: "保存色", motionClass: "ring" },
+  }),
+], categories, "none", 42, "weak", new Map())[0]!;
+assertDeepEqual(
+  pickVisual(reusedNameVisual),
+  { hue: 301, saturation: 33, lightness: 44, visualKind: "ring", motionClass: "ring" },
+  "a category name reused by another class should preserve the stored appearance and motion class",
 );
 
 const unknownVisual = planPlayVisualSources([
@@ -76,6 +89,19 @@ assertDeepEqual(
   "unknown categories should fall back to their stored snapshot and ring motion",
 );
 
+const legacyDarkVisual = planPlayVisualSources([
+  createBall({
+    id: "ball_legacy_dark",
+    category: "改名前の暗色",
+    visual: { hue: 220, saturation: 30, lightness: 24, kind: "filled", label: "保存色" },
+  }),
+], categories, "none", 42, "weak", new Map())[0]!;
+assertDeepEqual(
+  pickVisual(legacyDarkVisual),
+  { hue: 220, saturation: 30, lightness: 24, visualKind: "filled", motionClass: "dark" },
+  "legacy dark filled balls should recover dark motion from stored color without their category name",
+);
+
 const labelBall = createBall({
   id: "ball_labels",
   date: "2026-07-09",
@@ -89,12 +115,15 @@ assertLabel(labelBall, "name", "名前五文字", "label-medium");
 assertLabel(labelBall, "title", "12345678901234567", "label-xlong");
 assertLabel(createBall({ title: "123456789", visibility: "open" }), "title", "123456789", "label-long");
 
-const echo = createEcho({ category: "現在の輪" });
+const echo = createEcho({
+  category: "現在の輪",
+  visual: { hue: 280, saturation: 20, lightness: 35, kind: "ring", label: "余韻", motionClass: "ring" },
+});
 const activeEcho = planPlayVisualSources([createBall({ id: "ball_echo", emotionEcho: echo })], categories, "none", 42, "strong", new Map())[0]!;
 assert(activeEcho.echo !== null, "active balls should show an available echo when strength is enabled");
 assertDeepEqual(
   activeEcho.echo,
-  { hue: 145, saturation: 80, lightness: 52, kind: "ring" },
+  { hue: 145, saturation: 80, lightness: 52, kind: "ring", motionClass: "ring" },
   "echo display should use the current category preset",
 );
 assert(
@@ -182,7 +211,7 @@ function createBall(overrides: Partial<HappyBall> = {}): HappyBall {
     category: "現在の明色",
     note: "",
     visibility: "open",
-    visual: { hue: 10, saturation: 20, lightness: 30, kind: "filled", label: "保存色" },
+    visual: { hue: 10, saturation: 20, lightness: 30, kind: "filled", label: "保存色", motionClass: "bright" },
     lifecycleStatus: "active",
     createdAt: "2026-07-27T00:00:00.000Z",
     updatedAt: "2026-07-27T00:00:00.000Z",

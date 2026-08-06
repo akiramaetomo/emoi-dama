@@ -22,7 +22,7 @@ Open the prototype:
 https://akiramaetomo.github.io/emoi-dama/
 ```
 
-Current formal release: **0.10.0**. See [CHANGELOG.md](CHANGELOG.md) for the
+Current formal release: **0.10.1**. See [CHANGELOG.md](CHANGELOG.md) for the
 complete release history.
 
 ## Keep It As A Ball

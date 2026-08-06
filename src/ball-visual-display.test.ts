@@ -13,7 +13,8 @@ const storedVisual = {
   hue: 12,
   saturation: 34,
   lightness: 56,
-  kind: "ring" as const,
+  kind: "filled" as const,
+  motionClass: "neutral" as const,
   label: "旧配色",
 };
 
@@ -28,18 +29,28 @@ assert(current.lightness === dailyPreset.lightness, "known category should use c
 assert(current.kind === dailyPreset.visualKind, "known category should use current visual kind");
 assert(JSON.stringify(storedVisual) === before, "display resolution should not mutate the stored snapshot");
 
-const unknown = resolveDisplayVisual("廃止済みカテゴリ", storedVisual, categoryColorPresets);
-assert(unknown.hue === storedVisual.hue, "unknown category should preserve stored hue");
-assert(unknown.saturation === storedVisual.saturation, "unknown category should preserve stored saturation");
-assert(unknown.lightness === storedVisual.lightness, "unknown category should preserve stored lightness");
-assert(unknown.kind === storedVisual.kind, "unknown category should preserve stored kind");
+const storedDarkVisual = {
+  hue: 220,
+  saturation: 45,
+  lightness: 22,
+  kind: "filled" as const,
+  motionClass: "dark" as const,
+  label: "旧暗色",
+};
+const unknown = resolveDisplayVisual("廃止済みカテゴリ", storedDarkVisual, categoryColorPresets);
+assert(unknown.hue === storedDarkVisual.hue, "unknown category should preserve stored hue");
+assert(unknown.motionClass === "dark", "unknown category should preserve stored motion class");
+
+const reusedAcrossClasses = resolveDisplayVisual("日常", storedDarkVisual, categoryColorPresets);
+assert(reusedAcrossClasses.hue === storedDarkVisual.hue, "a name reused by another class should preserve stored hue");
+assert(reusedAcrossClasses.motionClass === "dark", "a name reused by another class should not change motion class");
 
 const ball = {
   category: "よろこび",
-  visual: storedVisual,
+  visual: { ...storedVisual, saturation: 70, motionClass: "bright" as const },
   emotionEcho: {
     category: "先々・期待",
-    visual: { ...storedVisual, kind: "filled" as const },
+    visual: { ...storedVisual, kind: "ring" as const, motionClass: "ring" as const },
   },
 } as Pick<HappyBall, "category" | "visual" | "emotionEcho">;
 const ballVisual = resolveBallDisplayVisual(ball, categoryColorPresets);

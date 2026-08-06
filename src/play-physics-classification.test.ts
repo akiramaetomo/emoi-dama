@@ -7,6 +7,7 @@ import {
   classificationSliderToRatio,
   createBatchFragmentationPlan,
   createFragmentationPlan,
+  deriveLegacyMotionClass,
   FILL_AREA_TARGET,
   fragmentRadius,
   getMotionProfile,
@@ -17,6 +18,7 @@ import {
   resolveClassificationGravityScale,
   resolveMotionClass,
   resolveParentDamping,
+  resolveVisualMotionClass,
   shouldThrowParent,
 } from "./play-physics-classification.js";
 
@@ -24,6 +26,28 @@ assert(resolveMotionClass("dark", "filled") === "dark", "dark filled categories 
 assert(resolveMotionClass("neutral", "filled") === "neutral", "neutral categories should use the flat profile");
 assert(resolveMotionClass("bright", "filled") === "bright", "bright categories should use the bright profile");
 assert(resolveMotionClass("bright", "ring") === "ring", "ring appearance should override tone");
+
+const historicalFilledColors = {
+  bright: [[40, 58], [42, 58], [48, 66], [54, 64], [62, 43], [64, 62], [64, 64], [67, 49], [68, 58], [70, 57], [71, 57], [73, 58]],
+  dark: [[44, 16], [41, 18], [0, 24], [44, 24], [50, 24], [42, 27], [28, 34], [34, 36], [36, 36], [38, 37], [30, 38], [32, 40]],
+  neutral: [[35, 48], [16, 50], [21, 51], [16, 52], [20, 52], [22, 54], [16, 55], [30, 55], [16, 58], [18, 60], [0, 65]],
+} as const;
+for (const [expected, colors] of Object.entries(historicalFilledColors)) {
+  for (const [saturation, lightness] of colors) {
+    assert(
+      deriveLegacyMotionClass({ saturation, lightness, kind: "filled" }) === expected,
+      `historical filled color S${saturation}/L${lightness} should recover ${expected}`,
+    );
+  }
+}
+assert(deriveLegacyMotionClass({ saturation: 100, lightness: 0, kind: "ring" }) === "ring", "legacy ring shape should always recover ring motion");
+assert(deriveLegacyMotionClass({ saturation: 100, lightness: 40, kind: "filled" }) === "dark", "legacy lightness 40 should stay on the dark boundary");
+assert(deriveLegacyMotionClass({ saturation: 40, lightness: 41, kind: "filled" }) === "bright", "legacy saturation 40 should stay on the bright boundary above dark lightness");
+assert(deriveLegacyMotionClass({ saturation: 39, lightness: 41, kind: "filled" }) === "neutral", "legacy color below both boundaries should recover neutral");
+assert(
+  resolveVisualMotionClass({ saturation: 0, lightness: 100, kind: "filled", motionClass: "dark" }) === "dark",
+  "an explicit motion class should remain authoritative even when its stored color crosses legacy boundaries",
+);
 
 const expectedProfiles = {
   dark: { density: 2, dampingMultiplier: 0.5 },

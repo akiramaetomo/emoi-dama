@@ -1,4 +1,6 @@
 import type { HappyBall, HappyBallLedger } from "./models";
+import { categoryColorPresets } from "./categories.js";
+import { resolveMotionClass } from "./play-physics-classification.js";
 import { addBall, clearBallData, createDefaultDraft, createPendingBall, DEFAULT_SAMPLE_NAME, loadLedger, normalizeStoredLedger, refreshCreateDraftForOpen, resetNameBook, updateBall, updateBallLifecycleStatus, updateNameBook } from "./storage.js";
 
 Object.defineProperty(globalThis, "localStorage", {
@@ -131,6 +133,87 @@ assertEqual(emptyRecovery.rejectedBallCount, 0, "invalid ledger envelope should 
 const defaultDraft = createDefaultDraft();
 assertEqual(defaultDraft.visibility, "open", "new ball drafts should default to memo-visible sharing");
 assert(typeof defaultDraft.time === "string", "new ball drafts should default to timestamp recording");
+
+const renamedCategories = categoryColorPresets.map((preset, index) => ({
+  ...preset,
+  name: `分類${index + 1}`,
+}));
+assertEqual(renamedCategories.length, 24, "the editable category catalog should retain all 24 fixed slots");
+for (const [index, preset] of renamedCategories.entries()) {
+  const renamedDraft = {
+    ...defaultDraft,
+    title: `分類確認${index + 1}`,
+    category: preset.name,
+  };
+  const categorizedBall = createPendingBall(sampleLedger, renamedDraft, {
+    id: `ball_motion_class_${index}`,
+    createdAt: "2026-08-07T00:00:00.000Z",
+    categories: renamedCategories,
+  });
+  assertEqual(categorizedBall.visual.motionClass, resolveMotionClass(preset.tone, preset.visualKind), `renamed category slot ${index + 1} should save its fixed motion class`);
+  assertEqual(categorizedBall.visual.hue, preset.hue, `renamed category slot ${index + 1} should use its active workspace color`);
+  assertEqual(categorizedBall.visual.kind, preset.visualKind, `renamed category slot ${index + 1} should use its fixed shape`);
+}
+const externalWorkspaceDefaultBall = createPendingBall(sampleLedger, defaultDraft, {
+  id: "ball_external_workspace_default",
+  createdAt: "2026-08-07T00:00:00.000Z",
+  categories: renamedCategories,
+});
+assertEqual(externalWorkspaceDefaultBall.category, renamedCategories[0]!.name, "a stale default name should resolve to the active workspace's first selected slot");
+assertEqual(externalWorkspaceDefaultBall.visual.motionClass, "bright", "external workspace creation should never fall back to another environment's same-name category");
+
+const legacyDarkBall: HappyBall = {
+  ...sampleBall,
+  id: "ball_legacy_dark_motion",
+  category: "以前の暗色名",
+  visual: {
+    hue: 227,
+    saturation: 0,
+    lightness: 24,
+    kind: "filled",
+    label: "暗色保存",
+  },
+};
+const legacyDarkRecovery = normalizeStoredLedger({ ...sampleLedger, balls: [legacyDarkBall] });
+assert(!legacyDarkRecovery.shouldSave, "loading a valid legacy visual alone should not force a startup rewrite");
+assertEqual(legacyDarkRecovery.ledger.balls[0]?.visual.motionClass, undefined, "legacy motion class should remain implicit until a normal write path");
+const legacyDarkDraft = {
+  ...defaultDraft,
+  date: legacyDarkBall.date,
+  subject: legacyDarkBall.subject,
+  issuerType: legacyDarkBall.issuerType,
+  count: legacyDarkBall.count,
+  title: "暗色の文言だけ訂正",
+  category: legacyDarkBall.category,
+  note: legacyDarkBall.note,
+  visibility: legacyDarkBall.visibility,
+};
+const legacyDarkEdited = updateBall(
+  { ...sampleLedger, balls: [legacyDarkBall] },
+  legacyDarkBall.id,
+  legacyDarkDraft,
+  "withEcho",
+  undefined,
+  false,
+  renamedCategories,
+).balls[0]!;
+assertEqual(legacyDarkEdited.visual.motionClass, "dark", "an unchanged legacy category should persist the class recovered from its stored color");
+assertEqual(legacyDarkEdited.emotionEcho?.visual.motionClass, "dark", "an edit echo should retain the previous recovered class");
+assertEqual(legacyDarkEdited.visual.hue, legacyDarkBall.visual.hue, "an unchanged category edit should preserve stored color");
+
+const changedCategoryDraft = { ...legacyDarkDraft, category: renamedCategories[12]!.name };
+const recategorized = updateBall(
+  { ...sampleLedger, balls: [legacyDarkBall] },
+  legacyDarkBall.id,
+  changedCategoryDraft,
+  "withEcho",
+  undefined,
+  false,
+  renamedCategories,
+).balls[0]!;
+assertEqual(recategorized.visual.motionClass, "neutral", "selecting another fixed category slot should update the ball motion class");
+assertEqual(recategorized.visual.hue, renamedCategories[12]!.hue, "selecting another category should update color from the active workspace catalog");
+assertEqual(recategorized.emotionEcho?.visual.motionClass, "dark", "recategorizing should leave the echo in the previous motion class");
 
 const refreshedCreateDraft = refreshCreateDraftForOpen(
   { ...defaultDraft, date: "2026-07-01", time: "08:15" },

@@ -12,6 +12,16 @@ This project follows a lightweight changelog discipline:
 
 ## Unreleased
 
+## 0.10.1 - 2026-08-07
+
+- Fixed Play's four visual/physics families so editable category names no
+  longer reclassify motion. Balls now retain `bright`, `dark`, `neutral`, or
+  `ring` with their visual snapshot across edits, echoes, URL handoff,
+  workspace sharing, and JSON backup. Existing version-1 balls recover the
+  family deterministically from saved shape and H/S/L without a startup-only
+  rewrite; a category name reused in another family no longer changes either
+  the ball's appearance or its density, damping, and pseudo-buoyancy behavior.
+
 ## 0.10.0 - 2026-08-02
 
 - Promoted the accepted cross-screen sieve, persistent upper-surface control

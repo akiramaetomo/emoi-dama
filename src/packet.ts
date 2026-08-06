@@ -1,6 +1,8 @@
 import { isKnownVisibility, normalizeBallTime, normalizeVisibilityValue } from "./models.js";
 import type { HappyBall, HappyBallDescentRecord, SendMode } from "./models";
 import { normalizeDescentBadgeCount, normalizeDescentRecords } from "./descent.js";
+import { withBallMotionClass } from "./ball-motion-class.js";
+import { resolveVisualMotionClass } from "./play-physics-classification.js";
 
 export const PACKET_TYPE = "happy-ball-packet";
 
@@ -235,6 +237,18 @@ export function normalizePacketBall(value: unknown): HappyBall | null {
     return null;
   }
 
+  const normalizedVisual: HappyBall["visual"] = {
+    hue: clampHue(hue),
+    saturation: clampPercent(saturation, 8, 76),
+    lightness: clampPercent(lightness, 26, 72),
+    kind: value.visual.kind === "ring" ? "ring" : "filled",
+    label: Array.from(label).slice(0, 4).join(""),
+  };
+  normalizedVisual.motionClass = resolveVisualMotionClass({
+    ...normalizedVisual,
+    motionClass: value.visual.motionClass,
+  });
+
   const normalizedBall: HappyBall = {
     id,
     date,
@@ -251,13 +265,7 @@ export function normalizePacketBall(value: unknown): HappyBall | null {
     category,
     note: readString(value.note),
     visibility,
-    visual: {
-      hue: clampHue(hue),
-      saturation: clampPercent(saturation, 8, 76),
-      lightness: clampPercent(lightness, 26, 72),
-      kind: value.visual.kind === "ring" ? "ring" : "filled",
-      label: Array.from(label).slice(0, 4).join(""),
-    },
+    visual: normalizedVisual,
     lifecycleStatus,
     descents: normalizeDescentRecords(value.descents),
     descentBadgeCount: normalizeDescentBadgeCount(value.descentBadgeCount),
@@ -302,8 +310,9 @@ function toComparableBall(ball: HappyBall): Omit<HappyBall, "receiptCreatedAt" |
 }
 
 function sanitizeBallForPacket(ball: HappyBall, includeDescentGps: boolean): HappyBall {
+  const classifiedBall = withBallMotionClass(ball);
   const sanitized: HappyBall = {
-    ...ball,
+    ...classifiedBall,
     descents: normalizeDescentRecords(ball.descents).map((record) => projectDescentForHandoff(record, includeDescentGps)),
     descentBadgeCount: normalizeDescentBadgeCount(ball.descentBadgeCount),
     isKamiBall: ball.isKamiBall === true || normalizeDescentBadgeCount(ball.descentBadgeCount) >= 20,
@@ -348,6 +357,18 @@ function normalizePacketEmotionEcho(value: unknown): HappyBall["emotionEcho"] | 
     return undefined;
   }
 
+  const normalizedVisual: HappyBall["visual"] = {
+    hue: clampHue(hue),
+    saturation: clampPercent(saturation, 8, 76),
+    lightness: clampPercent(lightness, 26, 72),
+    kind: visual.kind === "ring" ? "ring" : "filled",
+    label: Array.from(label).slice(0, 4).join(""),
+  };
+  normalizedVisual.motionClass = resolveVisualMotionClass({
+    ...normalizedVisual,
+    motionClass: visual.motionClass,
+  });
+
   return {
     recordedAt: readString(value.recordedAt) || new Date().toISOString(),
     date: readString(value.date) || new Date().toISOString().slice(0, 10),
@@ -359,15 +380,10 @@ function normalizePacketEmotionEcho(value: unknown): HappyBall["emotionEcho"] | 
     category,
     note: readString(value.note),
     visibility: isKnownVisibility(value.visibility) ? normalizeVisibilityValue(value.visibility) : "category",
-    visual: {
-      hue: clampHue(hue),
-      saturation: clampPercent(saturation, 8, 76),
-      lightness: clampPercent(lightness, 26, 72),
-      kind: visual.kind === "ring" ? "ring" : "filled",
-      label: Array.from(label).slice(0, 4).join(""),
-    },
+    visual: normalizedVisual,
   };
 }
+
 
 function encodeBase64Url(value: string): string {
   const bytes = new TextEncoder().encode(value);

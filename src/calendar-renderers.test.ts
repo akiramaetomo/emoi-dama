@@ -24,6 +24,7 @@ const sampleBall: HappyBall = {
     lightness: 50,
     kind: "filled",
     label: "今日",
+    motionClass: "neutral",
   },
   emotionEcho: {
     recordedAt: "2026-07-03T09:00:00.000Z",
@@ -41,6 +42,7 @@ const sampleBall: HappyBall = {
       lightness: 62,
       kind: "filled",
       label: "ひらめき",
+      motionClass: "bright",
     },
   },
   lifecycleStatus: "active",

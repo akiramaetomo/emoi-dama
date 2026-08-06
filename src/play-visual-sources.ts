@@ -1,6 +1,5 @@
 import { createBallDisplayLabel } from "./ball-labels.js";
 import {
-  findDisplayCategoryPreset,
   resolveBallDisplayVisual,
   resolveEchoDisplayVisual,
 } from "./ball-visual-display.js";
@@ -8,7 +7,6 @@ import type { PhysicsBallSnapshot, VisualBallSource } from "./ball-stage-rendere
 import type { CategoryColorPreset } from "./categories.js";
 import type { HappyBall } from "./models.js";
 import { sortNewestFirst } from "./play-population.js";
-import { resolveMotionClass } from "./play-physics-classification.js";
 import type { BallLabelMode, EmotionEchoStrength } from "./settings.js";
 
 export function planPlayVisualSources(
@@ -25,11 +23,6 @@ export function planPlayVisualSources(
       const label = createBallDisplayLabel(ball, labelMode);
       const baseInstanceId = `${ball.id}_${index}`;
       const visual = resolveBallDisplayVisual(ball, categories);
-      const category = findDisplayCategoryPreset(ball.category, categories);
-      const motionClass = resolveMotionClass(
-        category?.tone ?? (visual.kind === "ring" ? "future" : "neutral"),
-        visual.kind,
-      );
       return {
         id: baseInstanceId,
         ballId: ball.id,
@@ -38,7 +31,7 @@ export function planPlayVisualSources(
         fragmentGeneration: 0,
         fragmentOrdinal: 0,
         radius,
-        motionClass,
+        motionClass: visual.motionClass,
         hue: visual.hue,
         saturation: visual.saturation,
         lightness: visual.lightness,

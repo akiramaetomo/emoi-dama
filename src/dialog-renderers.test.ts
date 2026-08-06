@@ -66,11 +66,11 @@ const sampleBall: HappyBall = {
 const currentPaletteBall: HappyBall = {
   ...sampleBall,
   category: "よろこび",
-  visual: { ...sampleBall.visual, hue: 180, saturation: 10, lightness: 10, kind: "ring" },
+  visual: { ...sampleBall.visual, hue: 180, saturation: 50, lightness: 50, kind: "filled", motionClass: "bright" },
   emotionEcho: sampleBall.emotionEcho ? {
     ...sampleBall.emotionEcho,
     category: "先々・期待",
-    visual: { ...sampleBall.emotionEcho.visual, hue: 280, saturation: 10, lightness: 10, kind: "filled" },
+    visual: { ...sampleBall.emotionEcho.visual, hue: 280, saturation: 10, lightness: 10, kind: "ring", motionClass: "ring" },
   } : undefined,
 };
 const currentPaletteHtml = renderBallDialog(currentPaletteBall, context);

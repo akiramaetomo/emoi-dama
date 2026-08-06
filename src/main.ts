@@ -671,7 +671,7 @@ function setAriaCurrent(button: HTMLButtonElement | null, current: boolean): voi
 
 function renderActivePrimaryPanel(): string {
   if (uiState.primary === "create") {
-    createAuthoringBall ??= createPendingBall(ledger, draft);
+    createAuthoringBall ??= createPendingBall(ledger, draft, { categories: editableCategories });
     return renderPanelOverlay(
       "玉を置く",
       renderCreateForm(draft, getFormRenderContext(), createAuthoringBall),
@@ -1030,7 +1030,7 @@ function getImportDialogRenderContext() {
 function prepareCreateDraftForOpen(): void {
   createDraftBeforeOpen = { ...draft };
   draft = refreshCreateDraftForOpen(draft, displayAnchorDate);
-  createAuthoringBall = createPendingBall(ledger, draft);
+  createAuthoringBall = createPendingBall(ledger, draft, { categories: editableCategories });
 }
 
 function cancelCreateAuthoringSession(): void {
@@ -1373,6 +1373,7 @@ function saveBallEditForm(
     saveMode,
     nextDescents,
     getActiveWorkspace(workspaceStore).role === "self",
+    editableCategories,
   );
   const editedBall = ledger.balls.find((ball) => ball.id === editingId);
   if (editedBall) {
@@ -2111,12 +2112,13 @@ function bindEvents(root: ParentNode): void {
     submit: (_form, nextDraft, descents) => {
       audioEngine.unlock();
       draft = nextDraft;
-      const pendingBall = createAuthoringBall ?? createPendingBall(ledger, draft);
+      const pendingBall = createAuthoringBall ?? createPendingBall(ledger, draft, { categories: editableCategories });
       ledger = addBall(ledger, draft, {
         id: pendingBall.id,
         createdAt: pendingBall.createdAt,
         descents,
         persist: getActiveWorkspace(workspaceStore).role === "self",
+        categories: editableCategories,
       });
       const savedBall = ledger.balls[0] ?? null;
       if (savedBall) {
@@ -2415,12 +2417,13 @@ function createWorkingAuthoringBall(form: HTMLFormElement): HappyBall | null {
   const records = readEditedDescentRecords(form);
   const nextDraft = readAuthoringDraft(form, getAuthoringDraftDefaults());
   if (form.dataset.authoringMode === "create") {
-    const seed = createAuthoringBall ?? createPendingBall(ledger, nextDraft);
+    const seed = createAuthoringBall ?? createPendingBall(ledger, nextDraft, { categories: editableCategories });
     createAuthoringBall = seed;
     return createPendingBall(ledger, nextDraft, {
       id: seed.id,
       createdAt: seed.createdAt,
       descents: records,
+      categories: editableCategories,
     });
   }
   const ballId = form.dataset.editingBallId;

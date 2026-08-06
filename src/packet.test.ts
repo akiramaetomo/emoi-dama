@@ -3,6 +3,7 @@ import {
   createBallPacket,
   createLinePacketImportUrl,
   createPacketImportUrl,
+  encodePacket,
   parsePacketHash,
   parsePacketLocation,
   parsePacketQuery,
@@ -44,9 +45,39 @@ assertEqual(parsed.packet.items[0].title, sampleBall.title, "packet should prese
 assertEqual(parsed.packet.items[0].time, sampleBall.time, "packet should preserve ball timestamp text");
 assertEqual(parsed.packet.items[0].visual.label, "夕方の空", "packet should preserve Japanese visual label text");
 assertEqual(parsed.packet.items[0].visual.kind, "filled", "packet should preserve visual kind");
+assertEqual(parsed.packet.items[0].visual.motionClass, "bright", "packet output should make a legacy visual's recovered motion class explicit");
 assert(new URL(importUrl).hash.startsWith("#import="), "standard import URL should use a fragment payload");
 assert(!new URL(importUrl).searchParams.has("openExternalBrowser"), "standard import URL should not keep LINE query parameters");
 assert(!new URL(createPacketImportUrl(sampleBall, "https://example.test/happy-ball/?handoffDebug=1")).searchParams.has("handoffDebug"), "generated import URL should strip local handoff debug state");
+
+const rawLegacyDarkPacket = {
+  v: 1 as const,
+  type: "happy-ball-packet" as const,
+  mode: "append" as const,
+  exportedAt: "2026-08-07T00:00:00.000Z",
+  items: [{
+    ...sampleBall,
+    id: "ball_legacy_dark_packet",
+    category: "改名前の暗色",
+    visual: { hue: 227, saturation: 0, lightness: 24, kind: "filled" as const, label: "暗色保存" },
+    emotionEcho: {
+      recordedAt: "2026-08-06T00:00:00.000Z",
+      date: "2026-08-06",
+      subject: "自分",
+      issuerType: "self" as const,
+      count: 1,
+      title: "以前の先々",
+      category: "改名前のリング",
+      note: "",
+      visibility: "open" as const,
+      visual: { hue: 47, saturation: 15, lightness: 86, kind: "ring" as const, label: "先々" },
+    },
+  }],
+};
+const parsedRawLegacy = parsePacketHash(`#import=${encodePacket(rawLegacyDarkPacket)}`);
+assertOk(parsedRawLegacy, "a v1 packet without motionClass should remain importable");
+assertEqual(parsedRawLegacy.packet.items[0].visual.motionClass, "dark", "legacy packet input should recover dark from stored color without category-name lookup");
+assertEqual(parsedRawLegacy.packet.items[0].emotionEcho?.visual.motionClass, "ring", "legacy packet echo should recover ring from stored shape");
 
 const lineImportUrl = createLinePacketImportUrl(sampleBall, "https://example.test/happy-ball/?view=toy#import=old");
 const lineUrl = new URL(lineImportUrl);

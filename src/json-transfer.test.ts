@@ -122,6 +122,9 @@ assertEqual((exportPayload.appSettings as AppSettings | undefined)?.jutsuPhysics
 assertEqual(Boolean(exportPayload.categories), false, "export payload should omit unselected category data");
 assertEqual(Boolean(exportPayload.activityLog), true, "export payload should include selected activity log data");
 assertEqual((exportPayload.workspaceStore as HappyBallWorkspaceStore | undefined)?.workspaces.length, 1, "ledger backup should carry every stored workspace");
+assertEqual((exportPayload.ledger as HappyBallLedger | undefined)?.balls[0]?.visual.motionClass, "bright", "selective JSON export should persist a legacy ball's recovered motion class");
+assertEqual((exportPayload.workspaceStore as HappyBallWorkspaceStore | undefined)?.workspaces[0]?.ledger.balls[0]?.visual.motionClass, "bright", "workspace JSON export should persist motion class in every workspace ledger");
+assertEqual(sampleBall.visual.motionClass, undefined, "export enrichment should not mutate the in-memory legacy ball");
 
 const workspaceBackupReview = reviewJsonImport(exportPayload, "backup.json", existingLedger);
 assertEqual(workspaceBackupReview.workspaceStore?.workspaces.length, 1, "backup review should recognize a complete workspace store");
@@ -132,6 +135,7 @@ assertEqual(activityOnlyReview.error, "操作ログは復元対象外です。�
 const deviceBackupPayload = createDeviceBackupPayload(workspaceStore, "2026-06-29T12:34:56.000Z");
 assertEqual(deviceBackupPayload.type, "happy-ball-device-backup", "new backup should use a dedicated device-backup type");
 assertEqual(deviceBackupPayload.workspaceStore.workspaces.length, 1, "device backup should include every workspace");
+assertEqual(deviceBackupPayload.workspaceStore.workspaces[0]?.ledger.balls[0]?.visual.motionClass, "bright", "device backup should persist recovered motion class");
 assertEqual("activityLog" in deviceBackupPayload, false, "device backup should exclude operation logs");
 assertEqual(createDeviceBackupFileName(deviceBackupPayload.exportedAt), "emoi-dama-device-backup-20260629-123456.json", "device backup file name should be deterministic");
 const deviceBackupReview = reviewJsonImport(deviceBackupPayload, "device-backup.json", existingLedger);

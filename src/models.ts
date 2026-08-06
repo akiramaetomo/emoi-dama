@@ -4,6 +4,7 @@ export type LegacyVisibility = Visibility | "hidden";
 export type LifecycleStatus = "active" | "archived" | "offered";
 export type NameRole = "self" | "proxy";
 export type BallVisualKind = "filled" | "ring";
+export type BallMotionClass = "bright" | "dark" | "neutral" | "ring";
 export type SendMode = "formal" | "casual";
 
 export interface HappyBallVisual {
@@ -11,6 +12,7 @@ export interface HappyBallVisual {
   saturation: number;
   lightness: number;
   kind: BallVisualKind;
+  motionClass?: BallMotionClass;
   label: string;
 }
 

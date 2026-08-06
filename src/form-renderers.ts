@@ -412,7 +412,9 @@ function renderNamePresetSelect(selectedName: string, context: FormRenderContext
 
 function renderCurrentCategoryBadge(value: BallDraft | HappyBall, context: FormRenderContext): string {
   const preset = context.categories.find((item) => item.name === value.category);
-  const visual = preset ?? ("visual" in value ? resolveBallDisplayVisual(value, context.categories) : context.categories[0]);
+  const visual = "visual" in value
+    ? resolveBallDisplayVisual(value, context.categories)
+    : preset ?? context.categories[0];
   const visualStyle = visual ? renderDisplayVisualStyle(visual) : "";
 
   return `
@@ -425,13 +427,18 @@ function renderCurrentCategoryBadge(value: BallDraft | HappyBall, context: FormR
 
 function renderCategoryPalette(selectedCategory: string, context: FormRenderContext): string {
   const tones: CategoryTone[] = ["bright", "dark", "neutral", "future"];
-  const selected = context.categories.some((preset) => preset.name === selectedCategory)
+  const selectedIsCurrent = context.categories.some((preset) => preset.name === selectedCategory);
+  const selected = selectedIsCurrent
     ? selectedCategory
-    : context.categories[0]?.name ?? "日常";
+    : selectedCategory || context.categories[0]?.name || "日常";
+  const preservedLegacySelection = !selectedIsCurrent && selectedCategory
+    ? `<input type="radio" name="category" value="${escapeAttribute(selectedCategory)}" checked hidden data-preserved-category />`
+    : "";
 
   return `
     <fieldset class="category-palette">
       <legend>カテゴリ</legend>
+      ${preservedLegacySelection}
       ${tones.map((tone) => `
         <div class="category-tone">
           <span>${escapeHtml(toneLabels[tone])}</span>

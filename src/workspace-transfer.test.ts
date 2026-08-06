@@ -79,6 +79,8 @@ assert(bundle.bundleId === "bundle_09090909090909090909090909090909", "share bun
 assert(bundle.categories.length === categoryColorPresets.length, "share bundles should carry all category definitions");
 assert(bundle.appSettings.maxSpeed === DEFAULT_APP_SETTINGS.maxSpeed, "share bundles should carry all app settings");
 assert(bundle.type === "happy-ball-workspace-share" && bundle.ledger.balls.length === 1, "an all-selected workspace share should remain a one-workspace share schema");
+assert(bundle.ledger.balls[0]?.visual.motionClass === "bright", "workspace sharing should make recovered motion class explicit");
+assert(ball.visual.motionClass === undefined, "workspace sharing should not mutate a legacy source ball");
 const gpsBall = {
   ...ball,
   id: "ball_with_gps",
@@ -103,6 +105,21 @@ const gpsSharedBundle = createWorkspaceShareBundle({
 assert(gpsSharedBundle.ledger.balls[0].descents?.[0].latitude === 35.681236, "workspace share should retain GPS only when its sharing setting is on");
 const duplicateReview = reviewWorkspaceShare(bundle, [ball]);
 assert(duplicateReview?.review.duplicates.length === 1, "review should classify an identical existing ball as registered");
+const legacyDarkBundle = {
+  ...bundle,
+  bundleId: "bundle_legacy_dark",
+  ledger: {
+    ...bundle.ledger,
+    balls: [{
+      ...ball,
+      id: "ball_legacy_dark_share",
+      category: "改名前の暗色",
+      visual: { hue: 227, saturation: 0, lightness: 24, kind: "filled" as const, label: "暗色保存" },
+    }],
+  },
+};
+const legacyDarkReview = reviewWorkspaceShare(legacyDarkBundle, []);
+assert(legacyDarkReview?.bundle.ledger.balls[0]?.visual.motionClass === "dark", "workspace receiving should recover a missing class from stored color without category-name lookup");
 const conflictReview = reviewWorkspaceShare({ ...bundle, ledger: { ...bundle.ledger, balls: [{ ...ball, title: "変更" }] } }, [ball]);
 assert(conflictReview?.review.conflicts.length === 1, "review should classify same-ID changed content as a conflict");
 const laterBall = { ...ball, id: "ball_new_on_second_receive", title: "翌日の散歩", date: "2026-07-27" };

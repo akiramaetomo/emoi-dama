@@ -1,7 +1,10 @@
 import type { CategoryColorPreset } from "./categories.js";
 import type { HappyBall, HappyBallEmotionSnapshot, HappyBallVisual } from "./models.js";
+import { resolveMotionClass, resolveVisualMotionClass, type MotionClass } from "./play-physics-classification.js";
 
-export type DisplayVisual = Pick<HappyBallVisual, "hue" | "saturation" | "lightness" | "kind">;
+export type DisplayVisual = Pick<HappyBallVisual, "hue" | "saturation" | "lightness" | "kind"> & {
+  motionClass: MotionClass;
+};
 
 export function findDisplayCategoryPreset(
   category: string,
@@ -16,12 +19,17 @@ export function resolveDisplayVisual(
   categories: readonly CategoryColorPreset[],
 ): DisplayVisual {
   const preset = findDisplayCategoryPreset(category, categories);
-  if (!preset) {
+  const storedMotionClass = resolveVisualMotionClass(storedVisual);
+  const presetMotionClass = preset
+    ? resolveMotionClass(preset.tone, preset.visualKind)
+    : null;
+  if (!preset || presetMotionClass !== storedMotionClass) {
     return {
       hue: storedVisual.hue,
       saturation: storedVisual.saturation,
       lightness: storedVisual.lightness,
       kind: storedVisual.kind,
+      motionClass: storedMotionClass,
     };
   }
   return {
@@ -29,6 +37,7 @@ export function resolveDisplayVisual(
     saturation: preset.saturation,
     lightness: preset.lightness,
     kind: preset.visualKind,
+    motionClass: presetMotionClass,
   };
 }
 
@@ -42,6 +51,7 @@ export function resolveBallDisplayVisual(
       saturation: ball.visual.saturation,
       lightness: ball.visual.lightness,
       kind: ball.visual.kind,
+      motionClass: resolveVisualMotionClass(ball.visual),
     };
   }
   return resolveDisplayVisual(ball.category, ball.visual, categories);

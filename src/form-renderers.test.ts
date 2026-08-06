@@ -195,6 +195,14 @@ const unknownCategoryEditHtml = renderBallEditDialog({
 }, context);
 assert(unknownCategoryEditHtml.includes("--ball-hue: 17; --ball-saturation: 18%; --ball-lightness: 19%;"), "unknown edit category should show its stored snapshot");
 assert(unknownCategoryEditHtml.includes("edit-category-current"), "unknown edit category should retain the current-category badge");
+assert(unknownCategoryEditHtml.includes('name="category" value="改名前カテゴリ" checked hidden data-preserved-category'), "an unknown renamed category should remain the submitted value until the user selects another fixed slot");
+assert(countOccurrences(unknownCategoryEditHtml, 'name="category" value="よろこび" checked') === 0, "an unknown renamed category should not silently select the first current slot");
+
+const reusedCategoryNameEditHtml = renderBallEditDialog({
+  ...sampleBall,
+  visual: { ...sampleBall.visual, hue: 17, saturation: 60, lightness: 58, motionClass: "bright" },
+}, context);
+assert(reusedCategoryNameEditHtml.includes("--ball-hue: 17; --ball-saturation: 60%; --ball-lightness: 58%;"), "an edit badge should preserve stored appearance when the same category name now belongs to another class");
 
 const echoEditHtml = renderBallEditDialog({
   ...sampleBall,
