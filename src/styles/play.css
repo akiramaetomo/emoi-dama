@@ -631,6 +631,62 @@ h2 {
   cursor: grabbing;
 }
 
+.tamawari-popover h2,
+.tamawari-popover p {
+  margin: 0;
+}
+
+.tamawari-popover h2 {
+  color: #ffe77d;
+  font-size: 1rem;
+}
+
+.tamawari-treasure-examples {
+  display: flex;
+  min-height: 58px;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 7px;
+  border: 1px solid rgba(255, 231, 125, 0.28);
+  border-radius: 12px;
+  background: rgba(12, 29, 24, 0.62);
+}
+
+.tamawari-treasure-example {
+  font-size: 2.3rem;
+  line-height: 1;
+}
+
+.tamawari-empty-example,
+.tamawari-target-count,
+.tamawari-popover p {
+  color: rgba(239, 246, 241, 0.82);
+  font-size: 0.78rem;
+}
+
+.tamawari-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+
+.tamawari-actions button,
+.tamawari-start-button {
+  min-height: 38px;
+  border: 1px solid rgba(255, 225, 105, 0.38);
+  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(100, 76, 27, 0.92), rgba(38, 72, 59, 0.92));
+  color: #fff4c9;
+  font-weight: 900;
+}
+
+.tamawari-start-button:disabled {
+  cursor: not-allowed;
+  filter: grayscale(0.8);
+  opacity: 0.46;
+}
+
 .play-mode-drag-grip {
   position: sticky;
   top: 0;
@@ -1926,6 +1982,95 @@ button.ball-sieve-trigger:focus-visible,
 
 .stage.show-ball-labels .ball-label {
   display: flex;
+}
+
+.physics-ball.force-ball-label .ball-label {
+  display: flex;
+}
+
+.physics-ball.label-single-grapheme .ball-label {
+  padding: 3%;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", system-ui, sans-serif;
+  font-size: clamp(1.55rem, calc(var(--ball-label-size) * 2.35), 3.6rem);
+  font-weight: 400;
+  line-height: 1;
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
+.tamawari-reveal-ring,
+.tamawari-treasure-sparkles {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.tamawari-reveal-ring {
+  inset: -8%;
+  border: max(3px, 0.09em) solid rgba(66, 58, 72, 0.92);
+  border-radius: 50%;
+  box-shadow: 0 0 9px rgba(30, 24, 35, 0.55);
+}
+
+.physics-ball.tamawari-treasure .tamawari-reveal-ring {
+  border-color: rgba(255, 231, 111, 0.98);
+  box-shadow: 0 0 12px rgba(255, 224, 92, 0.9), 0 0 24px rgba(255, 224, 92, 0.52);
+}
+
+.physics-ball.tamawari-treasure {
+  filter: drop-shadow(0 0 10px rgba(255, 224, 92, 0.65));
+}
+
+.physics-ball.tamawari-miss {
+  filter: drop-shadow(0 0 8px rgba(24, 20, 29, 0.46));
+}
+
+.physics-ball.has-tamawari-result-aura::before {
+  position: absolute;
+  inset: -48%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(255, 246, 181, 0.3), rgba(255, 218, 83, 0.19) 43%, transparent 70%),
+    conic-gradient(from 12deg, transparent, rgba(255, 239, 154, 0.76), transparent 34%, rgba(240, 182, 53, 0.58), transparent 72%);
+  content: "";
+  filter: blur(10px) saturate(1.25);
+  opacity: 0.96;
+  pointer-events: none;
+  animation: tamawari-result-aura-turn 5.6s linear infinite;
+}
+
+.tamawari-treasure-sparkles {
+  inset: -26%;
+  display: grid;
+  place-items: center;
+  color: #fff3ad;
+  font-size: clamp(1.1rem, 4vw, 2rem);
+  text-shadow: -1.05em -0.7em 0 #ffe568, 1.05em -0.7em 0 #fff6bf, -1.05em 0.75em 0 #fff6bf, 1.05em 0.75em 0 #ffe568;
+}
+
+.tamawari-treasure-sparkles::before {
+  content: "✦";
+}
+
+.ball-field.is-tamawari-treasure-flash {
+  animation: tamawari-treasure-flash 1s ease-out;
+}
+
+@keyframes tamawari-treasure-flash {
+  0% { box-shadow: inset 0 0 0 999px rgba(255, 245, 166, 0.5); }
+  38% { box-shadow: inset 0 0 0 999px rgba(255, 238, 123, 0.22); }
+  100% { box-shadow: inset 0 0 0 999px rgba(255, 238, 123, 0); }
+}
+
+@keyframes tamawari-result-aura-turn {
+  to { transform: rotate(1turn); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .physics-ball.has-tamawari-result-aura::before,
+  .ball-field.is-tamawari-treasure-flash {
+    animation: none;
+  }
 }
 
 .physics-ball.label-short .ball-label {

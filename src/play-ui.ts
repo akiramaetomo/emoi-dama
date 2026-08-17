@@ -14,6 +14,7 @@ import {
 } from "./play-jutsu-menu.js";
 import type { PlayJutsuAction, PlayJutsuState } from "./play-jutsu-state.js";
 import type { BackgroundTexture, BallLabelMode } from "./settings.js";
+import type { DevicePlayMode, TamawariPhase } from "./tamawari.js";
 
 export type PlayDisclosure = "world" | "parent";
 
@@ -35,6 +36,12 @@ export interface PlayUiRenderContext {
   ballSieve: BallSieveUiState;
   ballSieveFeedback: string;
   sieveTransitioning: boolean;
+  devicePlayMode: DevicePlayMode;
+  tamawariPhase: TamawariPhase;
+  tamawariTreasureTitles: readonly string[];
+  tamawariTargetCount: number;
+  tamawariCanStart: boolean;
+  tamawariFeedback: string;
 }
 
 export interface PlayUiActionHandlers {
@@ -50,24 +57,35 @@ export interface PlayUiActionHandlers {
   openCalendarDayList: () => void;
   changeMenuPosition: (position: PlayMenuPosition) => void;
   changeDisclosure: (disclosure: PlayDisclosure, open: boolean) => void;
+  startTamawari: () => void;
+  resetTamawari: () => void;
+  endTamawari: () => void;
 }
 
 export interface PlayUiBinding {
   disconnect: () => void;
   syncBallLabelMode: (mode: BallLabelMode) => boolean;
   syncFeedback: (feedback: string) => void;
-  syncModeControls: (controlsOpen: boolean, jutsuState: PlayJutsuState) => void;
+  syncModeControls: (controlsOpen: boolean, jutsuState: PlayJutsuState, tamawariPlaying: boolean) => void;
 }
 
 export function renderPlaySurface(context: PlayUiRenderContext): string {
   const ballLabelMode = context.ballLabelMode;
+  const tamawariPlaying = context.devicePlayMode === "tamawari" && context.tamawariPhase === "playing";
+  const playModeActive = tamawariPlaying
+    || (context.devicePlayMode === "normal" && isPlayJutsuActive(context.jutsuState));
+  const playModeClasses = [
+    context.devicePlayMode === "tamawari" ? "is-tamawari-mode" : "",
+    playModeActive ? "is-on" : "",
+  ].filter(Boolean).join(" ");
+  const playLocked = tamawariPlaying ? " disabled aria-disabled=\"true\"" : "";
   return `
     <main class="app-shell ball-world-shell">
       <section class="stage ${ballLabelMode !== "none" ? "show-ball-labels" : ""} label-mode-${ballLabelMode}${context.sieveTransitioning ? " is-ball-sieve-transitioning" : ""}" aria-label="えもい玉">
         <div class="stage-topline">
           <div>
             ${context.workspaceScreenNameHtml}
-            ${renderPlayPeriodNav(context.displayMode, context.displayAnchorDate)}
+            ${renderPlayPeriodNav(context.displayMode, context.displayAnchorDate, tamawariPlaying)}
             <h1 id="stage-title">${escapeHtml(context.stageTitle)}</h1>
             ${context.populationStatusHtml}
             ${context.developmentDiagnostics ? `<p class="play-fragmentation-status" data-fragmentation-status aria-live="polite"></p>` : ""}
@@ -85,22 +103,22 @@ export function renderPlaySurface(context: PlayUiRenderContext): string {
           <div class="world-control-dock">
             <div class="world-actions app-control-bar" aria-label="コントロールバー">
             <span class="control-bar-left">
-              <button class="dock-symbol-button dock-create-button" type="button" data-open-panel="create" aria-label="玉を作る">${renderCreateBallIcon()}</button>
+              <button class="dock-symbol-button dock-create-button" type="button" data-open-panel="create" aria-label="玉を作る"${playLocked}>${renderCreateBallIcon()}</button>
             </span>
             <span class="primary-screen-control-group" aria-label="主要3画面">
-              <button class="calendar-main-ball-button ${ballLabelMode !== "none" ? "is-label-on" : ""}" type="button" data-cycle-ball-label-mode aria-current="page" aria-label="${escapeHtml(renderBallLabelModeCycleAriaLabel(ballLabelMode))}">
+              <button class="calendar-main-ball-button ${ballLabelMode !== "none" ? "is-label-on" : ""}" type="button" data-cycle-ball-label-mode aria-current="page" aria-label="${escapeHtml(renderBallLabelModeCycleAriaLabel(ballLabelMode))}"${playLocked}>
                 ${renderPlayScreenIcon()}
               </button>
-              <button class="calendar-screen-button" type="button" data-open-panel="calendar" aria-label="カレンダー">
+              <button class="calendar-screen-button" type="button" data-open-panel="calendar" aria-label="カレンダー"${playLocked}>
                 ${renderCalendarScreenIcon()}
               </button>
-              <button class="day-list-screen-button" type="button" data-open-calendar-day-list aria-label="玉リスト">
+              <button class="day-list-screen-button" type="button" data-open-calendar-day-list aria-label="玉リスト"${playLocked}>
                 <span class="day-list-screen-icon" aria-hidden="true"></span>
               </button>
             </span>
             <span class="control-bar-functions primary-screen-functions">
-              ${renderBallSieveControl(context.ballSieve)}
-              <button class="play-mode-button ${isPlayJutsuActive(context.jutsuState) ? "is-on" : ""}" type="button" data-toggle-play-modes aria-expanded="${context.controlsOpen}">術</button>
+              ${renderBallSieveControl(context.ballSieve, tamawariPlaying)}
+              <button class="play-mode-button${playModeClasses ? ` ${playModeClasses}` : ""}" type="button" data-toggle-play-modes aria-expanded="${context.controlsOpen}" aria-pressed="${playModeActive}">${context.devicePlayMode === "tamawari" ? "玉割" : "術"}</button>
               <button class="dock-symbol-button dock-settings-button" type="button" data-open-panel="settings" aria-label="設定">⚙</button>
             </span>
             </div>
@@ -206,6 +224,9 @@ export function bindPlayUiActions(
   });
   playSurface.querySelector<HTMLButtonElement>("[data-reset-ball-jutsu]")?.addEventListener("click", handlers.resetBallJutsu);
   playSurface.querySelector<HTMLButtonElement>("[data-disable-play-jutsu]")?.addEventListener("click", handlers.disableJutsu);
+  playSurface.querySelector<HTMLButtonElement>("[data-start-tamawari]")?.addEventListener("click", handlers.startTamawari);
+  playSurface.querySelector<HTMLButtonElement>("[data-reset-tamawari]")?.addEventListener("click", handlers.resetTamawari);
+  playSurface.querySelector<HTMLButtonElement>("[data-end-tamawari]")?.addEventListener("click", handlers.endTamawari);
   playSurface.querySelector<HTMLButtonElement>("[data-cycle-display-mode]")?.addEventListener("click", handlers.cycleDisplayMode);
   playSurface.querySelectorAll<HTMLButtonElement>("[data-shift-display-period]").forEach((button) => {
     button.addEventListener("click", () => handlers.shiftDisplayPeriod(
@@ -227,8 +248,8 @@ export function bindPlayUiActions(
     disconnect: popoverBinding.disconnect,
     syncBallLabelMode: (mode) => syncBallLabelModeControls(playSurface, mode),
     syncFeedback: (feedback) => syncPlayJutsuFeedback(playSurface, feedback),
-    syncModeControls: (controlsOpen, jutsuState) => {
-      syncPlayModeControls(playSurface, controlsOpen, jutsuState, popoverBinding.position);
+    syncModeControls: (controlsOpen, jutsuState, tamawariPlaying) => {
+      syncPlayModeControls(playSurface, controlsOpen, jutsuState, tamawariPlaying, popoverBinding.position);
     },
   };
 }
@@ -302,6 +323,9 @@ export function updatePlaySelectedSummary(root: ParentNode, summary: string): vo
 }
 
 function renderPlayModePopover(context: PlayUiRenderContext): string {
+  if (context.devicePlayMode === "tamawari") {
+    return renderTamawariPopover(context);
+  }
   const state = context.jutsuState;
   return `
     <div class="play-mode-popover" data-play-mode-popover role="dialog" aria-label="術の設定" ${context.controlsOpen ? "" : "hidden"}>
@@ -350,14 +374,41 @@ function renderPlayModePopover(context: PlayUiRenderContext): string {
   `;
 }
 
-function renderPlayPeriodNav(mode: DisplayMode, anchorDate: string): string {
+function renderTamawariPopover(context: PlayUiRenderContext): string {
+  const playing = context.tamawariPhase === "playing";
+  const examples = context.tamawariTreasureTitles.length > 0
+    ? context.tamawariTreasureTitles.map((title) => `<span class="tamawari-treasure-example">${escapeHtml(title)}</span>`).join("")
+    : '<span class="tamawari-empty-example">お宝タグの玉がありません</span>';
+  return `
+    <div class="play-mode-popover tamawari-popover" data-play-mode-popover role="dialog" aria-label="玉割" ${context.controlsOpen ? "" : "hidden"}>
+      <button class="play-mode-drag-grip" type="button" data-play-mode-drag-grip aria-label="玉割メニューを移動"></button>
+      <h2>玉割</h2>
+      ${playing ? `
+        <p>短くタップして開封。もう一度タップすると伏せます。</p>
+        <div class="tamawari-actions">
+          <button type="button" data-reset-tamawari>リセット</button>
+          <button type="button" data-end-tamawari>終了</button>
+        </div>
+      ` : `
+        <p>今回のお宝</p>
+        <div class="tamawari-treasure-examples" aria-label="お宝タイトルの見本">${examples}</div>
+        <p class="tamawari-target-count">対象 ${context.tamawariTargetCount} 個（最大50個）</p>
+        <button class="tamawari-start-button" type="button" data-start-tamawari${context.tamawariCanStart ? "" : " disabled aria-disabled=\"true\""}>開始</button>
+      `}
+      <p class="play-jutsu-feedback" data-tamawari-feedback aria-live="polite">${escapeHtml(context.tamawariFeedback)}</p>
+    </div>
+  `;
+}
+
+function renderPlayPeriodNav(mode: DisplayMode, anchorDate: string, disabled = false): string {
   const displayModeName = renderPlayDisplayModeName(mode);
   const nextDisplayModeName = renderPlayDisplayModeName(nextPlayDisplayMode(mode));
+  const disabledAttribute = disabled ? ' disabled aria-disabled="true"' : "";
   return `
     <div class="play-period-nav" aria-label="${escapeHtml(displayModeName)}表示の期間移動">
-      <button class="period-nav-button period-nav-button-previous" type="button" data-shift-display-period="-1" aria-label="前の${escapeHtml(displayModeName)}">${renderPeriodChevronIcon("previous")}</button>
-      <button class="stage-filter play-period-mode-button" type="button" data-cycle-display-mode aria-label="${escapeHtml(`表示期間: ${displayModeName}。押すと${nextDisplayModeName}に切り替え`)}">${escapeHtml(renderPlayDisplayRangeLabel(mode, anchorDate))}</button>
-      <button class="period-nav-button period-nav-button-next" type="button" data-shift-display-period="1" aria-label="次の${escapeHtml(displayModeName)}">${renderPeriodChevronIcon("next")}</button>
+      <button class="period-nav-button period-nav-button-previous" type="button" data-shift-display-period="-1" aria-label="前の${escapeHtml(displayModeName)}"${disabledAttribute}>${renderPeriodChevronIcon("previous")}</button>
+      <button class="stage-filter play-period-mode-button" type="button" data-cycle-display-mode aria-label="${escapeHtml(`表示期間: ${displayModeName}。押すと${nextDisplayModeName}に切り替え`)}"${disabledAttribute}>${escapeHtml(renderPlayDisplayRangeLabel(mode, anchorDate))}</button>
+      <button class="period-nav-button period-nav-button-next" type="button" data-shift-display-period="1" aria-label="次の${escapeHtml(displayModeName)}"${disabledAttribute}>${renderPeriodChevronIcon("next")}</button>
     </div>
   `;
 }
@@ -454,6 +505,7 @@ function syncPlayModeControls(
   root: ParentNode,
   controlsOpen: boolean,
   state: PlayJutsuState,
+  tamawariPlaying: boolean,
   position: () => void,
 ): void {
   const popover = root.querySelector<HTMLElement>("[data-play-mode-popover]");
@@ -465,8 +517,10 @@ function syncPlayModeControls(
     }
   }
   if (toggle) {
+    const playModeActive = tamawariPlaying || isPlayJutsuActive(state);
     toggle.setAttribute("aria-expanded", String(controlsOpen));
-    toggle.classList.toggle("is-on", isPlayJutsuActive(state));
+    toggle.setAttribute("aria-pressed", String(playModeActive));
+    toggle.classList.toggle("is-on", playModeActive);
   }
   root.querySelectorAll<HTMLButtonElement>("[data-play-gravity-mode]").forEach((button) => {
     button.classList.toggle("is-on", button.dataset.playGravityMode === state.gravityMode);

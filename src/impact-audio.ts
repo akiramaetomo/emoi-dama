@@ -1,5 +1,6 @@
 import type { ImpactEvent } from "./rapier-stage.js";
 import type { AppSettings } from "./settings.js";
+import type { TamawariRevealEffect } from "./tamawari.js";
 
 export const IMPACT_AUDIO_LIMITS = Object.freeze({
   maxVoices: 8,
@@ -16,6 +17,20 @@ const FILTER_FREQUENCY_HZ = 7400;
 const FILTER_Q = 0.4;
 const GAIN_FLOOR = 0.00001;
 const ATTACK_SECONDS = 0.008;
+
+export interface RevealCueProfile {
+  wave: OscillatorType;
+  startFrequencyHz: number;
+  endFrequencyHz: number;
+  durationSeconds: number;
+  decay: boolean;
+}
+
+export function getRevealCueProfile(effect: TamawariRevealEffect): RevealCueProfile {
+  return effect === "treasure"
+    ? { wave: "sine", startFrequencyHz: 880, endFrequencyHz: 880, durationSeconds: 1, decay: true }
+    : { wave: "square", startFrequencyHz: 50, endFrequencyHz: 50, durationSeconds: 0.3, decay: false };
+}
 
 export class TinyImpactAudio {
   private context: AudioContext | null = null;
@@ -83,6 +98,50 @@ export class TinyImpactAudio {
 
     if (selected.length > 0) {
       this.lastPlayedAt = nowMs;
+    }
+  }
+
+  playReveal(effect: TamawariRevealEffect, settings: AppSettings): void {
+    if (!settings.soundEnabled || settings.masterVolume <= 0 || this.voices >= IMPACT_AUDIO_LIMITS.maxVoices) {
+      return;
+    }
+    const context = this.getOpenContext();
+    if (!context || context.state !== "running") {
+      return;
+    }
+
+    try {
+      const profile = getRevealCueProfile(effect);
+      const start = context.currentTime;
+      const end = start + profile.durationSeconds;
+      const gainValue = Math.max(GAIN_FLOOR, settings.masterVolume * (effect === "treasure" ? 0.42 : 0.10));
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      this.voices += 1;
+      oscillator.type = profile.wave;
+      oscillator.frequency.setValueAtTime(profile.startFrequencyHz, start);
+      if (profile.endFrequencyHz !== profile.startFrequencyHz) {
+        oscillator.frequency.exponentialRampToValueAtTime(profile.endFrequencyHz, end);
+      }
+      gain.gain.setValueAtTime(GAIN_FLOOR, start);
+      gain.gain.exponentialRampToValueAtTime(gainValue, start + ATTACK_SECONDS);
+      if (profile.decay) {
+        gain.gain.exponentialRampToValueAtTime(GAIN_FLOOR, end);
+      } else {
+        gain.gain.setValueAtTime(gainValue, Math.max(start + ATTACK_SECONDS, end - 0.012));
+        gain.gain.exponentialRampToValueAtTime(GAIN_FLOOR, end);
+      }
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(start);
+      oscillator.stop(end);
+      oscillator.addEventListener("ended", () => {
+        this.voices = Math.max(0, this.voices - 1);
+        oscillator.disconnect();
+        gain.disconnect();
+      });
+    } catch (error) {
+      this.handleAudioFailure(error);
     }
   }
 

@@ -1,6 +1,7 @@
 import {
   BALL_LABEL_MAX_GRAPHEMES_PER_LINE,
   createBalancedBallLabelLayout,
+  isSingleGrapheme,
   splitGraphemes,
 } from "./ball-label-layout.js";
 
@@ -19,6 +20,16 @@ assert(truncated.lines.every((line) => splitGraphemes(line).length <= BALL_LABEL
 
 const familyEmoji = "👨🏻‍👩🏽‍👧🏿‍👦🏻";
 assert(splitGraphemes(familyEmoji).length === 1, "a joined emoji sequence should remain one grapheme");
+assert(isSingleGrapheme(familyEmoji), "a joined emoji sequence should qualify for the large item label");
+assert(isSingleGrapheme("🎂"), "one pictographic emoji should qualify for the large item label");
+assert(isSingleGrapheme("宝"), "one kanji should qualify for the large item label");
+assert(isSingleGrapheme("あ"), "one kana should qualify for the large item label");
+assert(isSingleGrapheme("A"), "one Latin character should qualify for the large item label");
+assert(isSingleGrapheme("  石  "), "surrounding whitespace should not prevent a one-grapheme label from qualifying");
+assert(!isSingleGrapheme("🎂🎂"), "two emoji should keep the normal label layout");
+assert(!isSingleGrapheme("宝石"), "two text graphemes should keep the normal label layout");
+assert(!isSingleGrapheme(""), "an empty label should not qualify for the large item label");
+assert(!isSingleGrapheme("   "), "a whitespace-only label should not qualify for the large item label");
 assertLines(`${familyEmoji}1234567`, [`${familyEmoji}123`, "4567"]);
 
 function assertLines(input: string, expected: string[]): void {

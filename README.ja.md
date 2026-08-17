@@ -20,7 +20,7 @@
 https://akiramaetomo.github.io/emoi-dama/
 ```
 
-現在の正式版は **0.10.1** です。詳しい更新履歴は
+現在の正式版は **0.11.0** です。詳しい更新履歴は
 [CHANGELOG.md](CHANGELOG.md) を参照してください。
 
 ## 玉として残す

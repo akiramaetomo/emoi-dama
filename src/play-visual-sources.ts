@@ -1,4 +1,5 @@
 import { createBallDisplayLabel } from "./ball-labels.js";
+import { isSingleGrapheme } from "./ball-label-layout.js";
 import {
   resolveBallDisplayVisual,
   resolveEchoDisplayVisual,
@@ -8,6 +9,12 @@ import type { CategoryColorPreset } from "./categories.js";
 import type { HappyBall } from "./models.js";
 import { sortNewestFirst } from "./play-population.js";
 import type { BallLabelMode, EmotionEchoStrength } from "./settings.js";
+import type { TamawariRevealEffect } from "./tamawari.js";
+
+export interface PlayVisualPresentation {
+  tamawariReveals?: ReadonlyMap<string, TamawariRevealEffect>;
+  tamawariPlaying?: boolean;
+}
 
 export function planPlayVisualSources(
   balls: readonly HappyBall[],
@@ -16,12 +23,15 @@ export function planPlayVisualSources(
   radius: number,
   emotionEchoStrength: EmotionEchoStrength,
   snapshots: ReadonlyMap<string, PhysicsBallSnapshot>,
+  presentation: PlayVisualPresentation = {},
 ): VisualBallSource[] {
   return sortNewestFirst(balls).flatMap((ball) => {
     const count = Math.max(1, Math.min(ball.count, 200));
     return Array.from({ length: count }, (_, index) => {
-      const label = createBallDisplayLabel(ball, labelMode);
       const baseInstanceId = `${ball.id}_${index}`;
+      const revealEffect = presentation.tamawariReveals?.get(baseInstanceId) ?? "none";
+      const forceLabel = revealEffect !== "none";
+      const label = forceLabel ? ball.title : createBallDisplayLabel(ball, labelMode);
       const visual = resolveBallDisplayVisual(ball, categories);
       return {
         id: baseInstanceId,
@@ -45,6 +55,10 @@ export function planPlayVisualSources(
         snapshot: snapshots.get(baseInstanceId) ?? null,
         label,
         labelClass: createBallLabelClass(label),
+        labelIsSingleGrapheme: isSingleGrapheme(label),
+        forceLabel,
+        revealEffect,
+        concealTitle: presentation.tamawariPlaying === true,
         title: ball.title,
       };
     });

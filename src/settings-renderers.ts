@@ -10,6 +10,7 @@ import { issuerLabels, type HappyBall, type LifecycleStatus, type NameBookEntry,
 import { DAMPING_SLIDER_RANGE, MOVEMENT_SETTING_RANGES, dampingValueToSlider } from "./motion-tuning.js";
 import { CLASSIFICATION_RATIO_SLIDER, classificationRatioToSlider } from "./play-physics-classification.js";
 import type { AppSettings, BackgroundTexture, EmotionEchoStrength, PhysicsSettingsProfile, StartupScreen } from "./settings.js";
+import type { DevicePlayMode } from "./tamawari.js";
 
 export interface ToolsPanelRenderContext {
   appSettings: AppSettings;
@@ -23,6 +24,7 @@ export interface ToolsPanelRenderContext {
   maxNameBookEntries: number;
   defaultSampleName: string;
   physicsSettingsProfile: PhysicsSettingsProfile;
+  devicePlayMode: DevicePlayMode;
   workspaces?: Array<{
     workspaceId: string;
     displayName: string;
@@ -158,6 +160,19 @@ export function renderToolsPanel(context: ToolsPanelRenderContext): string {
 
       <section class="settings-cluster settings-cluster-behavior" aria-labelledby="settings-cluster-behavior-title">
         <p class="settings-cluster-title" id="settings-cluster-behavior-title">玉のふるまい</p>
+      <details class="settings-group tamawari-settings"${renderDetailsOpen(context, "tamawari-settings")}>
+        <summary class="panel-title">
+          <h2>玉割</h2>
+        </summary>
+        <div class="tuning-section">
+          <label class="inline-toggle">
+            <input id="setting-tamawari-mode" type="checkbox" ${context.devicePlayMode === "tamawari" ? "checked" : ""} />
+            <span>玉割モード</span>
+          </label>
+          <p class="settings-copy">この端末だけの設定です。URL共有、利用環境、バックアップには含めません。</p>
+          <p class="settings-copy">ONにするとPlay画面の「術」が「玉割」に変わります。開始するまでは通常どおり操作できます。</p>
+        </div>
+      </details>
       <details class="settings-group physics-settings"${renderDetailsOpen(context, "physics-settings")}>
         <summary class="panel-title">
           <h2>物理パラメータ</h2>

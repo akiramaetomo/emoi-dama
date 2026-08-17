@@ -68,6 +68,8 @@
     "src/screen-navigation.test.ts",
     "src/startup-state.ts",
     "src/startup-state.test.ts",
+    "src/tamawari.ts",
+    "src/tamawari.test.ts",
     "src/authoring-ui-actions.ts",
     "src/form-renderers.ts",
     "src/form-renderers.test.ts",

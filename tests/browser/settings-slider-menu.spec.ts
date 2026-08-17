@@ -31,7 +31,7 @@ test("Settings uses three tinted two-pixel clusters instead of individual cards"
   await expect(clusters).toHaveCount(3);
   await expect(clusters.locator(":scope > .settings-cluster-title")).toHaveText(["玉の仕立て", "玉のふるまい", "管理"]);
   await expect(clusters.nth(0).locator(":scope > details.settings-group")).toHaveCount(4);
-  await expect(clusters.nth(1).locator(":scope > details.settings-group")).toHaveCount(2);
+  await expect(clusters.nth(1).locator(":scope > details.settings-group")).toHaveCount(3);
   await expect(clusters.nth(2).locator(":scope > details.settings-group")).toHaveCount(5);
 
   const clusterStyles = await clusters.evaluateAll((nodes) => nodes.map((node) => {

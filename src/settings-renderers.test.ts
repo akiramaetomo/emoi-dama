@@ -26,6 +26,7 @@ const defaultRenderContext = {
   maxNameBookEntries: 10,
   defaultSampleName: "エモ次郎",
   physicsSettingsProfile: "normal",
+  devicePlayMode: "normal",
 } satisfies ToolsPanelRenderContext;
 const html = renderToolsPanel(defaultRenderContext);
 const workspaceHtml = renderToolsPanel({
@@ -41,6 +42,7 @@ const workspaceHtml = renderToolsPanel({
 });
 
 assert(html.includes("<h2>バックアップ・復元</h2>"), "backup/restore group title should be rendered");
+assert(html.includes('id="setting-tamawari-mode"'), "device-only Tamawari mode should be rendered in settings");
 assert(workspaceHtml.includes("自分 / ID=ABC") && workspaceHtml.includes("/ 2件"), "workspace management should show the self display ID and ball count");
 assert(!workspaceHtml.includes("閲覧用") && !workspaceHtml.includes("閲覧専用"), "workspace management should not describe external origins as read-only");
 assert(html.includes('id="setting-startup-screen"'), "startup screen setting should be rendered");
@@ -95,7 +97,7 @@ assert(tailoringClusterHtml.includes(">玉の仕立て</p>"), "the first Setting
 assert(behaviorClusterHtml.includes(">玉のふるまい</p>"), "the second Settings cluster should be named ball behavior");
 assert(managementClusterHtml.includes(">管理</p>"), "the final Settings cluster should be named management");
 assertSettingsClusterMembership(tailoringClusterHtml, ["name-book-settings", "category-settings", "display-settings", "descent-settings"]);
-assertSettingsClusterMembership(behaviorClusterHtml, ["physics-settings", "sound-settings"]);
+assertSettingsClusterMembership(behaviorClusterHtml, ["tamawari-settings", "physics-settings", "sound-settings"]);
 assertSettingsClusterMembership(managementClusterHtml, ["workspace-management", "backup-settings", "ball-management-panel", "activity-log-panel", "app-about-panel"]);
 
 const physicsPanelHtml = readDetailsGroup(html, "physics-settings");
@@ -244,6 +246,7 @@ const emptyActivityLogPanelHtml = renderToolsPanel({
   maxNameBookEntries: 10,
   defaultSampleName: "エモ次郎",
   physicsSettingsProfile: "normal",
+  devicePlayMode: "normal",
 });
 assert(emptyActivityLogPanelHtml.includes("まだ操作ログはありません。"), "empty activity log panel should still show empty state");
 assert(emptyActivityLogPanelHtml.includes("操作ログの簡易仕様を見る"), "empty activity log panel should still expose help");
@@ -260,6 +263,7 @@ const openActivityLogHelpHtml = renderToolsPanel({
   maxNameBookEntries: 10,
   defaultSampleName: "エモ次郎",
   physicsSettingsProfile: "normal",
+  devicePlayMode: "normal",
 });
 assert(openActivityLogHelpHtml.includes('aria-expanded="true"'), "open activity log help should announce expanded state");
 assert(openActivityLogHelpHtml.includes("玉を置くだけの通常作成は、現在は操作ログに記録しません。"), "open activity log help should explain non-logged creation");

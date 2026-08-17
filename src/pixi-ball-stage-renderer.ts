@@ -24,17 +24,20 @@ import type {
 } from "./ball-stage-renderer.js";
 import type { AppSettings } from "./settings.js";
 import { DENSE_APPEARANCE_MAX_DIAMETER_PX } from "./play-population.js";
+import { resolveTamawariRevealAppearance } from "./tamawari.js";
 
 const MAX_RENDER_RESOLUTION = 3;
 const DEV5_ECHO_UNIFORM_WEIGHT = 0.3;
 const DEV5_ECHO_FIXED_PATTERN_WEIGHT = 0.4;
 const DEV5_ECHO_ROTATING_PATTERN_WEIGHT = 0.3;
+const TAMAWARI_AURA_STRENGTH: AppSettings["emotionEchoStrength"] = "strong";
 
 interface PixiBallVisual {
   root: Container;
   baseScale: number;
   rotatingCore: Sprite | null;
   echoRoot: Container | null;
+  auraKind: "stored-echo" | "tamawari-treasure" | null;
   rotatingEcho: Sprite | null;
   echoRotation: number;
   echoCurrentAngularVelocity: number;
@@ -120,10 +123,10 @@ export class PixiBallStageRenderer implements BallStageRenderer {
       if (this.appearanceProfile === "dense-gloss" || !visual.overlay) {
         continue;
       }
-      const showLabel = this.settings.ballLabelMode !== "none" && source.label.length > 0;
+      const showLabel = (source.forceLabel || this.settings.ballLabelMode !== "none") && source.label.length > 0;
       const labelKey = showLabel ? `${source.label}:${this.settings.ballLabelMode}` : "none";
       visual.overlay.texture = this.getTexture(
-        `overlay:${source.visualKind}:${source.lifecycleStatus}:${source.descentBadgeCount > 0}:${labelKey}:${roundRadius(this.radius)}`,
+        `overlay:${source.visualKind}:${source.lifecycleStatus}:${source.descentBadgeCount > 0}:${labelKey}:${source.labelIsSingleGrapheme}:${source.revealEffect}:${roundRadius(this.radius)}`,
         () => createFaithfulOverlayCanvas(source, this.radius, showLabel, this.renderResolution),
       );
       visual.labelVisible = showLabel;
@@ -293,7 +296,7 @@ export class PixiBallStageRenderer implements BallStageRenderer {
   }
 
   private createVisual(source: VisualBallSource): PixiBallVisual {
-    return this.appearanceProfile === "dense-gloss"
+    return this.appearanceProfile === "dense-gloss" && source.revealEffect === "none"
       ? this.createDenseVisual(source)
       : this.createFaithfulVisual(source);
   }
@@ -325,7 +328,8 @@ export class PixiBallStageRenderer implements BallStageRenderer {
     }
     this.app.canvas.dataset.ballLabelMode = this.settings.ballLabelMode;
     this.app.canvas.dataset.visibleBallLabelCount = `${Array.from(this.visuals.values()).filter((visual) => visual.labelVisible).length}`;
-    this.app.canvas.dataset.visibleEchoCount = `${Array.from(this.visuals.values()).filter((visual) => visual.echoRoot !== null).length}`;
+    this.app.canvas.dataset.visibleEchoCount = `${Array.from(this.visuals.values()).filter((visual) => visual.auraKind === "stored-echo").length}`;
+    this.app.canvas.dataset.visibleTamawariAuraCount = `${Array.from(this.visuals.values()).filter((visual) => visual.auraKind === "tamawari-treasure").length}`;
   }
 
   private createDenseVisual(source: VisualBallSource): PixiBallVisual {
@@ -345,6 +349,7 @@ export class PixiBallStageRenderer implements BallStageRenderer {
       baseScale,
       rotatingCore: null,
       echoRoot: null,
+      auraKind: null,
       rotatingEcho: null,
       echoRotation: 0,
       echoCurrentAngularVelocity: 0,
@@ -367,8 +372,40 @@ export class PixiBallStageRenderer implements BallStageRenderer {
     let rotatingEcho: Sprite | null = null;
     let echoRotation = 0;
     let echoIdleAngularVelocity = 0;
+    let auraKind: PixiBallVisual["auraKind"] = null;
+    const revealAppearance = resolveTamawariRevealAppearance(source.revealEffect);
 
-    if (source.echo && source.lifecycleStatus !== "archived") {
+    if (revealAppearance.resultAura === "treasure") {
+      auraKind = "tamawari-treasure";
+      echoRoot = new Container();
+      const appearance = deriveEchoAppearanceVariant(source.ballId, source.fragmentIndex);
+      const echoSize = faithfulEchoSize(this.radius, TAMAWARI_AURA_STRENGTH);
+      const baseAuraTexture = this.getTexture(
+        `tamawari-aura-base:${source.visualKind}:${roundRadius(this.radius)}:${appearance.basePatternVariant}:${appearance.intensityVariant}`,
+        () => createTamawariTreasureAuraBaseCanvas(source, this.radius, appearance, this.renderResolution),
+      );
+      const baseAura = createCenteredSprite(baseAuraTexture, echoSize, echoSize);
+      baseAura.rotation = appearance.baseOrientationStep * Math.PI / 4;
+      if (appearance.baseMirrored) {
+        baseAura.scale.x *= -1;
+      }
+      echoRoot.addChild(baseAura);
+
+      const accentAuraTexture = this.getTexture(
+        `tamawari-aura-accent:${source.visualKind}:${roundRadius(this.radius)}:${appearance.accentPatternVariant}:${appearance.accentLightnessOffset}:${appearance.accentSaturationOffset}`,
+        () => createTamawariTreasureAuraAccentCanvas(source, this.radius, appearance, this.renderResolution),
+      );
+      rotatingEcho = createCenteredSprite(accentAuraTexture, echoSize, echoSize);
+      echoRotation = appearance.accentOrientationStep * Math.PI / 4 + appearance.accentPhase;
+      echoIdleAngularVelocity = appearance.accentAngularVelocity;
+      rotatingEcho.rotation = echoRotation;
+      if (appearance.accentMirrored) {
+        rotatingEcho.scale.x *= -1;
+      }
+      echoRoot.addChild(rotatingEcho);
+      root.addChild(echoRoot);
+    } else if (revealAppearance.showStoredEcho && source.echo && source.lifecycleStatus !== "archived") {
+      auraKind = "stored-echo";
       echoRoot = new Container();
       const appearance = deriveEchoAppearanceVariant(source.ballId, source.fragmentIndex);
       const echoSize = faithfulEchoSize(this.radius, this.settings.emotionEchoStrength);
@@ -421,11 +458,11 @@ export class PixiBallStageRenderer implements BallStageRenderer {
     const core = createCenteredSprite(coreTexture, surfaceSize, surfaceSize);
     root.addChild(core);
 
-    const showLabel = this.settings.ballLabelMode !== "none" && source.label.length > 0;
+    const showLabel = (source.forceLabel || this.settings.ballLabelMode !== "none") && source.label.length > 0;
     const overlaySize = faithfulOverlaySize(this.radius);
     const labelKey = showLabel ? `${source.label}:${this.settings.ballLabelMode}` : "none";
     const overlayTexture = this.getTexture(
-      `overlay:${source.visualKind}:${source.lifecycleStatus}:${source.descentBadgeCount > 0}:${labelKey}:${roundRadius(this.radius)}`,
+      `overlay:${source.visualKind}:${source.lifecycleStatus}:${source.descentBadgeCount > 0}:${labelKey}:${source.labelIsSingleGrapheme}:${source.revealEffect}:${roundRadius(this.radius)}`,
       () => createFaithfulOverlayCanvas(source, this.radius, showLabel, this.renderResolution),
     );
     const overlay = createCenteredSprite(overlayTexture, overlaySize, overlaySize);
@@ -449,6 +486,7 @@ export class PixiBallStageRenderer implements BallStageRenderer {
       baseScale,
       rotatingCore: core,
       echoRoot,
+      auraKind,
       rotatingEcho,
       echoRotation,
       echoCurrentAngularVelocity: echoIdleAngularVelocity,
@@ -796,7 +834,10 @@ function createFaithfulOverlayCanvas(
     context.fillStyle = source.lifecycleStatus === "archived" ? "rgba(170,166,159,0.72)" : "rgba(255,255,255,0.8)";
     context.textAlign = "center";
     context.textBaseline = "middle";
-    drawBalancedBallLabel(context, source.label, center, radius);
+    drawBalancedBallLabel(context, source.label, center, radius, source.labelIsSingleGrapheme);
+  }
+  if (source.revealEffect !== "none") {
+    drawTamawariRevealDecoration(context, center, radius, source.revealEffect);
   }
   context.restore();
   return canvas;
@@ -1130,6 +1171,10 @@ function hasBallSourceAppearanceChanged(previous: VisualBallSource, next: Visual
     || previous.lifecycleStatus !== next.lifecycleStatus
     || previous.descentBadgeCount !== next.descentBadgeCount
     || previous.isKamiBall !== next.isKamiBall
+    || previous.label !== next.label
+    || previous.labelIsSingleGrapheme !== next.labelIsSingleGrapheme
+    || previous.forceLabel !== next.forceLabel
+    || previous.revealEffect !== next.revealEffect
     || !echoColorsEqual(previous.echo, next.echo);
 }
 
@@ -1172,12 +1217,15 @@ function drawBalancedBallLabel(
   label: string,
   center: number,
   radius: number,
+  singleGrapheme = false,
 ): void {
   const { lines } = createBalancedBallLabelLayout(label);
   if (lines.length === 0) {
     return;
   }
-  const targetSize = Math.max(16, Math.min(36, radius * 0.5));
+  const targetSize = singleGrapheme
+    ? Math.max(22, radius * 1.28)
+    : Math.max(16, Math.min(36, radius * 0.5));
   const lineHeightRatio = 1.02;
   const availableWidth = radius * 1.55;
   const availableHeight = radius * 1.45;
@@ -1192,6 +1240,105 @@ function drawBalancedBallLabel(
   lines.forEach((line, index) => {
     context.fillText(line, center, firstLineY + index * lineHeight);
   });
+}
+
+function createTamawariTreasureAuraBaseCanvas(
+  source: VisualBallSource,
+  radius: number,
+  appearance: EchoAppearanceVariant,
+  scale: number,
+): HTMLCanvasElement {
+  const size = faithfulEchoSize(radius, TAMAWARI_AURA_STRENGTH);
+  const { canvas, context } = createScaledCanvas(size, Math.max(2, scale));
+  const center = size / 2;
+  const outerRadius = size * 0.49;
+  const ballEdgeStop = clamp(radius / outerRadius, 0.2, 0.72);
+  const lightness = 64 + appearance.intensityVariant * 100;
+  const glow = context.createRadialGradient(center, center, 0, center, center, outerRadius);
+  glow.addColorStop(0, hsl(47, 94, lightness + 9, 0.25));
+  glow.addColorStop(ballEdgeStop, hsl(47, 92, lightness + 6, 0.33));
+  glow.addColorStop(Math.min(0.8, ballEdgeStop + 0.2), hsl(45, 90, lightness + 3, 0.3));
+  glow.addColorStop(0.9, hsl(43, 86, lightness, 0.08));
+  glow.addColorStop(1, hsl(43, 86, lightness, 0));
+  context.fillStyle = glow;
+  context.fillRect(0, 0, size, size);
+
+  const patternLayer = createScaledCanvas(size, Math.max(2, scale));
+  drawEchoPattern(patternLayer.context, appearance.basePatternVariant, center, radius, size, 47, 92, lightness, 0.82);
+  maskEchoPattern(patternLayer.context, center, radius, size);
+  patternLayer.context.restore();
+  context.drawImage(patternLayer.canvas, 0, 0, size, size);
+  punchRingEchoCenter(context, source, center, radius);
+  context.restore();
+  return canvas;
+}
+
+function createTamawariTreasureAuraAccentCanvas(
+  source: VisualBallSource,
+  radius: number,
+  appearance: EchoAppearanceVariant,
+  scale: number,
+): HTMLCanvasElement {
+  const size = faithfulEchoSize(radius, TAMAWARI_AURA_STRENGTH);
+  const { canvas, context } = createScaledCanvas(size, Math.max(2, scale));
+  const center = size / 2;
+  const lightness = 69 + appearance.accentLightnessOffset * 100;
+  const saturation = 94 + appearance.accentSaturationOffset;
+  drawEchoPattern(context, appearance.accentPatternVariant, center, radius, size, 47, saturation, lightness, 0.8);
+  maskEchoPattern(context, center, radius, size);
+  punchRingEchoCenter(context, source, center, radius);
+  context.restore();
+  return canvas;
+}
+
+function drawTamawariRevealDecoration(
+  context: CanvasRenderingContext2D,
+  center: number,
+  radius: number,
+  effect: "treasure" | "miss",
+): void {
+  context.save();
+  context.globalCompositeOperation = "source-over";
+  const treasure = effect === "treasure";
+  context.strokeStyle = treasure ? "rgba(255, 231, 111, 0.98)" : "rgba(64, 56, 70, 0.9)";
+  context.lineWidth = Math.max(3, radius * 0.09);
+  context.shadowColor = treasure ? "rgba(255, 224, 92, 0.9)" : "rgba(28, 23, 34, 0.55)";
+  context.shadowBlur = treasure ? radius * 0.34 : radius * 0.12;
+  context.beginPath();
+  context.arc(center, center, radius * 1.08, 0, Math.PI * 2);
+  context.stroke();
+
+  if (treasure) {
+    context.fillStyle = "rgba(255, 246, 186, 0.98)";
+    context.shadowBlur = radius * 0.2;
+    for (let index = 0; index < 6; index += 1) {
+      const angle = (Math.PI * 2 * index) / 6 - Math.PI / 2;
+      drawFourPointStar(
+        context,
+        center + Math.cos(angle) * radius * 1.27,
+        center + Math.sin(angle) * radius * 1.27,
+        Math.max(2.5, radius * 0.12),
+      );
+    }
+  }
+  context.restore();
+}
+
+function drawFourPointStar(context: CanvasRenderingContext2D, x: number, y: number, radius: number): void {
+  context.beginPath();
+  for (let index = 0; index < 8; index += 1) {
+    const angle = -Math.PI / 2 + index * Math.PI / 4;
+    const pointRadius = index % 2 === 0 ? radius : radius * 0.28;
+    const pointX = x + Math.cos(angle) * pointRadius;
+    const pointY = y + Math.sin(angle) * pointRadius;
+    if (index === 0) {
+      context.moveTo(pointX, pointY);
+    } else {
+      context.lineTo(pointX, pointY);
+    }
+  }
+  context.closePath();
+  context.fill();
 }
 
 function roundRadius(radius: number): string {

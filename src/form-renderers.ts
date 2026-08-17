@@ -284,6 +284,19 @@ export function renderEditSaveModeConfirm(reason: EditSaveConfirmReason, descent
   `;
 }
 
+export function renderCreateDiscardConfirm(): string {
+  return `
+    <section class="edit-unsaved-dialog" role="dialog" aria-modal="true" aria-labelledby="create-discard-title">
+      <h3 id="create-discard-title">入力内容を破棄しますか？</h3>
+      <p>まだ保存していない新しい玉の入力内容があります。</p>
+      <div class="edit-unsaved-actions">
+        <button class="primary-action" type="button" data-create-continue>入力を続ける</button>
+        <button class="ghost-action danger-action" type="button" data-create-discard-close>破棄して閉じる</button>
+      </div>
+    </section>
+  `;
+}
+
 function renderTimeField(time: string | undefined, className = ""): string {
   const normalizedTime = normalizeBallTime(time);
   const checked = normalizedTime ? " checked" : "";

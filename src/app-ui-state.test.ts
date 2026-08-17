@@ -28,6 +28,11 @@ state = reduceAppUiState(state, { type: "clear-modals" });
 snapshot = createAppUiSnapshot(state);
 assert(snapshot.modals.length === 0 && snapshot.primary === "calendar-month", "closing modals should preserve Primary");
 
+state = reduceAppUiState(state, { type: "open-primary", route: "create" });
+state = reduceAppUiState(state, { type: "open-confirm", route: "create-discard" });
+snapshot = createAppUiSnapshot(state);
+assert(snapshot.topRoute === "create-discard" && !snapshot.editableSurface, "create discard confirmation should exclusively own the top route");
+
 function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);

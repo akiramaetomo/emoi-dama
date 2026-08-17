@@ -1,5 +1,5 @@
 import { categoryColorPresets } from "./categories.js";
-import { renderBallEditDialog, renderCreateForm, renderEditSaveModeConfirm } from "./form-renderers.js";
+import { renderBallEditDialog, renderCreateDiscardConfirm, renderCreateForm, renderEditSaveModeConfirm } from "./form-renderers.js";
 import type { BallDraft, HappyBall } from "./models.js";
 
 const context = {
@@ -240,6 +240,11 @@ assert(legacyCountEditHtml.includes("data-ball-count-convert>最寄りの公開�
 const noTimeEditHtml = renderBallEditDialog({ ...sampleBall, time: undefined }, context);
 assert(noTimeEditHtml.includes('name="time" type="time" value="" disabled'), "edit form should still show a disabled time input when ball has no time");
 assert(!noTimeEditHtml.includes('name="timeEnabled" checked'), "edit form should leave timestamp recording off when ball has no time");
+
+const createDiscardHtml = renderCreateDiscardConfirm();
+assert(createDiscardHtml.includes("入力内容を破棄しますか？"), "create close confirmation should explain the destructive choice");
+assert(createDiscardHtml.indexOf("入力を続ける") < createDiscardHtml.indexOf("破棄して閉じる"), "create close confirmation should put the safe action first");
+assert(createDiscardHtml.includes("data-create-discard-close"), "create close confirmation should expose an explicit discard action");
 
 const closeConfirmHtml = renderEditSaveModeConfirm("close");
 assert(closeConfirmHtml.indexOf("訂正として保存") < closeConfirmHtml.indexOf("余韻として保存"), "edit confirmation should put correction save first");

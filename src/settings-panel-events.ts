@@ -5,6 +5,7 @@ import { classificationSliderToRatio } from "./play-physics-classification";
 import { readBackgroundTexture, readEchoStrength, readStartupScreen, type AppSettings, type PhysicsParameterSettings, type PhysicsSettingsProfile } from "./settings";
 import { bindIntentionalRangeInteraction } from "./settings-range-control";
 import { formatSettingValue } from "./settings-renderers";
+import type { DevicePlayMode } from "./tamawari";
 
 interface SettingsPanelEventHandlers {
   unlockAudio: () => void;
@@ -17,6 +18,7 @@ interface SettingsPanelEventHandlers {
   resetCategories: () => void;
   saveNameBook: (entries: NameBookEntry[]) => NameBookEntry[];
   resetNameBook: () => void;
+  updateDevicePlayMode: (mode: DevicePlayMode) => void;
 }
 
 interface SettingsPanelEventContext {
@@ -68,6 +70,11 @@ function bindTuningEvents(
       handlers.unlockAudio();
     }
     handlers.updateAppSettings({ soundEnabled: sound.checked });
+  });
+
+  const tamawariMode = root.querySelector<HTMLInputElement>("#setting-tamawari-mode");
+  tamawariMode?.addEventListener("change", () => {
+    handlers.updateDevicePlayMode(tamawariMode.checked ? "tamawari" : "normal");
   });
 
   const gravity = root.querySelector<HTMLInputElement>("#setting-gravity");

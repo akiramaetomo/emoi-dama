@@ -1,4 +1,4 @@
-import { IMPACT_AUDIO_LIMITS, impactEnergyToGain, selectImpactEventsForAudio } from "./impact-audio.js";
+import { IMPACT_AUDIO_LIMITS, getRevealCueProfile, impactEnergyToGain, selectImpactEventsForAudio } from "./impact-audio.js";
 import {
   applyBallColliderSettings,
   findWallImpactCandidates,
@@ -30,6 +30,19 @@ assertEqual(selectedImpacts.map((impact) => impact.energy).join(","), "1200,900,
 assertEqual(IMPACT_AUDIO_LIMITS.maxVoices, 8, "impact audio should retain the eight-voice polyphony limit");
 assertEqual(IMPACT_AUDIO_LIMITS.maxTriggersPerBatch, 3, "impact audio should retain the three-trigger batch limit");
 assertEqual(IMPACT_AUDIO_LIMITS.minTriggerIntervalMs, 28, "impact audio should retain the 28ms batch gate");
+
+const treasureCue = getRevealCueProfile("treasure");
+assertEqual(treasureCue.wave, "sine", "treasure reveal should use a sine wave");
+assertEqual(treasureCue.startFrequencyHz, 880, "treasure reveal should start at 880Hz");
+assertEqual(treasureCue.endFrequencyHz, 880, "treasure reveal should remain fixed at 880Hz");
+assertEqual(treasureCue.durationSeconds, 1, "treasure reveal should last one second");
+assert(treasureCue.decay, "treasure reveal should decay");
+const missCue = getRevealCueProfile("miss");
+assertEqual(missCue.wave, "square", "miss reveal should use a square wave");
+assertEqual(missCue.startFrequencyHz, 50, "miss reveal should start at 50Hz");
+assertEqual(missCue.endFrequencyHz, 50, "miss reveal should remain fixed at 50Hz");
+assertEqual(missCue.durationSeconds, 0.3, "miss reveal should last 300ms");
+assert(!missCue.decay, "miss reveal should remain nearly constant");
 
 const slidingOnLeftWall = findWallImpactCandidates(
   { x: 41, y: 140 },
@@ -87,6 +100,7 @@ function assertEqual<T>(actual: T, expected: T, message: string): void {
     throw new Error(`${message}: expected ${String(expected)}, got ${String(actual)}`);
   }
 }
+
 
 function countScheduledSteps(frameCount: number, elapsedMs: number): number {
   let accumulatorMs = 0;

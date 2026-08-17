@@ -7,6 +7,19 @@ export interface ModalPanState {
   clientHeight: number;
 }
 
+export function blurActiveEditableWithin(root: HTMLElement): void {
+  const activeElement = root.ownerDocument.activeElement;
+  if (!(activeElement instanceof HTMLElement) || !root.contains(activeElement)) {
+    return;
+  }
+  if (
+    activeElement.matches("input, textarea, select, [contenteditable='true']")
+    || activeElement.isContentEditable
+  ) {
+    activeElement.blur();
+  }
+}
+
 export function shouldPreventModalPan(state: ModalPanState): boolean {
   if (!state.startedInsideScrollRegion) {
     return true;

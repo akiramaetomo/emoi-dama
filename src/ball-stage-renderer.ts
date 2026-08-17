@@ -33,6 +33,10 @@ export interface VisualBallSource {
   snapshot: PhysicsBallSnapshot | null;
   label: string;
   labelClass: string;
+  labelIsSingleGrapheme: boolean;
+  forceLabel: boolean;
+  revealEffect: "none" | "treasure" | "miss";
+  concealTitle: boolean;
   title: string;
 }
 
@@ -84,7 +88,7 @@ export class DomBallStageRenderer implements BallStageRenderer {
       element.type = "button";
       element.draggable = false;
       element.tabIndex = -1;
-      element.className = `physics-ball ${source.labelClass} lifecycle-${source.lifecycleStatus} ${source.visualKind === "ring" ? "is-ring-ball" : "is-filled-ball"}${source.echo ? ` has-echo echo-${this.settings.emotionEchoStrength}` : ""}${source.descentBadgeCount > 0 ? " has-descent-badges" : ""}${source.isKamiBall ? " is-kami-ball" : ""}`;
+      element.className = createDomBallClassName(source, this.settings);
       element.dataset.visualBallId = source.id;
       element.style.width = `${source.radius * 2}px`;
       element.style.height = `${source.radius * 2}px`;
@@ -96,16 +100,8 @@ export class DomBallStageRenderer implements BallStageRenderer {
         element.style.setProperty("--echo-saturation", `${source.echo.saturation}%`);
         element.style.setProperty("--echo-lightness", `${source.echo.lightness}%`);
       }
-      element.setAttribute("aria-label", source.title);
-      element.innerHTML = `
-        <span class="ball-body" aria-hidden="true">
-          <span class="ball-core"></span>
-          <span class="ball-shade"></span>
-          <span class="ball-highlight"></span>
-        </span>
-        ${renderDescentBadges(source.descentBadgeCount)}
-        <span class="ball-label">${escapeHtml(source.label)}</span>
-      `;
+      element.setAttribute("aria-label", renderDomBallAriaLabel(source));
+      element.innerHTML = renderDomBallContents(source);
       fragment.appendChild(element);
       this.elements.set(source.id, element);
     }
@@ -120,14 +116,12 @@ export class DomBallStageRenderer implements BallStageRenderer {
     this.sources = sources;
     for (const source of sources) {
       const element = this.elements.get(source.id);
-      const label = element?.querySelector<HTMLElement>(".ball-label");
-      if (!element || !label) {
+      if (!element) {
         return false;
       }
-      element.classList.remove("label-short", "label-medium", "label-long", "label-xlong");
-      element.classList.add(source.labelClass);
-      element.setAttribute("aria-label", source.title);
-      label.textContent = source.label;
+      element.className = createDomBallClassName(source, this.settings);
+      element.setAttribute("aria-label", renderDomBallAriaLabel(source));
+      element.innerHTML = renderDomBallContents(source);
     }
     return true;
   }
@@ -187,6 +181,31 @@ function renderDescentBadges(count: number): string {
       ${Array.from({ length: safeCount }, (_, index) => `<span class="descent-star-badge" style="--descent-star-index: ${index}; --descent-star-total: ${safeCount};"></span>`).join("")}
     </span>
   `;
+}
+
+function createDomBallClassName(source: VisualBallSource, settings: AppSettings): string {
+  const storedEchoClass = source.echo && source.revealEffect === "none"
+    ? ` has-echo echo-${settings.emotionEchoStrength}`
+    : "";
+  const resultAuraClass = source.revealEffect === "treasure" ? " has-tamawari-result-aura" : "";
+  return `physics-ball ${source.labelClass} lifecycle-${source.lifecycleStatus} ${source.visualKind === "ring" ? "is-ring-ball" : "is-filled-ball"}${storedEchoClass}${resultAuraClass}${source.descentBadgeCount > 0 ? " has-descent-badges" : ""}${source.isKamiBall ? " is-kami-ball" : ""}${source.forceLabel ? " force-ball-label" : ""}${source.labelIsSingleGrapheme ? " label-single-grapheme" : ""}${source.revealEffect !== "none" ? ` is-tamawari-open tamawari-${source.revealEffect}` : ""}`;
+}
+
+function renderDomBallContents(source: VisualBallSource): string {
+  return `
+    <span class="ball-body" aria-hidden="true">
+      <span class="ball-core"></span>
+      <span class="ball-shade"></span>
+      <span class="ball-highlight"></span>
+    </span>
+    ${renderDescentBadges(source.descentBadgeCount)}
+    ${source.revealEffect === "none" ? "" : `<span class="tamawari-reveal-ring" aria-hidden="true"></span>${source.revealEffect === "treasure" ? '<span class="tamawari-treasure-sparkles" aria-hidden="true"></span>' : ""}`}
+    <span class="ball-label">${escapeHtml(source.label)}</span>
+  `;
+}
+
+function renderDomBallAriaLabel(source: VisualBallSource): string {
+  return source.concealTitle && source.revealEffect === "none" ? "伏せた玉" : source.title;
 }
 
 function escapeHtml(value: string): string {

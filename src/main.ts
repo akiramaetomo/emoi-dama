@@ -28,6 +28,7 @@ import {
   type BallSievePresetId,
 } from "./ball-sieve";
 import {
+  bindCreateDiscardConfirmActions,
   bindCreateAuthoringUiActions,
   bindEditAuthoringUiActions,
   bindEditSaveConfirmActions,
@@ -77,6 +78,7 @@ import {
 } from "./dialog-renderers";
 import {
   renderBallEditDialog,
+  renderCreateDiscardConfirm,
   renderCreateForm,
   renderEditSaveModeConfirm,
   type FormRenderContext,
@@ -98,7 +100,7 @@ import {
 } from "./import-dialog-renderers";
 import { renderManualCopyDialog } from "./manual-copy-renderers";
 import { type BallDraft, type HappyBall, type HappyBallDescentRecord, type NameBookEntry, type SendMode } from "./models";
-import { resolveFocusScrollDelta } from "./modal-interactions";
+import { blurActiveEditableWithin, resolveFocusScrollDelta } from "./modal-interactions";
 import {
   createLinePacketImportUrl,
   createPacketImportUrl,
@@ -153,6 +155,20 @@ import {
 } from "./settings-renderers";
 import { capturePrimaryScreen, createMainPrimaryScreen, type PrimaryScreenState } from "./screen-navigation";
 import { SurfaceInteractionController } from "./surface-interaction-controller";
+import {
+  TAMAWARI_MAX_TARGETS,
+  createReadyTamawariSession,
+  createTamawariRevealMap,
+  isTamawariTreasure,
+  loadDevicePlayMode,
+  resetTamawariSession,
+  resolveTamawariRuntimeSettings,
+  saveDevicePlayMode,
+  startTamawariSession,
+  toggleTamawariInstance,
+  type DevicePlayMode,
+  type TamawariTarget,
+} from "./tamawari";
 import { createStartupScreenState } from "./startup-state";
 import { UiLayerHosts } from "./ui-layer-hosts";
 import { UiDebugDiagnostics } from "./ui-debug-diagnostics";
@@ -292,6 +308,10 @@ let playMenuPosition: PlayMenuPosition | null = null;
 let playWorldDisclosureOpen = false;
 let playParentDisclosureOpen = false;
 let playUiBinding: PlayUiBinding | null = null;
+let devicePlayMode: DevicePlayMode = loadDevicePlayMode();
+let tamawariSession = createReadyTamawariSession();
+let tamawariFeedback = "";
+let tamawariFlashTimer: number | null = null;
 let activeBallSieve: BallSievePresetId = DEFAULT_BALL_SIEVE_PRESET;
 let ballSieveOpen = false;
 let ballSieveFeedback = "";
@@ -325,6 +345,7 @@ const SETTINGS_GROUP_CLASSES = [
   "category-settings",
   "display-settings",
   "descent-settings",
+  "tamawari-settings",
   "physics-settings",
   "sound-settings",
   "workspace-management",
@@ -345,7 +366,7 @@ window.addEventListener("unhandledrejection", (event) => {
 
 bindPlayDisplayNavigationKeys(
   window,
-  () => uiState.primary === "play" && uiState.modals.length === 0,
+  () => uiState.primary === "play" && uiState.modals.length === 0 && !isTamawariPlaying(),
   navigateDisplayPeriod,
 );
 window.addEventListener("keydown", (event) => {
@@ -458,11 +479,11 @@ function syncSelfLegacySnapshot(store: HappyBallWorkspaceStore): void {
   saveAppSettings(self.appSettings);
 }
 
-function renderWorkspaceScreenName(label: string, extraClass = ""): string {
+function renderWorkspaceScreenName(label: string, extraClass = "", disabled = false): string {
   const received = isReceivedWorkspace(workspaceStore);
   const code = received ? getWorkspaceDisplayCode(workspaceStore, workspaceStore.activeWorkspaceId) : "";
   return `
-    <button class="screen-kicker workspace-screen-name ${extraClass}${received ? " is-received" : ""}" type="button" data-cycle-workspace aria-label="次の利用環境へ切り替える">
+    <button class="screen-kicker workspace-screen-name ${extraClass}${received ? " is-received" : ""}" type="button" data-cycle-workspace aria-label="次の利用環境へ切り替える"${disabled ? ' disabled aria-disabled="true"' : ""}>
       <span>${escapeHtml(label)}</span>${received ? `<small>ID=${escapeHtml(code)}</small>` : ""}
     </button>
   `;
@@ -483,6 +504,8 @@ function activateNextWorkspaceRuntime(): void {
   draft = createDefaultDraft(getPrimarySelfName(ledger));
   physicsSnapshots.clear();
   playJutsuState = createInitialPlayJutsuState();
+  tamawariSession = createReadyTamawariSession();
+  tamawariFeedback = "";
   playControlsOpen = false;
   baseRenderSignature = "";
   syncGravityController();
@@ -510,7 +533,7 @@ function render(): void {
 }
 
 function getEffectiveBallLabelMode(): BallLabelMode {
-  return appSettings.ballLabelMode;
+  return isTamawariPlaying() ? "none" : appSettings.ballLabelMode;
 }
 
 function ensureBaseRendered(visibleBalls: HappyBall[], selectedBall: HappyBall | null): void {
@@ -524,14 +547,17 @@ function ensureBaseRendered(visibleBalls: HappyBall[], selectedBall: HappyBall |
     activeBallSieve,
     ballSieveFeedback,
     ballSieveTransitioning,
+    devicePlayMode,
+    tamawariPhase: tamawariSession.phase,
+    tamawariOpened: [...tamawariSession.openedInstanceIds],
   });
   if (nextSignature === baseRenderSignature) {
     return;
   }
   baseRenderSignature = nextSignature;
+  capturePhysicsSnapshotsSafely();
   const visualPopulation = createVisualPopulation(visibleBalls);
 
-  capturePhysicsSnapshotsSafely();
   physicsRuntime.destroy();
   physicsStage = null;
   playUiBinding?.disconnect();
@@ -542,10 +568,8 @@ function ensureBaseRendered(visibleBalls: HappyBall[], selectedBall: HappyBall |
     backgroundTexture: appSettings.backgroundTexture,
     displayMode,
     displayAnchorDate,
-    stageTitle: selectedBall
-      ? createVisibilitySafeSummaryLabel(selectedBall)
-      : activeBallSieve === "usual" ? "今日のえもい玉は？" : renderBallSieveEmptyMessage(activeBallSieve),
-    workspaceScreenNameHtml: renderWorkspaceScreenName("Emotion Play", "play-screen-kicker"),
+    stageTitle: createPlayStageTitle(selectedBall),
+    workspaceScreenNameHtml: renderWorkspaceScreenName("Emotion Play", "play-screen-kicker", isTamawariPlaying()),
     gravityDebugHtml: renderGravityDebugPanel(),
     populationStatusHtml: renderPlayPopulationStatus(
       visualPopulation.displayedCount,
@@ -564,6 +588,12 @@ function ensureBaseRendered(visibleBalls: HappyBall[], selectedBall: HappyBall |
     },
     ballSieveFeedback,
     sieveTransitioning: ballSieveTransitioning,
+    devicePlayMode,
+    tamawariPhase: tamawariSession.phase,
+    tamawariTreasureTitles: getTamawariTreasureTitles(visibleBalls),
+    tamawariTargetCount: Math.min(visualPopulation.displayedCount, TAMAWARI_MAX_TARGETS),
+    tamawariCanStart: visualPopulation.displayedCount > 0 && getTamawariTreasureTitles(visibleBalls).length > 0,
+    tamawariFeedback,
   }));
 
   bindEvents(uiHosts.base);
@@ -996,6 +1026,7 @@ function getToolsPanelRenderContext(): ToolsPanelRenderContext {
     maxNameBookEntries: MAX_NAME_BOOK_ENTRIES,
     defaultSampleName: DEFAULT_SAMPLE_NAME,
     physicsSettingsProfile,
+    devicePlayMode,
     workspaces: workspaceStore.workspaces.map((workspace) => ({
       workspaceId: workspace.workspaceId,
       displayName: workspace.displayName,
@@ -1039,6 +1070,39 @@ function cancelCreateAuthoringSession(): void {
   }
   createDraftBeforeOpen = null;
   createAuthoringBall = null;
+}
+
+function requestCloseCreateAuthoring(root: ParentNode, form: HTMLFormElement): void {
+  const initialBall = createAuthoringBall;
+  if (!initialBall || !hasBallEditFormChanged(initialBall, form, getAuthoringDraftDefaults())) {
+    cancelCreateAuthoringSession();
+    restoreSubfeatureReturnScreen();
+    render();
+    return;
+  }
+
+  uiHosts.clearConfirm();
+  dispatchUi({ type: "open-confirm", route: "create-discard" }, false);
+  const confirmRoot = uiHosts.renderConfirm(
+    "create-discard",
+    `<div class="edit-unsaved-backdrop" data-create-discard-confirm>${renderCreateDiscardConfirm()}</div>`,
+  );
+  applyUiState();
+  bindCreateDiscardConfirmActions(confirmRoot, {
+    continueEditing: () => {
+      uiHosts.clearConfirm();
+      dispatchUi({ type: "close-confirm" });
+      root.querySelector<HTMLButtonElement>(".floating-panel-create .dialog-close")?.focus({ preventScroll: true });
+    },
+    discardAndClose: () => {
+      uiHosts.clearConfirm();
+      dispatchUi({ type: "close-confirm" }, false);
+      cancelCreateAuthoringSession();
+      restoreSubfeatureReturnScreen();
+      render();
+    },
+  });
+  confirmRoot.querySelector<HTMLButtonElement>("[data-create-continue]")?.focus({ preventScroll: true });
 }
 
 function getCalendarBalls(): HappyBall[] {
@@ -1111,6 +1175,9 @@ function rememberUpperSurfacePrimaryOrigin(): void {
 }
 
 function navigateFromUpperSurfaceControlBar(target: UpperSurfaceControlTarget): void {
+  if (isTamawariPlaying() && target !== "settings" && target !== "play") {
+    return;
+  }
   if (target === "settings" && uiState.primary === "settings" && uiState.modals.length === 0) {
     return;
   }
@@ -1552,22 +1619,30 @@ function mountRapierStage(population: PopulationPlan<VisualBallSource>): void {
   field.dataset.ballRenderer = renderPlan.renderer;
   field.dataset.ballDensity = renderPlan.densityMode;
   field.dataset.ballAppearance = renderPlan.appearanceProfile;
-  field.dataset.runtimePhysicsProfile = getRuntimePhysicsProfile();
+  field.dataset.runtimePhysicsProfile = isTamawariPlaying() ? "tamawari" : getRuntimePhysicsProfile();
+  field.dataset.runtimeLinearDamping = String(runtimeSettings.linearDamping);
   field.dataset.ballDiameter = (renderPlan.radius * 2).toFixed(2);
   field.dataset.rendererFallback = rendererFallbackToDom ? "pixi-fault" : "none";
   physicsStage = new RapierStage(
     field,
     stageSources,
-    (ballId) => {
-      selectedBallId = ballId;
+    (target) => {
+      if (isTamawariPlaying()) {
+        return;
+      }
+      selectedBallId = target.ballId;
       updateSelectedState();
       updateSelectedSummary();
     },
-    (ballId) => {
-      selectedBallId = ballId;
+    (target) => {
+      if (isTamawariPlaying()) {
+        revealTamawariTarget(target.instanceId);
+        return;
+      }
+      selectedBallId = target.ballId;
       updateSelectedState();
       updateSelectedSummary();
-      showBallDialog(ballId);
+      showBallDialog(target.ballId);
     },
     runtimeSettings,
     audioEngine,
@@ -1692,16 +1767,124 @@ function createVisualPopulation(balls: HappyBall[]): PopulationPlan<VisualBallSo
     appSettings.radius,
     appSettings.emotionEchoStrength,
     physicsSnapshots,
+    { tamawariReveals: createTamawariRevealMap(tamawariSession), tamawariPlaying: isTamawariPlaying() },
   );
   const useDomSafetyLimit = rendererFallbackToDom
     || isDomRendererComparisonEnabled(window.location.search);
   const likelyDense = sources.length > 120;
-  const limit = useDomSafetyLimit
+  const limit = devicePlayMode === "tamawari"
+    ? TAMAWARI_MAX_TARGETS
+    : useDomSafetyLimit
     ? 120
     : likelyDense
     ? denseDeviceLimit(window.matchMedia("(max-width: 520px)").matches)
     : 120;
   return limitVisualPopulation(sources, limit);
+}
+
+function isTamawariPlaying(): boolean {
+  return devicePlayMode === "tamawari" && tamawariSession.phase === "playing";
+}
+
+function getTamawariTreasureTitles(balls: readonly HappyBall[]): string[] {
+  return [...new Set(
+    balls
+      .filter((ball) => isTamawariTreasure(ball.note))
+      .map((ball) => ball.title.trim())
+      .filter(Boolean),
+  )];
+}
+
+function createPlayStageTitle(selectedBall: HappyBall | null): string {
+  if (isTamawariPlaying()) {
+    return "玉割：お宝を探そう";
+  }
+  if (getEffectiveBallLabelMode() === "none") {
+    return activeBallSieve === "usual" ? "今日のえもい玉は？" : renderBallSieveEmptyMessage(activeBallSieve);
+  }
+  return selectedBall
+    ? createVisibilitySafeSummaryLabel(selectedBall)
+    : activeBallSieve === "usual" ? "今日のえもい玉は？" : renderBallSieveEmptyMessage(activeBallSieve);
+}
+
+function startTamawariPlay(): void {
+  const population = createVisualPopulation(getVisibleBalls());
+  const ballsById = new Map(getVisibleBalls().map((ball) => [ball.id, ball]));
+  const targets: TamawariTarget[] = population.displayed.slice(0, TAMAWARI_MAX_TARGETS).map((source) => {
+    const ball = ballsById.get(source.ballId);
+    return {
+      instanceId: source.id,
+      ballId: source.ballId,
+      title: ball?.title ?? source.title,
+      effect: ball && isTamawariTreasure(ball.note) ? "treasure" : "miss",
+    };
+  });
+  if (targets.length === 0 || !targets.some((target) => target.effect === "treasure")) {
+    tamawariFeedback = "お宝タグを付けた玉を1つ以上用意してください。";
+    baseRenderSignature = "";
+    render();
+    return;
+  }
+  physicsStage?.resetJutsuFragmentation();
+  playJutsuState = createInitialPlayJutsuState();
+  tamawariSession = startTamawariSession(targets);
+  tamawariFeedback = `${targets.length}個を伏せました。ドラッグや傾斜で混ぜてください。`;
+  playControlsOpen = false;
+  closeBallSieve();
+  baseRenderSignature = "";
+  syncRuntimePhysicsSettings();
+  render();
+}
+
+function resetTamawariPlay(): void {
+  tamawariSession = resetTamawariSession(tamawariSession);
+  tamawariFeedback = "位置はそのまま、すべて伏せました。";
+  syncBallVisualSourcesWithoutPhysicsRebuild();
+  const feedback = uiHosts.base.querySelector<HTMLElement>("[data-tamawari-feedback]");
+  if (feedback) {
+    feedback.textContent = tamawariFeedback;
+  }
+}
+
+function endTamawariPlay(): void {
+  tamawariSession = createReadyTamawariSession();
+  tamawariFeedback = "玉割を終了しました。もう一度開始できます。";
+  playControlsOpen = false;
+  baseRenderSignature = "";
+  syncRuntimePhysicsSettings();
+  render();
+}
+
+function revealTamawariTarget(instanceId: string): void {
+  const result = toggleTamawariInstance(tamawariSession, instanceId);
+  if (result.state === tamawariSession) {
+    return;
+  }
+  tamawariSession = result.state;
+  syncBallVisualSourcesWithoutPhysicsRebuild();
+  if (result.openedEffect) {
+    audioEngine.playReveal(result.openedEffect, getRuntimeAppSettings());
+    if (result.openedEffect === "treasure") {
+      flashTamawariTreasureBackground();
+    }
+  }
+}
+
+function flashTamawariTreasureBackground(): void {
+  const field = uiHosts.base.querySelector<HTMLElement>("#ball-field");
+  if (!field) {
+    return;
+  }
+  field.classList.remove("is-tamawari-treasure-flash");
+  void field.offsetWidth;
+  field.classList.add("is-tamawari-treasure-flash");
+  if (tamawariFlashTimer !== null) {
+    window.clearTimeout(tamawariFlashTimer);
+  }
+  tamawariFlashTimer = window.setTimeout(() => {
+    field.classList.remove("is-tamawari-treasure-flash");
+    tamawariFlashTimer = null;
+  }, 1000);
 }
 
 function syncPlayJutsuFeedback(): void {
@@ -1716,7 +1899,7 @@ function dispatchPlayJutsu(action: PlayJutsuAction): void {
   physicsStage?.setInteractionMode(playJutsuState.interactionMode);
   physicsStage?.setParentSplitMode(playJutsuState.parentSplitMode);
   physicsStage?.setFragmentationMode(playJutsuState.fragmentationMode);
-  playUiBinding?.syncModeControls(playControlsOpen, playJutsuState);
+  playUiBinding?.syncModeControls(playControlsOpen, playJutsuState, isTamawariPlaying());
 }
 
 function syncBallLabelModeControls(): boolean {
@@ -1740,12 +1923,7 @@ function updateSelectedState(): void {
 
 function updateSelectedSummary(): void {
   const selectedBall = getVisibleBalls().find((ball) => ball.id === selectedBallId) ?? null;
-  updatePlaySelectedSummary(
-    uiHosts.base,
-    selectedBall
-      ? createVisibilitySafeSummaryLabel(selectedBall)
-      : activeBallSieve === "usual" ? "今日のえもい玉は？" : renderBallSieveEmptyMessage(activeBallSieve),
-  );
+  updatePlaySelectedSummary(uiHosts.base, createPlayStageTitle(selectedBall));
 }
 
 function syncBallSieveOpenState(root: ParentNode = document): void {
@@ -1822,6 +2000,9 @@ function selectBallSieve(presetId: BallSievePresetId): void {
 }
 
 function openPanelFromUi(panel: string | undefined): void {
+  if (isTamawariPlaying() && panel !== "settings") {
+    return;
+  }
   if (panel === "none") {
     dispatchUi({ type: "open-primary", route: "play" }, false);
     render();
@@ -1855,7 +2036,7 @@ function bindEvents(root: ParentNode): void {
   const binding = bindPlayUiActions(root, playMenuPosition, {
     toggleControls: () => {
       playControlsOpen = !playControlsOpen;
-      playUiBinding?.syncModeControls(playControlsOpen, playJutsuState);
+      playUiBinding?.syncModeControls(playControlsOpen, playJutsuState, isTamawariPlaying());
     },
     dispatchJutsu: (action) => {
       playJutsuFeedback = "";
@@ -1909,6 +2090,9 @@ function bindEvents(root: ParentNode): void {
         playParentDisclosureOpen = open;
       }
     },
+    startTamawari: startTamawariPlay,
+    resetTamawari: resetTamawariPlay,
+    endTamawari: endTamawariPlay,
   });
   if (binding) {
     playUiBinding = binding;
@@ -1972,6 +2156,10 @@ function bindEvents(root: ParentNode): void {
     element.addEventListener("click", (event) => {
       const isBackdrop = element.classList.contains("panel-backdrop");
       if (isBackdrop && event.target !== element) {
+        return;
+      }
+      if (isBackdrop && element.classList.contains("panel-backdrop-settings")) {
+        blurActiveEditableWithin(element);
         return;
       }
       if (uiState.primary === "create" || uiState.primary === "settings" || uiState.primary === "saved-list") {
@@ -2136,11 +2324,7 @@ function bindEvents(root: ParentNode): void {
       createAuthoringBall = null;
       render();
     },
-    cancel: () => {
-      cancelCreateAuthoringSession();
-      restoreSubfeatureReturnScreen();
-      render();
-    },
+    cancel: (form) => requestCloseCreateAuthoring(root, form),
   });
 
   bindSettingsGroupDisclosureEvents(root);
@@ -2167,6 +2351,17 @@ function bindEvents(root: ParentNode): void {
       resetCategories: resetCategorySettings,
       saveNameBook: applyNameBookSettings,
       resetNameBook: resetNameBookSettings,
+      updateDevicePlayMode: (mode) => {
+        rememberSettingsScroll();
+        devicePlayMode = mode;
+        saveDevicePlayMode(mode);
+        tamawariSession = createReadyTamawariSession();
+        tamawariFeedback = "";
+        playControlsOpen = false;
+        baseRenderSignature = "";
+        syncRuntimePhysicsSettings();
+        render();
+      },
     },
   });
 
@@ -2991,7 +3186,7 @@ function clearLocationPacketParams(): void {
 }
 
 function navigateDisplayPeriod(delta: -1 | 1): void {
-  if (uiState.primary !== "play") {
+  if (uiState.primary !== "play" || isTamawariPlaying()) {
     return;
   }
   shiftCurrentDisplayAnchor(delta);
@@ -3274,7 +3469,10 @@ function resetJutsuPhysicsProfile(): void {
 }
 
 function getRuntimeAppSettings(): AppSettings {
-  return resolvePhysicsProfileSettings(appSettings, getRuntimePhysicsProfile());
+  return resolveTamawariRuntimeSettings(
+    resolvePhysicsProfileSettings(appSettings, getRuntimePhysicsProfile()),
+    isTamawariPlaying(),
+  );
 }
 
 function rememberSettingsScroll(): void {
@@ -3307,7 +3505,8 @@ function syncRuntimePhysicsSettings(): void {
   physicsStage?.updateSettings(getRuntimeAppSettings());
   const field = uiHosts.base.querySelector<HTMLElement>("#ball-field");
   if (field) {
-    field.dataset.runtimePhysicsProfile = getRuntimePhysicsProfile();
+    field.dataset.runtimePhysicsProfile = isTamawariPlaying() ? "tamawari" : getRuntimePhysicsProfile();
+    field.dataset.runtimeLinearDamping = String(getRuntimeAppSettings().linearDamping);
   }
 }
 

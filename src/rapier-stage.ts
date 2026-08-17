@@ -59,6 +59,11 @@ export interface ImpactEvent {
   energy: number;
 }
 
+export interface BallInteractionTarget {
+  instanceId: string;
+  ballId: string;
+}
+
 export type GravityVector = { x: number; y: number };
 export type WallImpactSide = "left" | "right" | "top" | "bottom";
 
@@ -205,8 +210,8 @@ export class RapierStage {
   constructor(
     private readonly field: HTMLDivElement,
     sources: VisualBallSource[],
-    private readonly onSelect: (ballId: string) => void,
-    private readonly onOpenDetail: (ballId: string) => void,
+    private readonly onSelect: (target: BallInteractionTarget) => void,
+    private readonly onOpenDetail: (target: BallInteractionTarget) => void,
     private settings: AppSettings,
     private readonly audio: ImpactAudio,
     private readonly onFault: (error: unknown) => void = () => undefined,
@@ -602,6 +607,10 @@ export class RapierStage {
       ball.echo = source.echo;
       ball.label = source.label;
       ball.labelClass = source.labelClass;
+      ball.labelIsSingleGrapheme = source.labelIsSingleGrapheme;
+      ball.forceLabel = source.forceLabel;
+      ball.revealEffect = source.revealEffect;
+      ball.concealTitle = source.concealTitle;
       ball.title = source.title;
     }
     this.syncRendererSources();
@@ -1104,7 +1113,7 @@ export class RapierStage {
       angvel: target.body.angvel(),
     };
     this.field.setPointerCapture(event.pointerId);
-    this.onSelect(target.ballId);
+    this.onSelect({ instanceId: target.id, ballId: target.ballId });
   };
 
   private readonly preventPlaySelection = (event: Event): void => {
@@ -1209,7 +1218,7 @@ export class RapierStage {
       this.field.releasePointerCapture(event.pointerId);
     }
     if (isTap) {
-      this.onOpenDetail(released.ballId);
+      this.onOpenDetail({ instanceId: released.id, ballId: released.ballId });
     }
     this.paint();
   };

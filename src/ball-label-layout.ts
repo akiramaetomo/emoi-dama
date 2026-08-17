@@ -41,3 +41,7 @@ export function splitGraphemes(value: string): string[] {
   }
   return Array.from(value);
 }
+
+export function isSingleGrapheme(value: string): boolean {
+  return splitGraphemes(value.trim()).length === 1;
+}

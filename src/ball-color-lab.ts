@@ -366,7 +366,8 @@ function initializeBallColorLab(): void {
       baseInstanceId: `ball-color-lab-${index}`, fragmentGeneration: 0, fragmentOrdinal: 0, radius,
       motionClass: resolveMotionClass(preset.tone, preset.visualKind), ...history.workingValues[index],
       visualKind: preset.visualKind, lifecycleStatus: "active", descentBadgeCount: 0, isKamiBall: false,
-      echo: null, snapshot: null, label: "", labelClass: "label-short", title: preset.name,
+      echo: null, snapshot: null, label: "", labelClass: "label-short", labelIsSingleGrapheme: false,
+      forceLabel: false, revealEffect: "none", concealTitle: false, title: preset.name,
     }));
   }
 

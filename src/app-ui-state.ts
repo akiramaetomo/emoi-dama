@@ -15,7 +15,7 @@ export type ModalRoute =
   | "json-import"
   | "manual-copy";
 
-export type ConfirmRoute = "edit-save";
+export type ConfirmRoute = "create-discard" | "edit-save";
 
 export interface AppUiState {
   primary: PrimaryRoute;

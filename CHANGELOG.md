@@ -12,6 +12,37 @@ This project follows a lightweight changelog discipline:
 
 ## Unreleased
 
+## 0.11.0 - 2026-08-18
+
+- Prevented outer backdrop taps from closing `玉を置く`, `玉の編集`, or
+  `設定とデータ`; a focused input is blurred without losing the active surface
+  or its values. Changed new-ball drafts now show an explicit
+  continue-or-discard confirmation only from the header close control or footer
+  Cancel, while unchanged drafts still close directly.
+- Added the device-only `玉割` treasure-hunt mode for up to 50 current physical
+  balls. Memo-line treasure tags drive per-instance tap-to-reveal rings, large
+  one-grapheme item labels, treasure/miss light and sound cues, in-place reset,
+  and normal-play restoration without changing ball records or physical size.
+  Play temporarily uses linear damping 100 during a round, while stored physics
+  settings, sharing, backup data, descent stars, and emotion echoes remain
+  unchanged. Normal label mode `none` also no longer exposes a selected title
+  in the upper heading.
+- Reduced 玉割 setup effort by accepting `おたから`, `たから`, `お宝`, or `宝`
+  as the complete first memo line with an optional `#`; later memo lines are
+  free text. Open results preserve the original ball color: treasure replaces
+  stored echo presentation with a dedicated gold result aura, while misses
+  retain the dark result ring. Treasure audio remains a bright result cue and
+  miss audio is tuned as a low, short buzzer at a subdued volume, while both
+  continue to follow the existing sound controls.
+  Any single grapheme, including ordinary text such as `宝` or `石`, now uses
+  the large item-like label in both normal display and 玉割.
+- Made the 玉割 control use the existing active Jutsu glow only while a round
+  is playing. Starting and ending a round now carry the latest physical
+  positions and motion into the rebuilt Play stage instead of jumping back to
+  older snapshots; mixing remains entirely manual. Jutsu fragments still
+  merge at their mass-weighted position when a round starts. Reopening the
+  玉割 menu during a round now preserves the glow and `aria-pressed` state.
+
 ## 0.10.1 - 2026-08-07
 
 - Fixed Play's four visual/physics families so editable category names no

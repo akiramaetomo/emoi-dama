@@ -114,6 +114,32 @@ assertLabel(labelBall, "date", "7/9", "label-short");
 assertLabel(labelBall, "name", "名前五文字", "label-medium");
 assertLabel(labelBall, "title", "12345678901234567", "label-xlong");
 assertLabel(createBall({ title: "123456789", visibility: "open" }), "title", "123456789", "label-long");
+const singleTextSource = planPlayVisualSources(
+  [createBall({ title: "宝", visibility: "open" })],
+  categories,
+  "title",
+  42,
+  "weak",
+  new Map(),
+)[0]!;
+assertEqual(singleTextSource.labelIsSingleGrapheme, true, "one ordinary text grapheme should use the item-size label in normal mode");
+
+const revealed = planPlayVisualSources(
+  [createBall({ id: "ball_reveal", count: 2, title: "🎂", visibility: "category" })],
+  categories,
+  "none",
+  42,
+  "weak",
+  new Map(),
+  { tamawariReveals: new Map([["ball_reveal_1", "treasure"]]), tamawariPlaying: true },
+);
+assertEqual(revealed[0]?.label, "", "a closed Tamawari instance should stay unlabeled");
+assertEqual(revealed[0]?.forceLabel, false, "a closed instance should follow the global label mode");
+assertEqual(revealed[0]?.concealTitle, true, "a playing instance should conceal its accessible title until opened");
+assertEqual(revealed[1]?.label, "🎂", "an opened instance should expose the title even when visibility normally hides it");
+assertEqual(revealed[1]?.forceLabel, true, "an opened instance should force its label");
+assertEqual(revealed[1]?.labelIsSingleGrapheme, true, "one opened grapheme should use the item-size label in Tamawari mode");
+assertEqual(revealed[1]?.revealEffect, "treasure", "the reveal effect should remain instance-specific");
 
 const echo = createEcho({
   category: "現在の輪",

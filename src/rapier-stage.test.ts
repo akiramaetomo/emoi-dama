@@ -117,6 +117,10 @@ function createVisualSource(id: string, label: string): VisualBallSource {
     snapshot: null,
     label,
     labelClass: "label-short",
+    labelIsSingleGrapheme: false,
+    forceLabel: false,
+    revealEffect: "none",
+    concealTitle: false,
     title: label,
   };
 }

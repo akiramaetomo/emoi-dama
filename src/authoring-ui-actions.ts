@@ -25,6 +25,7 @@ import {
   type HappyBallDescentRecord,
   type IssuerType,
 } from "./models.js";
+import { blurActiveEditableWithin } from "./modal-interactions.js";
 
 export type { AuthoringDraftDefaults } from "./form-interactions.js";
 
@@ -39,7 +40,12 @@ export interface CreateAuthoringActionHandlers extends AuthoringDescentActionHan
   getCurrentLocalTime: () => string;
   changeDraft: (draft: BallDraft) => void;
   submit: (form: HTMLFormElement, draft: BallDraft, descents: HappyBallDescentRecord[]) => void;
-  cancel: () => void;
+  cancel: (form: HTMLFormElement) => void;
+}
+
+export interface CreateDiscardConfirmActionHandlers {
+  continueEditing: () => void;
+  discardAndClose: () => void;
 }
 
 export interface EditAuthoringActionHandlers extends AuthoringDescentActionHandlers {
@@ -102,12 +108,23 @@ export function bindCreateAuthoringUiActions(root: ParentNode, handlers: CreateA
       return;
     }
     element.addEventListener("click", (event) => {
-      if (element.classList.contains("panel-backdrop") && event.target !== element) {
+      if (element.classList.contains("panel-backdrop")) {
+        if (event.target === element) {
+          blurActiveEditableWithin(element);
+        }
         return;
       }
-      handlers.cancel();
+      handlers.cancel(form);
     });
   });
+}
+
+export function bindCreateDiscardConfirmActions(
+  root: ParentNode,
+  handlers: CreateDiscardConfirmActionHandlers,
+): void {
+  root.querySelector<HTMLButtonElement>("[data-create-continue]")?.addEventListener("click", handlers.continueEditing);
+  root.querySelector<HTMLButtonElement>("[data-create-discard-close]")?.addEventListener("click", handlers.discardAndClose);
 }
 
 export function bindEditAuthoringUiActions(root: ParentNode, handlers: EditAuthoringActionHandlers): void {
@@ -120,7 +137,7 @@ export function bindEditAuthoringUiActions(root: ParentNode, handlers: EditAutho
   const backdrop = root.querySelector<HTMLElement>("[data-dialog-backdrop]");
   backdrop?.addEventListener("click", (event) => {
     if (event.target === backdrop) {
-      handlers.close(form);
+      blurActiveEditableWithin(backdrop);
     }
   });
   root.querySelectorAll<HTMLButtonElement>("[data-dialog-close]").forEach((button) => {

@@ -16,11 +16,12 @@ export interface BallSieveStatusState {
 
 const PRESET_ORDER: readonly BallSievePresetId[] = ["usual", "archived", "offered", "descent"];
 
-export function renderBallSieveControl(state: BallSieveUiState): string {
+export function renderBallSieveControl(state: BallSieveUiState, disabled = false): string {
   const label = getBallSieveLabel(state.presetId);
+  const disabledAttribute = disabled ? ' disabled aria-disabled="true"' : "";
   return `
     <div class="ball-sieve-control" data-ball-sieve-control>
-      <button class="ball-sieve-trigger play-mode-button${state.presetId === "usual" ? "" : " is-active is-on"}" type="button" data-toggle-ball-sieve aria-label="ふるい分け：${escapeHtml(label)}" aria-expanded="${state.open}" aria-pressed="${state.presetId !== "usual"}" aria-haspopup="dialog" aria-controls="ball-sieve-popover">
+      <button class="ball-sieve-trigger play-mode-button${state.presetId === "usual" ? "" : " is-active is-on"}" type="button" data-toggle-ball-sieve aria-label="ふるい分け：${escapeHtml(label)}" aria-expanded="${state.open}" aria-pressed="${state.presetId !== "usual"}" aria-haspopup="dialog" aria-controls="ball-sieve-popover"${disabledAttribute}>
         <span class="ball-sieve-trigger-icon" aria-hidden="true"></span>
       </button>
       ${renderBallSievePopover(state)}
